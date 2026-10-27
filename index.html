@@ -95,7 +95,7 @@
     </p>
 
   </div>
-
+ <button id="formSave" type="button">💾 チェック結果を保存</button>
 </section>
   <div class="muted" style="text-align:center;margin:20px">RIKU FOOTBALL LAB · ONE STEP BETTER EVERY DAY</div></div>
 <script>
@@ -130,7 +130,37 @@ $('formVideo').onchange=e=>{
     $('formPlayer').classList.remove('hidden');
 
   }
+$('formSave').addEventListener('click',()=>{
 
+  const checks=[...document.querySelectorAll('#form .check input')];
+
+  const result={
+
+    date:new Date().toLocaleDateString('ja-JP'),
+
+    shirt:$('formShirt').value,
+
+    type:$('formType').value,
+
+    checks:checks.map(c=>({
+
+      item:c.parentElement.textContent.trim(),
+
+      done:c.checked
+
+    })),
+
+    note:$('formNote').value
+
+  };
+
+  const history=JSON.parse(localStorage.getItem('rflFormHistory')||'[]');
+
+  history.unshift(result);
+
+  localStorage.setItem('rflFormHistory',JSON.stringify(history));
+
+  alert('フォーム確認を保存したよ！');
 };
      })();
 </script></body></html>
