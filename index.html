@@ -130,7 +130,8 @@ $('formVideo').onchange=e=>{
     $('formPlayer').classList.remove('hidden');
 
   }
-$('formSave').addEventListener('click',()=>{
+};
+  $('formSave').addEventListener('click',()=>{
 
   const checks=[...document.querySelectorAll('#form .check input')];
 
@@ -148,7 +149,7 @@ $('formSave').addEventListener('click',()=>{
 
       done:c.checked
 
-    })),
+    }))
 
     note:$('formNote').value
 
@@ -161,6 +162,6 @@ $('formSave').addEventListener('click',()=>{
   localStorage.setItem('rflFormHistory',JSON.stringify(history));
 
   alert('フォーム確認を保存したよ！');
-};
+});
      })();
 </script></body></html>
