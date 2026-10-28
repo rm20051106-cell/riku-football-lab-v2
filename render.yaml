@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: riku-football-lab-ai
+    runtime: docker
+    rootDir: backend
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: MAX_UPLOAD_MB
+        value: "120"
+      - key: MAX_VIDEO_SECONDS
+        value: "180"
+      - key: CORS_ORIGINS
+        value: "*"
