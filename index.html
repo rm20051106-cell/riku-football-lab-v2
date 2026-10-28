@@ -1,167 +1,166 @@
-<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#101827"><title>RIKU FOOTBALL LAB</title>
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#101c2b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="RIKU FOOTBALL LAB">
+<title>RIKU FOOTBALL LAB</title>
 <style>
-:root{--bg:#0b1220;--p:#142238;--line:#30415a;--txt:#f4f7fb;--muted:#a8b5c8;--lime:#c7f36b}*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top right,#172d43,#0b1220 60%);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,sans-serif}.wrap{max-width:1050px;margin:auto;padding:16px}.head{display:flex;align-items:center;gap:12px;margin-bottom:16px}.logo{background:var(--lime);color:#17210a;font-weight:900;border-radius:13px;padding:14px}.muted{color:var(--muted);font-size:12px}.nav{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:14px}.nav button,button{border:1px solid var(--line);border-radius:10px;padding:11px;background:#22334b;color:var(--txt);font-weight:750}.nav button.active,.primary{background:var(--lime);color:#17210a;border-color:var(--lime)}.hero,.panel,.stat,.tile{background:linear-gradient(145deg,#18263b,#101b2c);border:1px solid var(--line);border-radius:17px;padding:17px;margin-bottom:12px}.hero h2{font-size:clamp(25px,5vw,38px);margin:10px 0}.stats,.grid,.tiles,.two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.stats{grid-template-columns:repeat(3,1fr)}.stat{margin:0}.stat b{font-size:24px;display:block;margin-top:6px}.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.tile{text-align:left;width:100%;margin:0}.tile h4{margin:6px 0}.tile p{font-size:12px;color:var(--muted);margin:0;line-height:1.5}.field{display:flex;flex-direction:column;gap:5px;margin-bottom:10px}.field label{font-size:12px;color:var(--muted)}input,select,textarea{background:#0c1524;color:var(--txt);border:1px solid var(--line);border-radius:9px;padding:11px;width:100%;font:inherit}textarea{min-height:70px}.actions{display:flex;gap:8px;flex-wrap:wrap}.actions button{flex:1}.hidden{display:none!important}.record{background:#0c1524;border:1px solid var(--line);padding:12px;border-radius:11px;margin-bottom:8px}.chip{display:inline-block;background:#22334b;padding:5px 7px;border-radius:6px;font-size:12px;margin:3px}.chip b{color:var(--lime)}.empty{border:1px dashed var(--line);border-radius:10px;padding:18px;text-align:center;color:var(--muted);font-size:13px}.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}.day{min-height:42px;padding:5px 0;text-align:center}.day.mark{background:#344b24;border-color:#8caf4d}.video{width:100%;max-height:350px;background:#000;border-radius:10px}.check{display:block;padding:9px;margin:6px 0;background:#0c1524;border:1px solid var(--line);border-radius:8px}.check input{width:auto}.score{font-size:30px;color:var(--lime);font-weight:900}.note{font-size:11px;color:var(--muted);line-height:1.6}@media(max-width:600px){.wrap{padding:12px}.nav button{font-size:10px;padding:9px 2px}.grid{grid-template-columns:1fr}.stats{gap:6px}.stat{padding:10px}.stat b{font-size:19px}.head .muted{display:none}}@media(max-width:350px){.two,.tiles{grid-template-columns:1fr}}
-</style></head><body><div class="wrap">
-<header class="head"><div class="logo">RL</div><div><div class="muted">PLAYER DEVELOPMENT SYSTEM</div><h1 style="margin:3px 0;font-size:23px">RIKU FOOTBALL LAB</h1></div></header>
-<nav class="nav"><button class="active" data-page="home">🏠 ホーム</button><button data-page="training">⚽ 練習</button><button data-page="calendar">📅 カレンダー</button><button data-page="video">🎥 動画分析</button><button data-page="form">🦵 フォーム</button><button data-page="records">📊 記録</button></nav>
-<section id="home" class="page"><div class="hero"><span style="background:var(--lime);color:#17210a;padding:5px 8px;border-radius:5px;font-size:11px;font-weight:900">BUILD · TRACK · IMPROVE</span><h2>毎日の積み重ねを、<br>試合で使える武器に。</h2><p class="muted">陸玖の練習・測定・試合の成長をまとめて管理しよう。</p><div class="actions"><button class="primary" data-go="training">今日の練習を選ぶ</button><button data-go="records">測定・記録を見る</button></div></div>
-<div class="stats"><div class="stat"><span class="muted">保存した記録</span><b id="count">0</b></div><div class="stat"><span class="muted">今月の練習日</span><b id="days">0</b></div><div class="stat"><span class="muted">練習メニュー</span><b>8</b></div></div>
-<div class="grid"><div class="panel"><h3>⚡ 陸玖の武器を伸ばす</h3><p class="muted">ボールを持ってスピードに乗る突破を磨こう。</p><div class="tiles"><button class="tile" data-menu="スピード突破">🏃<h4>スピード突破</h4><p>加速・ドリブル・フィニッシュ</p></button><button class="tile" data-menu="受ける動き">↗️<h4>受ける動き</h4><p>首振り・角度・ファーストタッチ</p></button><button class="tile" data-menu="切り返し">🔀<h4>切り返し</h4><p>方向転換・重心移動</p></button><button class="tile" data-menu="シュート">🥅<h4>シュート</h4><p>軸足・体の向き・狙い</p></button></div></div><div class="panel"><h3>📈 最新の測定</h3><div id="latest" class="empty">測定を保存すると、ここに表示されるよ。</div></div></div></section>
-<section id="training" class="page hidden"><div class="panel"><h3>⚽ トレーニングメニュー</h3><p class="muted">メニューを選ぶと、下の記録欄にセットされるよ。</p><div class="tiles">
-<button class="tile" data-menu="スピード突破">🏃<h4>スピード突破</h4><p>5〜10m運ぶドリブルから加速、最後にシュート。左右5本。</p></button>
-<button class="tile" data-menu="受ける動き">↗️<h4>受ける動き</h4><p>いったん離れて斜めに動き、前向きに受ける。左右6回。</p></button>
-<button class="tile" data-menu="切り返し">🔀<h4>切り返し・アジリティ</h4><p>マーカー3個をジグザグ。ボールを失わず左右4本。</p></button>
-<button class="tile" data-menu="シュート">🥅<h4>シュートフォーム</h4><p>軸足を横に置き、狙いを決めて左右5本ずつ。</p></button>
-<button class="tile" data-menu="パス＆ファーストタッチ">🎯<h4>パス＆ファーストタッチ</h4><p>親子でパス。受ける前に周りを見て10本×2。</p></button>
-<button class="tile" data-menu="1対1突破">🛡️<h4>1対1突破</h4><p>親が守備役。逆を取り、フェイント後に加速。</p></button>
-<button class="tile" data-menu="ゴムバンド補強">💪<h4>ゴムバンド補強</h4><p>軽い抵抗で横歩き。痛みが出たら中止。</p></button>
-<button class="tile" data-menu="ボールタッチ">⚽<h4>ボールタッチ</h4><p>インサイド・アウトサイド・足裏を各30秒。</p></button></div></div>
-<div class="panel"><h3>練習を記録する</h3><form id="tf"><div class="two"><div class="field"><label>日付</label><input id="td" type="date" required></div><div class="field"><label>時間（分）</label><input id="tm" type="number" min="1" max="300" value="15" required></div></div><div class="field"><label>メニュー</label><input id="tt" required placeholder="練習メニュー"></div><div class="field"><label>できたこと・次の目標</label><textarea id="tn"></textarea></div><button class="primary">練習を保存してカレンダーに記録</button></form></div></section>
-<section id="calendar" class="page hidden"><div class="panel"><h3>📅 練習カレンダー</h3><p class="muted">練習を保存した日には⚽スタンプが付くよ。</p><div class="actions"><button id="prev">‹ 前月</button><strong id="month"></strong><button id="next">翌月 ›</button></div><div id="cal" class="cal" style="margin-top:12px"></div><div id="detail" style="margin-top:12px"></div></div></section>
-<section id="video" class="page hidden"><div class="panel"><h3>🎥 動画分析・フォーム確認</h3><p class="muted">動画を再生しながらチェック。背番号はあとから変更できるよ。</p><div class="field"><label>動画を選択</label><input id="vf" type="file" accept="video/*"></div><video id="vp" class="video hidden" controls playsinline></video><div class="field"><label>陸玖の背番号</label><input id="shirt" value="10, 74"></div><div class="field"><label>分析する内容</label><select id="vt"><option value="shoot">シュートフォーム</option><option value="free">フリーキック</option><option value="dribble">ドリブル突破</option><option value="receive">ボールを受ける動き</option><option value="general">試合全般</option></select></div><p class="muted">当てはまる項目をチェックして振り返ろう。自動AI採点ではなくセルフチェックです。</p><div id="checks"></div><div class="score" id="score">0 / 5</div><p class="muted" id="feedback">チェックするとヒントが表示されます。</p><div class="field"><label>気づき・次の目標</label><textarea id="vn"></textarea></div><button class="primary" id="sv">振り返りを記録に保存</button><p class="note">動画の自動選手検出・AIフォーム分析は未実装です。選択した動画はこの画面で一時再生します。</p></div></section>
-<section id="records" class="page hidden"><div class="grid"><div class="panel"><h3>📊 測定・成長記録</h3><form id="mf"><div class="field"><label>日付</label><input id="md" type="date" required></div><div class="field"><label>種類</label><select id="mt"><option>身体測定</option><option>試合</option><option>振り返り</option></select></div><div class="field"><label>タイトル</label><input id="title" required placeholder="例：秋の測定"></div><div class="two"><div class="field"><label>30m走（秒）</label><input id="r30" type="number" min="0" step=".01" placeholder="5.07"></div><div class="field"><label>アジリティ（秒）</label><input id="ag" type="number" min="0" step=".01" placeholder="8.91"></div><div class="field"><label>立ち幅跳び（cm）</label><input id="jump" type="number" min="0" step="1" placeholder="184"></div><div class="field"><label>練習時間（分）</label><input id="min" type="number" min="0"></div></div><div class="field"><label>メモ</label><textarea id="mn"></textarea></div><button class="primary">記録を保存</button></form></div><div class="panel"><h3>📚 保存した記録</h3><div id="all"></div><div class="actions"><button id="export">データを書き出す</button><label style="padding:10px;border:1px solid var(--line);border-radius:10px;text-align:center">データを読み込む<input id="import" type="file" accept="application/json" hidden></label></div><p class="note">記録はこの端末のブラウザに保存されます。定期的に書き出してバックアップしてください。</p></div></div></section>
-<section id="form" class="page hidden">
-
-  <div class="panel">
-
-    <h3>🦵 シュート・FKフォーム分析</h3>
-
-    <p class="muted">陸玖の動画を見ながら、フォームを確認しよう。</p>
-
-    <div class="field">
-
-      <label>陸玖の背番号（変更可能）</label>
-
-      <input id="formShirt" value="10, 74">
-
-    </div>
-
-    <div class="field">
-
-      <label>分析する動作</label>
-
-      <select id="formType">
-
-        <option value="shoot">シュート</option>
-
-        <option value="free">フリーキック</option>
-
-        <option value="run">ドリブル・走り方</option>
-
-      </select>
-
-    </div>
-
-    <div class="field">
-
-      <label>動画を選択</label>
-
-      <input id="formVideo" type="file" accept="video/*">
-
-    </div>
-
-    <video id="formPlayer" class="video hidden"
-
-      controls playsinline></video>
-
-    <h4>フォーム確認チェック</h4>
-
-    <label class="check"><input type="checkbox"> 軸足の位置が適切</label>
-
-    <label class="check"><input type="checkbox"> 上体のバランスが良い</label>
-
-    <label class="check"><input type="checkbox"> 蹴り足をしっかり振り抜く</label>
-
-    <label class="check"><input type="checkbox"> 狙う方向を意識している</label>
-
-    <label class="check"><input type="checkbox"> 蹴った後もバランスを保つ</label>
-
-    <div class="field">
-
-      <label>気づいたこと・次の目標</label>
-
-      <textarea id="formNote"
-
-        placeholder="例：軸足をボールの横に置く"></textarea>
-
-    </div>
-
-    <p class="note">
-
-      現時点では動画の再生と手動チェック用の画面です。
-
-      自動AI解析や姿勢の自動検出は、別途実装が必要です。
-
-    </p>
-
-  </div>
- <button id="formSave" type="button">💾 チェック結果を保存</button>
+:root{--bg:#0b1220;--panel:#121e30;--panel2:#18283d;--line:#2a3b53;--text:#f4f7fb;--muted:#9fb0c5;--lime:#c8f169;--blue:#78c8ff;--orange:#ffbd69;--red:#ff7777;--radius:18px}
+*{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#0b1220,#101b2a 55%,#0b1220);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding-bottom:90px}
+header{position:sticky;top:0;z-index:5;background:#0b1220ee;backdrop-filter:blur(12px);border-bottom:1px solid var(--line);padding:14px 16px 12px}
+.brand{display:flex;align-items:center;justify-content:space-between;gap:12px}.logo{font-weight:900;letter-spacing:.08em;font-size:17px}.logo span{color:var(--lime)}.sub{font-size:11px;color:var(--muted);margin-top:4px}.pill{font-size:11px;border:1px solid #47603d;background:#1b3024;color:var(--lime);padding:6px 9px;border-radius:999px;white-space:nowrap}
+main{max-width:850px;margin:auto;padding:16px}.view{display:none}.view.active{display:block}.hero{background:linear-gradient(135deg,#1e3448,#142235 70%);border:1px solid #31485d;border-radius:24px;padding:20px;margin-bottom:15px;position:relative;overflow:hidden}.hero:after{content:"10";position:absolute;right:0;bottom:-38px;font-size:140px;font-weight:900;color:#ffffff0b}.eyebrow{color:var(--lime);font-size:11px;font-weight:800;letter-spacing:.12em}.hero h1{font-size:26px;line-height:1.25;margin:8px 0}.hero p{color:#c2d0df;font-size:13px;line-height:1.65;max-width:520px}.btnrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+button,.button{border:0;border-radius:12px;padding:12px 14px;font-weight:800;font-size:13px;background:var(--lime);color:#172315;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px}.secondary{background:#26384e;color:var(--text);border:1px solid #3b5069}.danger{background:#472a35;color:#ffd9dd;border:1px solid #78404c}.small{padding:8px 10px;font-size:12px;border-radius:10px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:15px;margin-bottom:12px;min-width:0}.card h2,.card h3{margin:0 0 10px}.card h2{font-size:16px}.card h3{font-size:14px}.muted{color:var(--muted)}.tiny{font-size:11px;line-height:1.55}.stat{font-size:25px;font-weight:900;letter-spacing:-.03em}.stat small{font-size:11px;color:var(--muted);font-weight:600;letter-spacing:0}.label{display:block;font-size:12px;color:#c4d1e0;margin:11px 0 6px}input,select,textarea{width:100%;background:#0b1524;border:1px solid #34475f;border-radius:11px;padding:12px;color:var(--text);font:inherit;font-size:14px;outline:none}textarea{min-height:80px;resize:vertical}input[type=checkbox]{width:auto;accent-color:var(--lime)}input[type=range]{padding:0;accent-color:var(--lime)}.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}.section-title{font-size:21px;margin:4px 0 5px}.section-desc{font-size:12px;color:var(--muted);margin:0 0 16px;line-height:1.6}.nav{position:fixed;bottom:0;left:0;right:0;z-index:10;background:#0b1220f5;border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(5,1fr);padding:7px 5px calc(7px + env(safe-area-inset-bottom));backdrop-filter:blur(12px)}.nav button{background:transparent;color:#a7b7ca;border-radius:10px;padding:7px 2px;display:flex;flex-direction:column;gap:3px;font-size:10px}.nav button .ico{font-size:19px}.nav button.active{color:var(--lime);background:#1d2b3b}
+.listitem{display:flex;gap:10px;align-items:flex-start;padding:11px 0;border-bottom:1px solid #29384b}.listitem:last-child{border-bottom:0}.listitem .grow{flex:1;min-width:0}.tag{display:inline-block;border-radius:7px;padding:4px 7px;background:#263b4e;color:#cce8ff;font-size:10px;margin:2px 3px 2px 0}.tag.good{background:#263b2c;color:var(--lime)}.tag.warn{background:#443629;color:#ffd69b}.empty{padding:20px 8px;text-align:center;color:var(--muted);font-size:13px}.progress{height:6px;background:#29394c;border-radius:9px;overflow:hidden;margin:8px 0}.progress span{display:block;height:100%;background:var(--lime);width:0}.video-wrap{background:#05080d;border-radius:14px;overflow:hidden;margin-top:10px;position:relative}video{width:100%;display:block;max-height:420px;background:#05080d}.overlay-guide{position:absolute;inset:0;pointer-events:none;display:none;align-items:center;justify-content:center}.overlay-guide.show{display:flex}.silhouette{width:38%;height:78%;border:2px dashed #c8f169aa;border-radius:46% 46% 18% 18%;position:relative;opacity:.85}.silhouette:before{content:"";position:absolute;width:32%;aspect-ratio:1;border:2px dashed var(--lime);border-radius:50%;top:-13%;left:34%}.silhouette:after{content:"";position:absolute;left:49%;top:10%;height:83%;border-left:2px dashed var(--lime)}.guide-label{position:absolute;top:8px;left:8px;background:#07110ddd;color:var(--lime);padding:6px 8px;border-radius:8px;font-size:10px}
+.scoreline{display:flex;align-items:center;gap:10px}.scorebig{font-size:30px;font-weight:900;color:var(--lime);min-width:54px}.checkrow{display:flex;align-items:flex-start;gap:9px;padding:9px 0;border-bottom:1px solid #29384b;font-size:13px;line-height:1.5}.checkrow input{margin-top:3px}.checkrow span{flex:1}.calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}.dayhead,.day{font-size:11px;text-align:center;padding:7px 0}.dayhead{color:var(--muted)}.day{background:#18283b;border:1px solid #2a3d53;border-radius:9px;min-height:42px}.day.today{border-color:var(--lime)}.day.stamped{background:#293b24;border-color:#708b46;color:var(--lime)}.day.blank{background:transparent;border-color:transparent}.chart{height:130px;display:flex;align-items:end;gap:8px;padding:10px 0 0;border-bottom:1px solid #40516a}.barcol{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;min-width:0}.bar{width:min(30px,70%);min-height:3px;background:linear-gradient(180deg,var(--lime),#699e4a);border-radius:6px 6px 0 0}.barlabel{font-size:9px;color:var(--muted);text-align:center}.barvalue{font-size:10px}.note{border-left:3px solid var(--orange);padding:9px 11px;background:#2c281f;border-radius:0 10px 10px 0;color:#f5d9ae;font-size:12px;line-height:1.55;margin:10px 0}.success{border-left-color:var(--lime);background:#1b2c24;color:#d9f5b0}.divider{height:1px;background:var(--line);margin:13px 0}.hidden{display:none!important}
+@media(min-width:650px){main{padding:22px}.grid{grid-template-columns:repeat(3,minmax(0,1fr))}.hero{padding:26px}.hero h1{font-size:32px}.nav{left:50%;right:auto;transform:translateX(-50%);width:min(100%,850px);border-radius:18px 18px 0 0}}
+</style>
+</head>
+<body>
+<header><div class="brand"><div><div class="logo">RIKU <span>FOOTBALL LAB</span></div><div class="sub">PLAYER DEVELOPMENT SYSTEM</div></div><div class="pill">● PERSONAL LAB</div></div></header>
+<main>
+<section class="view active" id="home">
+ <div class="hero"><div class="eyebrow">YOUR NEXT LEVEL STARTS HERE</div><h1>陸玖の成長を、<br>記録から武器に。</h1><p>練習・試合動画・シュートフォーム・測定記録をひとつに。毎回の振り返りを、次のプレーにつなげよう。</p><div class="btnrow"><button onclick="showView('video')">▶ 動画を分析する</button><button class="secondary" onclick="showView('training')">今日の練習を記録</button></div></div>
+ <div class="grid">
+  <div class="card"><div class="muted tiny">今月の練習日</div><div class="stat" id="homeDays">0 <small>日</small></div><div class="progress"><span id="monthProgress"></span></div><div class="tiny muted">記録した練習日数</div></div>
+  <div class="card"><div class="muted tiny">動画・フォーム記録</div><div class="stat" id="homeVideos">0 <small>件</small></div><div class="tiny muted">振り返りを積み重ねる</div></div>
+  <div class="card"><div class="muted tiny">直近の30m走</div><div class="stat" id="homeSprint">5.07 <small>秒</small></div><div class="tiny muted">初期登録値・編集できます</div></div>
+  <div class="card"><div class="muted tiny">選手識別番号</div><div class="stat" id="homeNumbers">10 / 74</div><div class="tiny muted">設定から変更可能</div></div>
+ </div>
+ <div class="card"><h2>今日のおすすめ</h2><div id="dailyPlan"></div><div class="btnrow"><button class="secondary" onclick="showView('training')">メニューを見る</button></div></div>
+ <div class="card"><h2>分析機能について</h2><p class="tiny muted">このアプリでは、動画の再生・コマ送り用の振り返り・時刻付きメモ・採点、フォーム確認表、映像上の姿勢ガイド表示を利用できます。背番号を自動認識して全試合から陸玖だけを追跡したり、AIが骨格を自動計測したりする機能は、別途AI解析サーバーとの接続が必要です。接続していない状態で「AIが自動判定した」と偽ることはしません。</p></div>
 </section>
-  <div class="muted" style="text-align:center;margin:20px">RIKU FOOTBALL LAB · ONE STEP BETTER EVERY DAY</div></div>
+
+<section class="view" id="training">
+ <h1 class="section-title">トレーニング</h1><p class="section-desc">練習したら記録。メニューは追加・編集できます。</p>
+ <div class="card"><h2>今日の練習を記録</h2><label class="label">日付</label><input type="date" id="trainDate"><label class="label">メニューを選択</label><select id="trainMenu"></select><div class="two"><div><label class="label">時間（分）</label><input type="number" id="trainMinutes" min="1" value="15"></div><div><label class="label">きつさ</label><select id="trainEffort"><option>軽め</option><option selected>ふつう</option><option>きつめ</option></select></div></div><label class="label">できたこと・次の課題</label><textarea id="trainNote" placeholder="例：相手を見てから縦に運べた。次は逆足も使う"></textarea><div class="btnrow"><button onclick="saveTraining()">練習を保存</button></div></div>
+ <div class="card"><h2>メニュー一覧</h2><div id="menuList"></div><div class="divider"></div><h3>オリジナルメニューを追加</h3><input id="newMenuName" placeholder="例：ワンタッチで前を向く"><select id="newMenuCategory" style="margin-top:8px"><option>ボールタッチ</option><option>突破・ドリブル</option><option>アジリティ</option><option>シュート</option><option>キック</option><option>受ける動き</option><option>体幹・バンド</option><option>その他</option></select><div class="btnrow"><button class="secondary" onclick="addMenu()">＋ メニュー追加</button></div></div>
+ <div class="card"><h2>最近の練習記録</h2><div id="trainingRecords"></div></div>
+</section>
+
+<section class="view" id="calendar">
+ <h1 class="section-title">成長カレンダー</h1><p class="section-desc">練習を保存した日にはスタンプがつきます。</p>
+ <div class="card"><div class="brand"><button class="secondary small" onclick="shiftMonth(-1)">◀ 前月</button><h2 id="monthTitle" style="margin:0"></h2><button class="secondary small" onclick="shiftMonth(1)">次月 ▶</button></div><div class="calendar" id="calendarGrid" style="margin-top:12px"></div><div class="divider"></div><div class="tiny muted">● 練習記録あり　日付を押すと、その日の記録を確認できます。</div></div>
+ <div class="card"><h2 id="selectedDateTitle">選択した日の記録</h2><div id="selectedDateRecords"></div></div>
+</section>
+
+<section class="view" id="video">
+ <h1 class="section-title">動画分析ラボ</h1><p class="section-desc">iPhoneの写真・ファイルから試合や練習動画を選び、再生しながら時刻付きでプレーを記録・採点します。</p>
+ <div class="card"><h2>① 動画を読み込む</h2><label class="label">動画タイトル</label><input id="videoTitle" placeholder="例：10/28 練習試合 前半"><label class="label">動画ファイル</label><input type="file" id="videoFile" accept="video/*"><div id="videoMeta" class="tiny muted" style="margin-top:8px">動画はこの画面内で再生します。ファイル自体はアップロードされません。</div><div class="video-wrap" id="videoWrap"><video id="matchVideo" controls playsinline preload="metadata"></video><div class="overlay-guide" id="overlayGuide"><div class="silhouette"></div><div class="guide-label">姿勢ガイド（目安）</div></div></div><div class="btnrow"><button class="secondary small" onclick="seekVideo(-1)">↶ 1秒戻る</button><button class="secondary small" onclick="seekVideo(1)">1秒進む ↷</button><button class="secondary small" onclick="toggleGuide()">姿勢ガイド ON/OFF</button></div><p class="tiny muted">動画は端末内で再生します。画面を閉じたり再読み込みすると、読み込んだ動画を再選択する必要があります。</p></div>
+ <div class="card"><h2>② プレーを記録・採点</h2><div class="two"><div><label class="label">動画内の時刻（秒）</label><input type="number" id="clipTime" min="0" step="0.1" placeholder="動画から取得"></div><div><label class="label">プレー種別</label><select id="clipType"><option>ドリブル突破</option><option>パス・受ける動き</option><option>シュート</option><option>フリーキック</option><option>守備・プレス</option><option>ポジショニング</option><option>その他</option></select></div></div><div class="btnrow"><button class="secondary small" onclick="takeCurrentTime()">現在の再生時刻を入れる</button></div><div class="two"><div><label class="label">判断・準備 <b id="s1v">3</b>/5</label><input type="range" id="s1" min="1" max="5" value="3" oninput="s1v.textContent=this.value"></div><div><label class="label">技術・実行 <b id="s2v">3</b>/5</label><input type="range" id="s2" min="1" max="5" value="3" oninput="s2v.textContent=this.value"></div><div><label class="label">スピード・強度 <b id="s3v">3</b>/5</label><input type="range" id="s3" min="1" max="5" value="3" oninput="s3v.textContent=this.value"></div><div><label class="label">チームへの貢献 <b id="s4v">3</b>/5</label><input type="range" id="s4" min="1" max="5" value="3" oninput="s4v.textContent=this.value"></div></div><label class="label">良かった点</label><textarea id="clipGood" placeholder="例：相手の逆を取って加速できた"></textarea><label class="label">改善点・次回の意識</label><textarea id="clipImprove" placeholder="例：仕掛ける前に味方とゴールの位置を見る"></textarea><div class="btnrow"><button onclick="saveClip()">プレー分析を保存</button><button class="secondary" onclick="sendMatchToAI()">AIサーバーで動画解析</button></div><div id="matchAiResult" class="tiny muted" style="margin-top:10px"></div><div class="note">注意：採点は動画を見ながら入力する振り返り評価です。背番号の自動検出・選手追跡・自動ハイライト抽出は、AI解析サーバー未接続のため現在は自動実行しません。</div></div>
+ <div class="card"><h2>③ 保存したプレー分析</h2><div id="clipRecords"></div></div>
+</section>
+
+<section class="view" id="form">
+ <h1 class="section-title">シュート・FKフォーム分析</h1><p class="section-desc">動画を再生し、チェック項目と改善ドリルを使ってフォームを確認。姿勢ガイドを映像に重ねて比較できます。</p>
+ <div class="card"><h2>フォーム動画</h2><label class="label">動画タイトル</label><input id="formTitle" placeholder="例：インステップシュート 右足"><label class="label">動画ファイル</label><input type="file" id="formFile" accept="video/*"><div class="video-wrap"><video id="formVideo" controls playsinline preload="metadata"></video><div class="overlay-guide" id="formOverlay"><div class="silhouette"></div><div class="guide-label">姿勢ガイド（位置は手動で比較）</div></div></div><div class="btnrow"><button class="secondary small" onclick="seekForm(-1)">↶ 1秒戻る</button><button class="secondary small" onclick="seekForm(1)">1秒進む ↷</button><button class="secondary small" onclick="toggleFormGuide()">姿勢ガイド ON/OFF</button></div></div>
+ <div class="card"><h2>フォーム確認表</h2><div class="two"><div><label class="label">分析対象</label><select id="formKind"><option>シュート</option><option>フリーキック</option><option>ロングキック</option><option>パスキック</option></select></div><div><label class="label">利き足</label><select id="formFoot"><option>右足</option><option>左足</option><option>両足</option></select></div></div><div id="formChecks"></div><div class="scoreline" style="margin-top:12px"><div class="scorebig" id="formScore">0%</div><div class="grow"><b>フォーム確認スコア</b><div class="progress"><span id="formProgress"></span></div><div class="tiny muted">チェック済み項目の割合。AIによる骨格計測スコアではありません。</div></div></div><label class="label">動画で気づいたこと</label><textarea id="formNote" placeholder="例：軸足がボールから遠い。次はボール横に置く"></textarea><div class="btnrow"><button onclick="saveForm()">フォーム分析を保存</button><button class="secondary" onclick="sendFormToAI()">AIサーバーでフォーム解析</button></div><div id="formAiResult" class="tiny muted" style="margin-top:10px"></div></div>
+ <div class="card"><h2>改善ポイントの目安</h2><div id="formAdvice"></div></div>
+ <div class="card"><h2>過去のフォーム分析</h2><div id="formRecords"></div></div>
+ <div class="note">フォーム項目・ガイド・記録機能は使用できます。動画から骨格を自動抽出して関節角度を測るAIフォーム分析は、専用の姿勢推定エンジンを接続するまで自動ではありません。</div>
+</section>
+
+<section class="view" id="records">
+ <h1 class="section-title">記録・測定</h1><p class="section-desc">測定結果と分析履歴をまとめて確認できます。</p>
+ <div class="card"><h2>測定値を追加</h2><div class="two"><div><label class="label">測定日</label><input type="date" id="measureDate"></div><div><label class="label">項目</label><select id="measureType"><option value="30m走">30m走</option><option value="アジリティ">アジリティ</option><option value="立ち幅跳び">立ち幅跳び</option><option value="100m走">100m走</option><option value="その他">その他</option></select></div></div><div class="two"><div><label class="label">数値</label><input type="number" id="measureValue" step="0.01" placeholder="例：5.07"></div><div><label class="label">単位</label><select id="measureUnit"><option value="秒">秒</option><option value="cm">cm</option><option value="回">回</option><option value="点">点</option><option value="kg">kg</option></select></div></div><label class="label">メモ</label><input id="measureNote" placeholder="計測方法など"><div class="btnrow"><button onclick="saveMeasure()">測定値を保存</button></div></div>
+ <div class="card"><h2>測定記録</h2><div id="measureRecords"></div></div><div class="card"><h2>分析履歴</h2><div id="allAnalysisRecords"></div></div>
+</section>
+
+<section class="view" id="settings">
+ <h1 class="section-title">設定・バックアップ</h1><p class="section-desc">選手番号やデータを管理します。</p>
+ <div class="card"><h2>AI解析サーバー接続</h2><p class="tiny muted">Renderで公開したサーバーURLを入力します。URLが決まるまでは空欄のままでOKです。</p><label class="label">AIサーバーURL</label><input id="apiBaseUrl" placeholder="https://your-service.onrender.com"><div class="btnrow"><button onclick="saveApiUrl()">接続先を保存</button><button class="secondary" onclick="testApiConnection()">接続テスト</button></div><div id="apiStatus" class="tiny muted" style="margin-top:8px">未設定</div><div class="note">動画をサーバーへ送る前に、必ず自分が管理するサーバーのURLを確認してください。アップロードした動画は解析のためサーバーに送信されます。</div></div><div class="card"><h2>選手設定</h2><label class="label">選手名</label><input id="playerName" value="陸玖"><div class="two"><div><label class="label">背番号 1</label><input type="number" id="jersey1" value="10" min="0" max="99"></div><div><label class="label">背番号 2</label><input type="number" id="jersey2" value="74" min="0" max="99"></div></div><div class="btnrow"><button onclick="saveSettings()">設定を保存</button></div></div>
+ <div class="card"><h2>データのバックアップ</h2><p class="tiny muted">練習・測定・動画分析のメモなどをJSONファイルに保存できます。動画ファイル自体はバックアップに含まれません。</p><div class="btnrow"><button onclick="exportData()">データを書き出す</button><label class="button secondary" for="importFile">バックアップを読み込む</label><input class="hidden" type="file" id="importFile" accept="application/json"></div><div class="btnrow"><button class="danger" onclick="clearData()">全データを消去</button></div></div>
+ <div class="card"><h2>機能・接続状態</h2><div class="listitem"><div class="grow"><b>動画の再生・時刻付き分析</b><div class="tiny muted">端末内で利用可能</div></div><span class="tag good">利用可能</span></div><div class="listitem"><div class="grow"><b>フォーム確認表・姿勢ガイド</b><div class="tiny muted">手動チェックと映像比較</div></div><span class="tag good">利用可能</span></div><div class="listitem"><div class="grow"><b>背番号の自動認識・自動追跡</b><div class="tiny muted">AI解析サーバー接続が必要</div></div><span class="tag warn">未接続</span></div><div class="listitem"><div class="grow"><b>AI骨格推定・自動フォーム判定</b><div class="tiny muted">姿勢推定エンジン接続が必要</div></div><span class="tag warn">未接続</span></div><div class="note">iPhoneだけで使う静的サイトには、秘密鍵を安全に保管する場所や動画を処理するサーバーがありません。実際のAI自動分析を追加するには、サーバー側の処理とAIサービス接続が別途必要です。</div></div>
+</section>
+</main>
+<nav class="nav">
+<button class="active" data-view="home" onclick="showView('home')"><span class="ico">⌂</span>ホーム</button>
+<button data-view="training" onclick="showView('training')"><span class="ico">⚽</span>練習</button>
+<button data-view="calendar" onclick="showView('calendar')"><span class="ico">▦</span>カレンダー</button>
+<button data-view="video" onclick="showView('video')"><span class="ico">▶</span>動画分析</button>
+<button data-view="records" onclick="showView('records')"><span class="ico">▤</span>記録</button>
+</nav>
 <script>
-(()=>{const $=id=>document.getElementById(id),KEY='riku-football-lab-records-v1';let rs=[];try{rs=JSON.parse(localStorage.getItem(KEY)||'[]');if(!Array.isArray(rs))rs=[]}catch(e){rs=[]}const today=()=>{let d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};$('td').value=$('md').value=today();let cm=new Date();
-function save(){try{localStorage.setItem(KEY,JSON.stringify(rs));return true}catch(e){alert('保存できませんでした。空き容量を確認してください。');return false}}
+const KEY='rikuFootballLab_v3';
+const defaultMenus=[
+{name:'ボールタッチ・リズム',category:'ボールタッチ',minutes:10},
+{name:'マーカー間の加速ドリブル',category:'突破・ドリブル',minutes:12},
+{name:'親子1対1・縦突破',category:'突破・ドリブル',minutes:12},
+{name:'受ける前に首を振る→前を向く',category:'受ける動き',minutes:10},
+{name:'マーカー切り返し・アジリティ',category:'アジリティ',minutes:10},
+{name:'軸足を意識したインステップシュート',category:'シュート',minutes:12},
+{name:'フリーキックの助走・軸足確認',category:'キック',minutes:10},
+{name:'ゴムバンドで股関節・体幹',category:'体幹・バンド',minutes:8},
+{name:'逆足パス＆ファーストタッチ',category:'受ける動き',minutes:10},
+{name:'1対1で相手を見て選択',category:'突破・ドリブル',minutes:12}
+];
+let state={settings:{name:'陸玖',jersey1:10,jersey2:74,apiBaseUrl:''},menus:defaultMenus,trainings:[],measures:[
+{date:'2026-10-19',type:'30m走',value:5.07,unit:'秒',note:'初期登録値'},
+{date:'2026-10-19',type:'アジリティ',value:8.91,unit:'秒',note:'初期登録値'},
+{date:'2026-10-19',type:'立ち幅跳び',value:184,unit:'cm',note:'初期登録値'}
+],clips:[],forms:[]};
+function load(){try{let s=JSON.parse(localStorage.getItem(KEY));if(s&&s.settings)state={...state,...s,settings:{...state.settings,...s.settings},menus:s.menus||defaultMenus};}catch(e){}}
+function persist(){localStorage.setItem(KEY,JSON.stringify(state));renderAll()}
+function today(){return new Date().toLocaleDateString('sv-SE')}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function add(r){rs.push({...r,id:Date.now()+Math.random()});if(save()){render();return true}return false}
-function go(p){document.querySelectorAll('.page').forEach(x=>x.classList.add('hidden'));$(p).classList.remove('hidden');document.querySelectorAll('[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page===p));if(p==='calendar')calendar();if(p==='records')draw();window.scrollTo(0,0)}
-document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>go(b.dataset.page));document.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
-document.querySelectorAll('[data-menu]').forEach(b=>b.onclick=()=>{go('training');$('tt').value=b.dataset.menu});
-$('tf').onsubmit=e=>{e.preventDefault();if(add({date:$('td').value,type:'トレーニング',title:$('tt').value.trim(),minutes:$('tm').value,note:$('tn').value.trim()})){e.target.reset();$('td').value=today();$('tm').value=15;alert('練習を保存しました！')}};
-$('mf').onsubmit=e=>{e.preventDefault();if(add({date:$('md').value,type:$('mt').value,title:$('title').value.trim(),run30:$('r30').value,agility:$('ag').value,jump:$('jump').value,minutes:$('min').value,note:$('mn').value.trim()})){e.target.reset();$('md').value=today();alert('記録を保存しました！')}};
-function draw(){let all=$('all');let sorted=[...rs].sort((a,b)=>(b.date||'').localeCompare(a.date||''));all.innerHTML=sorted.length?sorted.map(r=>'<div class="record"><div class="muted">'+esc(r.date)+' · '+esc(r.type)+'</div><strong>'+esc(r.title)+'</strong><div>'+(r.run30?'<span class="chip"><b>'+esc(r.run30)+'</b> 30m秒</span>':'')+(r.agility?'<span class="chip"><b>'+esc(r.agility)+'</b> アジリティ秒</span>':'')+(r.jump?'<span class="chip"><b>'+esc(r.jump)+'</b> 立ち幅cm</span>':'')+(r.minutes?'<span class="chip"><b>'+esc(r.minutes)+'</b> 分</span>':'')+'</div>'+(r.note?'<p class="muted">'+esc(r.note)+'</p>':'')+'<button data-del="'+r.id+'">削除</button></div>').join(''):'<div class="empty">記録はまだありません。</div>';all.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{if(confirm('この記録を削除しますか？')){rs=rs.filter(r=>String(r.id)!==b.dataset.del);save();render()}})}
-function calendar(){let y=cm.getFullYear(),m=cm.getMonth();$('month').textContent=y+'年'+(m+1)+'月';let names=['日','月','火','水','木','金','土'],s=names.map(n=>'<div class="muted" style="text-align:center">'+n+'</div>').join(''),first=new Date(y,m,1).getDay(),last=new Date(y,m+1,0).getDate();s+='<div></div>'.repeat(first);for(let d=1;d<=last;d++){let key=y+'-'+String(m+1).padStart(2,'0')+'-'+String(d).padStart(2,'0'),marked=rs.some(r=>r.date===key&&r.type==='トレーニング');s+='<button class="day '+(marked?'mark':'')+'" data-date="'+key+'">'+d+(marked?'<br>⚽':'')+'</button>'}$('cal').innerHTML=s;$('cal').querySelectorAll('[data-date]').forEach(b=>b.onclick=()=>{let arr=rs.filter(r=>r.date===b.dataset.date);$('detail').innerHTML='<p class="muted">'+b.dataset.date+'</p>'+(arr.length?arr.map(r=>'<div class="record"><strong>'+esc(r.title)+'</strong><p class="muted">'+esc(r.type)+' '+esc(r.minutes||'')+'分</p></div>').join(''):'<div class="empty">この日の記録はありません。</div>')})}
-$('prev').onclick=()=>{cm=new Date(cm.getFullYear(),cm.getMonth()-1,1);calendar()};$('next').onclick=()=>{cm=new Date(cm.getFullYear(),cm.getMonth()+1,1);calendar()};
-const lists={shoot:['軸足がボールの横','蹴り足を振り抜く','上体が後ろに倒れすぎない','狙う方向を決める','蹴った後もバランスを保つ'],free:['助走の角度が安定','軸足が狙う方向を向く','腕でバランスを取る','ボールの当てる位置を意識','蹴った後に自然に前へ進む'],dribble:['運びながらスピードに乗る','相手を見て仕掛ける','フェイント後に加速','相手から遠い足で運ぶ','突破後のプレーを選ぶ'],receive:['受ける前に首を振る','相手の影から外れる','パスの角度を作る','次の方向へファーストタッチ','止まらず次のプレーへ'],general:['周りを見ている','味方が受けやすい位置へ動く','攻守の切り替えが速い','失った後すぐ守備する','次の位置を取る']};
-function checks(){ $('checks').innerHTML=lists[$('vt').value].map(t=>'<label class="check"><input type="checkbox"> '+esc(t)+'</label>').join('');$('checks').querySelectorAll('input').forEach(c=>c.onchange=score)}function score(){let n=$('checks').querySelectorAll('input:checked').length;$('score').textContent=n+' / 5';$('feedback').textContent=n<2?'チェックが付かなかった項目から1つ選び、次の練習で意識しよう。':n<4?'良いところが見えてきたよ。次回は残りの項目を試そう。':'いい振り返り！試合でも再現できるか確認しよう。'}$('vt').onchange=checks;checks();
-$('vf').onchange=e=>{let f=e.target.files[0];if(f){$('vp').src=URL.createObjectURL(f);$('vp').classList.remove('hidden')}};
-$('sv').onclick=()=>{let c=[...$('checks').querySelectorAll('input:checked')].map(x=>x.parentElement.innerText.trim());if(add({date:today(),type:'振り返り',title:'動画振り返り：'+$('vt').selectedOptions[0].text,note:'背番号：'+$('shirt').value+' / チェック：'+c.join('・')+' / 得点：'+$('score').textContent+' / メモ：'+$('vn').value}))alert('振り返りを保存しました！')};
-$('export').onclick=()=>{let a=document.createElement('a'),u=URL.createObjectURL(new Blob([JSON.stringify({records:rs},null,2)],{type:'application/json'}));a.href=u;a.download='riku-football-lab-records.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)};
-$('import').onchange=async e=>{try{let j=JSON.parse(await e.target.files[0].text());if(Array.isArray(j.records)&&confirm(j.records.length+'件を追加しますか？')){rs.push(...j.records);save();render()}}catch(err){alert('JSON形式のバックアップファイルを選んでください')}e.target.value=''};
-function render(){draw();$('count').textContent=rs.length;let ym=today().slice(0,7);$('days').textContent=new Set(rs.filter(r=>r.type==='トレーニング'&&r.date?.startsWith(ym)).map(r=>r.date)).size;let r=[...rs].reverse().find(x=>x.run30||x.agility||x.jump);$('latest').innerHTML=r?'<div class="record"><div class="muted">'+esc(r.date)+'</div><b>'+esc(r.title)+'</b><p>'+(r.run30?'30m走 '+esc(r.run30)+'秒　':'')+(r.agility?'アジリティ '+esc(r.agility)+'秒　':'')+(r.jump?'立ち幅 '+esc(r.jump)+'cm':'')+'</p></div>':'<div class="empty">測定記録を追加すると、ここに表示されるよ。</div>';calendar()}
-render();
-$('formVideo').onchange=e=>{
-
-  const f=e.target.files[0];
-
-  if(f){
-
-    $('formPlayer').src=URL.createObjectURL(f);
-
-    $('formPlayer').classList.remove('hidden');
-
-  }
+function showView(id){document.querySelectorAll('.view').forEach(x=>x.classList.toggle('active',x.id===id));document.querySelectorAll('.nav button').forEach(x=>x.classList.toggle('active',x.dataset.view===id));if(id==='settings'){playerName.value=state.settings.name;jersey1.value=state.settings.jersey1;jersey2.value=state.settings.jersey2;apiBaseUrl.value=state.settings.apiBaseUrl||'';apiStatus.textContent=state.settings.apiBaseUrl?'保存済み：'+state.settings.apiBaseUrl:'未設定'}window.scrollTo({top:0,behavior:'smooth'});renderAll()}
+function saveTraining(){let menu=trainMenu.value;if(!menu)return;state.trainings.unshift({id:Date.now(),date:trainDate.value||today(),menu,minutes:+trainMinutes.value||0,effort:trainEffort.value,note:trainNote.value.trim()});trainNote.value='';persist();alert('練習記録を保存しました')}
+function addMenu(){let name=newMenuName.value.trim();if(!name){alert('メニュー名を入力してください');return}state.menus.push({name,category:newMenuCategory.value,minutes:10});newMenuName.value='';persist()}
+function removeMenu(i){if(!confirm('このメニューを削除しますか？'))return;state.menus.splice(i,1);persist()}
+function saveMeasure(){let v=Number(measureValue.value);if(!measureValue.value||!Number.isFinite(v)){alert('数値を入力してください');return}state.measures.unshift({date:measureDate.value||today(),type:measureType.value,value:v,unit:measureUnit.value,note:measureNote.value.trim()});measureValue.value='';measureNote.value='';persist();alert('測定値を保存しました')}
+function deleteItem(type,id){if(!confirm('この記録を削除しますか？'))return;state[type]=state[type].filter(x=>x.id!==id);persist()}
+function setTime(input,video){if(video.readyState>=1)input.value=video.currentTime.toFixed(1)}
+function takeCurrentTime(){setTime(clipTime,matchVideo)}
+function seekVideo(s){if(matchVideo.src)matchVideo.currentTime=Math.max(0,matchVideo.currentTime+s)}
+function seekForm(s){if(formVideo.src)formVideo.currentTime=Math.max(0,formVideo.currentTime+s)}
+function toggleGuide(){overlayGuide.classList.toggle('show')}
+function toggleFormGuide(){formOverlay.classList.toggle('show')}
+function saveClip(){if(!videoTitle.value.trim()){alert('動画タイトルを入力してください');return}let scores=[+s1.value,+s2.value,+s3.value,+s4.value];state.clips.unshift({id:Date.now(),date:today(),title:videoTitle.value.trim(),time:clipTime.value===''?null:+clipTime.value,type:clipType.value,scores,score:Math.round(scores.reduce((a,b)=>a+b,0)/20*100),good:clipGood.value.trim(),improve:clipImprove.value.trim()});clipGood.value='';clipImprove.value='';persist();alert('プレー分析を保存しました')}
+const checksByKind={
+'シュート':[['助走の角度・リズムが安定している','軸足がボールの横に置けている','軸足のつま先が狙う方向を向いている','上体が反りすぎず、目線が安定している','蹴り足を最後まで振り抜けている','蹴った後に自然に前へ流れている','ボールの中心〜狙った位置を捉えている','蹴る前にゴール・GKを確認している']],
+'フリーキック':[['ボール位置と狙う場所を決めている','助走の距離・角度が毎回安定している','最後の一歩で軸足を置けている','軸足のつま先が狙いに向いている','上体・腕でバランスを取れている','蹴り足をスムーズに振り抜けている','フォロースルーが狙いの方向へ出ている','蹴る前の呼吸とリズムが安定している']],
+'ロングキック':[['蹴る前に味方・スペースを確認している','軸足がボールの横に置けている','上体の傾きが狙いに合っている','足首を固定してボールを捉えている','蹴り足を大きく振り抜けている','蹴った後もバランスを保てている','高さと距離を狙って蹴り分けている']],
+'パスキック':[['蹴る前に周囲を確認している','軸足の位置と向きが安定している','足首を固定している','ボールの中心を狙っている','パス後に次の動きへ移れている','強さと方向を味方に合わせている']]
 };
-  $('formSave').addEventListener('click',()=>{
-
-  const checks=[...document.querySelectorAll('#form .check input')];
-
-  const result={
-
-    date:new Date().toLocaleDateString('ja-JP'),
-
-    shirt:$('formShirt').value,
-
-    type:$('formType').value,
-
-    checks:checks.map(c=>({
-
-      item:c.parentElement.textContent.trim(),
-
-      done:c.checked
-
-    })),
-
-    note:$('formNote').value
-
-  };
-
-  const history=JSON.parse(localStorage.getItem('rflFormHistory')||'[]');
-
-  history.unshift(result);
-
-  localStorage.setItem('rflFormHistory',JSON.stringify(history));
-
-  alert('フォーム確認を保存したよ！');
-});
-     })();
-</script></body></html>
+function renderChecks(){let kind=formKind.value||'シュート';let list=checksByKind[kind]||checksByKind['シュート'];formChecks.innerHTML=list[0].map((t,i)=>`<label class="checkrow"><input type="checkbox" class="formcheck" data-i="${i}"><span>${t}</span></label>`).join('');document.querySelectorAll('.formcheck').forEach(x=>x.addEventListener('change',updateFormScore));updateFormScore();renderAdvice()}
+function updateFormScore(){let all=[...document.querySelectorAll('.formcheck')],n=all.filter(x=>x.checked).length,score=all.length?Math.round(n/all.length*100):0;formScore.textContent=score+'%';formProgress.style.width=score+'%';let unchecked=all.filter(x=>!x.checked).map(x=>x.parentElement.innerText);formAdvice.innerHTML=unchecked.length?unchecked.slice(0,3).map((x,i)=>`<div class="listitem"><span class="tag warn">課題 ${i+1}</span><div class="grow"><b>${esc(x)}</b><div class="tiny muted">${adviceFor(x)}</div></div></div>`).join(''):'<div class="note success">すべてチェック済み。次は同じフォームを別角度・スロー再生でも確認し、再現性を見よう。</div>'}
+function adviceFor(t){if(t.includes('軸足'))return'ボールを止め、軸足をボール横に置く練習をゆっくり5回。その後、助走をつけて5回。';if(t.includes('上体')||t.includes('目線'))return'蹴る直前とインパクトの姿勢を一時停止して比較。胸を反らしすぎず、軸を安定させる。';if(t.includes('振り抜')||t.includes('フォロースルー'))return'強く蹴るより、狙う方向へ最後まで振り抜く動きを軽い力で反復。';if(t.includes('確認')||t.includes('ゴール'))return'蹴る前に顔を上げて目標を確認してから助走に入るルーティンを作る。';return'動画を一時停止し、成功した回と比べる。次の練習ではこの項目を1つだけ意識する。'}
+function saveForm(){let all=[...document.querySelectorAll('.formcheck')];if(!formTitle.value.trim()){alert('フォーム動画のタイトルを入力してください');return}let checked=all.filter(x=>x.checked).map(x=>x.parentElement.innerText);state.forms.unshift({id:Date.now(),date:today(),title:formTitle.value.trim(),kind:formKind.value,foot:formFoot.value,checked,total:all.length,score:all.length?Math.round(checked.length/all.length*100):0,note:formNote.value.trim()});formNote.value='';persist();alert('フォーム分析を保存しました')}
+function saveSettings(){state.settings={...state.settings,name:playerName.value.trim()||'陸玖',jersey1:Math.max(0,Math.min(99,+jersey1.value||0)),jersey2:Math.max(0,Math.min(99,+jersey2.value||0))};persist();alert('設定を保存しました')}
+function saveApiUrl(){let u=apiBaseUrl.value.trim().replace(/\/$/,'');if(u&&!/^https:\/\//i.test(u)){alert('https:// から始まるURLを入力してください');return}state.settings.apiBaseUrl=u;persist();apiStatus.textContent=u?'保存済み：'+u:'未設定';alert('AIサーバーURLを保存しました')}
+function getApiUrl(){return (state.settings.apiBaseUrl||'').trim().replace(/\/$/,'')}
+async function testApiConnection(){let u=getApiUrl();if(!u){apiStatus.textContent='未設定です。RenderのURLを入力してください。';return}apiStatus.textContent='接続確認中…';try{let r=await fetch(u+'/health');if(!r.ok)throw Error('HTTP '+r.status);let j=await r.json();apiStatus.textContent='接続成功：'+(j.service||'AI API');}catch(e){apiStatus.textContent='接続できませんでした。URL・公開状態・サーバーの起動を確認してください。';}}
+async function postVideoToAI(file, endpoint, extra, resultElement){let u=getApiUrl();if(!u){resultElement.textContent='AIサーバーURLが未設定です。設定画面でURLを保存してください。';return}if(!file){resultElement.textContent='先に動画ファイルを選択してください。';return}resultElement.textContent='動画を送信して解析中です。無料サーバーでは数分かかる場合があります…';try{let fd=new FormData();fd.append('file',file,file.name);Object.entries(extra||{}).forEach(([k,v])=>fd.append(k,v));let r=await fetch(u+endpoint,{method:'POST',body:fd});let j=await r.json();if(!r.ok)throw Error(j.detail||('HTTP '+r.status));let s=j.summary||{};resultElement.innerHTML='<div class="note success"><b>サーバー解析完了</b><br>検出姿勢フレーム：'+(s.sampled_pose_frames??'—')+'<br>平均膝角度（推定）：'+(s.average_left_right_knee_angle_deg??'—')+'°<br>体幹傾き（画像上の推定）：'+(s.average_trunk_lean_image_angle_deg??'—')+'°<br><br>'+(s.feedback||[]).map(x=>esc(x)).join('<br>')+'</div>';resultElement.dataset.result=JSON.stringify(j);}catch(e){resultElement.textContent='解析に失敗：'+e.message+'。短いMP4動画で再試行し、サーバーの /health を確認してください。'}}
+function sendMatchToAI(){postVideoToAI(videoFile.files[0],'/analyze/match',{jersey_numbers:String(state.settings.jersey1)+','+String(state.settings.jersey2)},matchAiResult)}
+function sendFormToAI(){postVideoToAI(formFile.files[0],'/analyze/form',{kick_type:formKind.value,dominant_foot:formFoot.value},formAiResult)}
+function exportData(){let blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='riku-football-lab-backup-'+today()+'.json';a.click();URL.revokeObjectURL(url)}
+importFile.addEventListener('change',async e=>{let f=e.target.files[0];if(!f)return;try{let s=JSON.parse(await f.text());if(!s.settings||!Array.isArray(s.trainings)||!Array.isArray(s.measures))throw Error();if(!confirm('現在のデータを読み込んだバックアップで置き換えますか？'))return;state=s;persist();alert('バックアップを読み込みました')}catch(err){alert('バックアップファイルを読み込めませんでした')}e.target.value=''});
+function clearData(){if(!confirm('すべての練習・分析・測定データを消去します。先にバックアップしましたか？'))return;if(!confirm('本当に消去しますか？この操作は元に戻せません。'))return;localStorage.removeItem(KEY);state={settings:{name:'陸玖',jersey1:10,jersey2:74,apiBaseUrl:''},menus:defaultMenus,trainings:[],measures:[],clips:[],forms:[]};persist()}
+let calDate=new Date(),selectedDate=today();
+function shiftMonth(n){calDate=new Date(calDate.getFullYear(),calDate.getMonth()+n,1);renderCalendar()}
+function renderCalendar(){let y=calDate.getFullYear(),m=calDate.getMonth();monthTitle.textContent=`${y}年 ${m+1}月`;let first=new Date(y,m,1).getDay(),days=new Date(y,m+1,0).getDate(),stamps=new Set(state.trainings.map(x=>x.date));let out=['日','月','火','水','木','金','土'].map(x=>`<div class="dayhead">${x}</div>`).join('');for(let i=0;i<first;i++)out+='<div class="day blank"></div>';for(let d=1;d<=days;d++){let dt=`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;out+=`<button class="day ${stamps.has(dt)?'stamped':''} ${dt===today()?'today':''}" onclick="selectCalendarDate('${dt}')" style="color:inherit">${d}${stamps.has(dt)?'<br>⚽':''}</button>`}calendarGrid.innerHTML=out;renderSelectedDate()}
+function selectCalendarDate(dt){selectedDate=dt;renderSelectedDate()}
+function renderSelectedDate(){selectedDateTitle.textContent=selectedDate+' の記録';let a=state.trainings.filter(x=>x.date===selectedDate);selectedDateRecords.innerHTML=a.length?a.map(x=>`<div class="listitem"><div class="grow"><b>${esc(x.menu)}</b><div class="tiny muted">${x.minutes}分・${esc(x.effort)} ${esc(x.note)}</div></div></div>`).join(''):'<div class="empty">この日の練習記録はありません</div>'}
+function renderAll(){let date=today(),month=date.slice(0,7),days=new Set(state.trainings.filter(x=>x.date.startsWith(month)).map(x=>x.date)).size;homeDays.innerHTML=`${days} <small>日</small>`;monthProgress.style.width=Math.min(100,days/12*100)+'%';homeVideos.innerHTML=`${state.clips.length+state.forms.length} <small>件</small>`;let sprint=state.measures.find(x=>x.type==='30m走');homeSprint.innerHTML=sprint?`${esc(sprint.value)} <small>${esc(sprint.unit)}</small>`:'—';homeNumbers.textContent=`${state.settings.jersey1} / ${state.settings.jersey2}`;dailyPlan.innerHTML=`<div class="listitem"><span class="tag good">おすすめ</span><div class="grow"><b>加速ドリブル＋受ける前の首振り</b><div class="tiny muted">10〜15分。最初のタッチを前へ置き、相手を見てからスピードに乗る。</div></div></div>`;
+trainDate.value=trainDate.value||date;measureDate.value=measureDate.value||date;
+trainMenu.innerHTML=state.menus.map((m,i)=>`<option value="${esc(m.name)}">${esc(m.category)}｜${esc(m.name)}</option>`).join('');
+menuList.innerHTML=state.menus.map((m,i)=>`<div class="listitem"><div class="grow"><b>${esc(m.name)}</b><div class="tiny muted">${esc(m.category)}・目安${m.minutes||10}分</div></div><button class="danger small" onclick="removeMenu(${i})">削除</button></div>`).join('');
+trainingRecords.innerHTML=state.trainings.length?state.trainings.slice(0,12).map(x=>`<div class="listitem"><div class="grow"><b>${esc(x.menu)}</b><div class="tiny muted">${x.date}・${x.minutes}分・${esc(x.effort)}</div>${x.note?`<div class="tiny">${esc(x.note)}</div>`:''}</div><button class="danger small" onclick="deleteItem('trainings',${x.id})">削除</button></div>`).join(''):'<div class="empty">まだ練習記録がありません</div>';
+clipRecords.innerHTML=state.clips.length?state.clips.map(x=>`<div class="listitem"><div class="scorebig">${x.score}</div><div class="grow"><b>${esc(x.title)}｜${esc(x.type)}</b><div class="tiny muted">${x.date}${x.time!==null?'・'+x.time+'秒':''}・評価 ${x.score}/100</div>${x.good?`<div class="tiny">👍 ${esc(x.good)}</div>`:''}${x.improve?`<div class="tiny">🎯 ${esc(x.improve)}</div>`:''}</div><button class="danger small" onclick="deleteItem('clips',${x.id})">削除</button></div>`).join(''):'<div class="empty">保存したプレー分析はありません</div>';
+formRecords.innerHTML=state.forms.length?state.forms.map(x=>`<div class="listitem"><div class="scorebig">${x.score}%</div><div class="grow"><b>${esc(x.title)}｜${esc(x.kind)}</b><div class="tiny muted">${x.date}・${esc(x.foot)}・${x.checked.length}/${x.total}項目</div>${x.note?`<div class="tiny">${esc(x.note)}</div>`:''}</div><button class="danger small" onclick="deleteItem('forms',${x.id})">削除</button></div>`).join(''):'<div class="empty">フォーム分析の記録はありません</div>';
+measureRecords.innerHTML=state.measures.length?state.measures.map(x=>`<div class="listitem"><div class="grow"><b>${esc(x.type)}：${esc(x.value)} ${esc(x.unit)}</b><div class="tiny muted">${x.date} ${esc(x.note||'')}</div></div><button class="danger small" onclick="deleteMeasure('${x.date}','${esc(x.type)}',${x.value})">削除</button></div>`).join(''):'<div class="empty">測定記録はありません</div>';
+allAnalysisRecords.innerHTML=(state.clips.length+state.forms.length)?[...state.clips.map(x=>({date:x.date,title:'動画：'+x.title,score:x.score+'点'})),...state.forms.map(x=>({date:x.date,title:'フォーム：'+x.title,score:x.score+'%'}))].sort((a,b)=>b.date.localeCompare(a.date)).map(x=>`<div class="listitem"><div class="grow"><b>${esc(x.title)}</b><div class="tiny muted">${x.date}</div></div><span class="tag">${esc(x.score)}</span></div>`).join(''):'<div class="empty">分析履歴はありません</div>';
+renderCalendar();
+}
+function deleteMeasure(d,t,v){if(!confirm('この測定記録を削除しますか？'))return;let idx=state.measures.findIndex(x=>x.date===d&&x.type===t&&x.value===v);if(idx>=0)state.measures.splice(idx,1);persist()}
+videoFile.addEventListener('change',()=>{let f=videoFile.files[0];if(!f)return;matchVideo.src=URL.createObjectURL(f);videoMeta.textContent=`読み込み：${f.name}（${(f.size/1024/1024).toFixed(1)} MB）`;matchVideo.onloadedmetadata=()=>{clipTime.value='0.0';videoMeta.textContent+=`・長さ ${matchVideo.duration.toFixed(1)} 秒`}})
+formFile.addEventListener('change',()=>{let f=formFile.files[0];if(!f)return;formVideo.src=URL.createObjectURL(f);formVideo.onloadedmetadata=()=>{}})
+formKind.addEventListener('change',renderChecks);
+load();renderChecks();renderAll();if(typeof apiBaseUrl!=='undefined'){apiBaseUrl.value=state.settings.apiBaseUrl||'';apiStatus.textContent=state.settings.apiBaseUrl?'保存済み：'+state.settings.apiBaseUrl:'未設定'}
+</script>
+</body>
+</html>
