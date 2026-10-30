@@ -62,6 +62,8 @@ def analyze_frame(frame, pose):
     visible = sum(1 for v in lm if v.visibility >= 0.5)
     left_knee = angle(p("LEFT_HIP")[:2], p("LEFT_KNEE")[:2], p("LEFT_ANKLE")[:2])
     right_knee = angle(p("RIGHT_HIP")[:2], p("RIGHT_KNEE")[:2], p("RIGHT_ANKLE")[:2])
+    left_hip = angle(p("LEFT_SHOULDER")[:2], p("LEFT_HIP")[:2], p("LEFT_KNEE")[:2])
+    right_hip = angle(p("RIGHT_SHOULDER")[:2], p("RIGHT_HIP")[:2], p("RIGHT_KNEE")[:2])
     shoulder_mid = [(p("LEFT_SHOULDER")[0] + p("RIGHT_SHOULDER")[0]) / 2,
                     (p("LEFT_SHOULDER")[1] + p("RIGHT_SHOULDER")[1]) / 2]
     hip_mid = [(p("LEFT_HIP")[0] + p("RIGHT_HIP")[0]) / 2,
@@ -83,6 +85,8 @@ def analyze_frame(frame, pose):
         "visible_landmarks": visible,
         "left_knee_angle_deg": left_knee,
         "right_knee_angle_deg": right_knee,
+        "left_hip_angle_deg": left_hip,
+        "right_hip_angle_deg": right_hip,
         "trunk_lean_image_angle_deg": trunk_angle,
         "landmarks": landmarks,
     }
@@ -97,9 +101,9 @@ def process_video(path: str, mode: str):
     if duration > MAX_SECONDS:
         cap.release()
         raise HTTPException(status_code=413, detail=f"動画が長すぎます。無料枠では{MAX_SECONDS}秒以内にしてください。")
-    # Sample at about one frame per second, capped to keep free-tier CPU use reasonable.
-    interval = max(1, int(fps)) if fps > 0 else 25
-    max_samples = 90
+    # Sample twice per second for better movement/form detail while limiting free-tier CPU use.
+    interval = max(1, int(fps / 2)) if fps > 0 else 12
+    max_samples = 180
     frames = []
     frame_idx = 0
     with mp_pose.Pose(static_image_mode=False, model_complexity=1,
@@ -120,19 +124,24 @@ def process_video(path: str, mode: str):
         raise HTTPException(status_code=422, detail="人物の姿勢を検出できませんでした。人物全身が見える明るい動画で再試行してください。")
     knees = [x[k] for x in frames for k in ("left_knee_angle_deg", "right_knee_angle_deg") if x.get(k) is not None]
     trunks = [x["trunk_lean_image_angle_deg"] for x in frames]
+    hips = [x[k] for x in frames for k in ("left_hip_angle_deg", "right_hip_angle_deg") if x.get(k) is not None]
     summary = {
         "sampled_pose_frames": len(frames),
         "duration_seconds": round(duration, 2),
         "average_left_right_knee_angle_deg": round(float(np.mean(knees)), 1) if knees else None,
         "average_trunk_lean_image_angle_deg": round(float(np.mean(trunks)), 1) if trunks else None,
+        "average_left_right_hip_angle_deg": round(float(np.mean(hips)), 1) if hips else None,
+        "sampling_interval_seconds": 0.5,
         "frames": frames,
     }
     if mode == "form":
         tips = []
         if summary["average_left_right_knee_angle_deg"] is not None:
             tips.append("膝角度は映像上の推定値です。蹴る瞬間の軸足・膝の曲がりを、正面と横からの動画で比較してください。")
+        if summary["average_left_right_hip_angle_deg"] is not None:
+            tips.append("股関節角度（左右平均・画像上の推定）も算出しました。蹴る直前からインパクト後までの変化を確認してください。")
         tips.append("体幹の傾きは画像上の推定値です。カメラ位置・遠近・選手の向きで変わるため、数値だけで良し悪しを断定しません。")
-        tips.append("この解析ではボールとの接触位置、キック速度、狙ったコースは自動判定していません。")
+        tips.append("この解析では軸足とボールの距離、足とボールの接触位置、キック速度、狙ったコースは自動判定していません。")
         summary["feedback"] = tips
     else:
         summary["feedback"] = [
