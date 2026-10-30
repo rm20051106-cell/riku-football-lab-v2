@@ -142,7 +142,34 @@ function saveSettings(){state.settings={...state.settings,name:playerName.value.
 function saveApiUrl(){let u=apiBaseUrl.value.trim().replace(/\/$/,'');if(u&&!/^https:\/\//i.test(u)){alert('https:// から始まるURLを入力してください');return}state.settings.apiBaseUrl=u;persist();apiStatus.textContent=u?'保存済み：'+u:'未設定';alert('AIサーバーURLを保存しました')}
 function getApiUrl(){return (state.settings.apiBaseUrl||'').trim().replace(/\/$/,'')}
 async function testApiConnection(){let u=getApiUrl();if(!u){apiStatus.textContent='未設定です。RenderのURLを入力してください。';return}apiStatus.textContent='接続確認中…';try{let r=await fetch(u+'/health');if(!r.ok)throw Error('HTTP '+r.status);let j=await r.json();apiStatus.textContent='接続成功：'+(j.service||'AI API');}catch(e){apiStatus.textContent='接続できませんでした。URL・公開状態・サーバーの起動を確認してください。';}}
-async function postVideoToAI(file, endpoint, extra, resultElement){let u=getApiUrl();if(!u){resultElement.textContent='AIサーバーURLが未設定です。設定画面でURLを保存してください。';return}if(!file){resultElement.textContent='先に動画ファイルを選択してください。';return}resultElement.textContent='動画を送信して解析中です。無料サーバーでは数分かかる場合があります…';try{let fd=new FormData();fd.append('file',file,file.name);Object.entries(extra||{}).forEach(([k,v])=>fd.append(k,v));let r=await fetch(u+endpoint,{method:'POST',body:fd});let j=await r.json();if(!r.ok)throw Error(j.detail||('HTTP '+r.status));let s=j.summary||{};resultElement.innerHTML='<div class="note success"><b>サーバー解析完了</b><br>検出姿勢フレーム：'+(s.sampled_pose_frames??'—')+'<br>平均膝角度（推定）：'+(s.average_left_right_knee_angle_deg??'—')+'°<br>体幹傾き（画像上の推定）：'+(s.average_trunk_lean_image_angle_deg??'—')+'°<br><br>'+(s.feedback||[]).map(x=>esc(x)).join('<br>')+'</div>';resultElement.dataset.result=JSON.stringify(j);}catch(e){resultElement.textContent='解析に失敗：'+e.message+'。短いMP4動画で再試行し、サーバーの /health を確認してください。'}}
+async function postVideoToAI(file, endpoint, extra, resultElement){
+ let u=getApiUrl();
+ if(!u){resultElement.textContent='AIサーバーURLが未設定です。設定画面でURLを保存してください。';return}
+ if(!file){resultElement.textContent='先に動画ファイルを選択してください。';return}
+ if(file.size>120*1024*1024){resultElement.textContent='動画が120MBを超えています。短くするか画質を下げてください。';return}
+ resultElement.textContent='AIサーバーの起動を確認しています…';
+ let stage='サーバー接続';
+ try{
+  let health=await fetch(u+'/health',{method:'GET',cache:'no-store'});
+  if(!health.ok)throw Error('health HTTP '+health.status);
+  let hj=await health.json();
+  if(!hj.ok)throw Error('health応答が正常ではありません');
+  stage='動画送信・解析';
+  resultElement.textContent='サーバー接続OK。動画を送信して解析中です。無料サーバーでは起動・解析に数分かかる場合があります…';
+  let fd=new FormData();fd.append('file',file,file.name||'upload.mp4');
+  Object.entries(extra||{}).forEach(([k,v])=>fd.append(k,v));
+  let controller=new AbortController();let timeout=setTimeout(()=>controller.abort(),240000);
+  let response;try{response=await fetch(u+endpoint,{method:'POST',body:fd,signal:controller.signal})}finally{clearTimeout(timeout)}
+  let raw=await response.text();let j;try{j=JSON.parse(raw)}catch(e){throw Error('サーバー応答を読み取れません（HTTP '+response.status+'）。Renderのログを確認してください')}
+  if(!response.ok)throw Error(j.detail||('HTTP '+response.status));
+  let summary=j.summary||{};
+  resultElement.innerHTML='<div class="note success"><b>サーバー解析完了</b><br>検出姿勢フレーム：'+(summary.sampled_pose_frames??'—')+'<br>平均膝角度（推定）：'+(summary.average_left_right_knee_angle_deg??'—')+'°<br>体幹傾き（画像上の推定）：'+(summary.average_trunk_lean_image_angle_deg??'—')+'°<br><br>'+(summary.feedback||[]).map(x=>esc(x)).join('<br>')+'</div>';
+  resultElement.dataset.result=JSON.stringify(j);
+ }catch(e){
+  let msg=e.name==='AbortError'?'解析が4分でタイムアウトしました。動画を短くして再試行してください。':e.message==='Load failed'?'通信に失敗しました。AIサーバーが起動中か、通信・CORS設定を確認してください。':'['+stage+'] '+e.message;
+  resultElement.textContent='解析に失敗：'+msg+'。設定画面の「接続テスト」も確認してください。';
+ }
+}
 function sendMatchToAI(){postVideoToAI(videoFile.files[0],'/analyze/match',{jersey_numbers:String(state.settings.jersey1)+','+String(state.settings.jersey2)},matchAiResult)}
 function sendFormToAI(){postVideoToAI(formFile.files[0],'/analyze/form',{kick_type:formKind.value,dominant_foot:formFoot.value},formAiResult)}
 function exportData(){let blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='riku-football-lab-backup-'+today()+'.json';a.click();URL.revokeObjectURL(url)}
