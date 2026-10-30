@@ -152,8 +152,11 @@ async function postVideoToAI(file, endpoint, extra, resultElement){
  try{
   let health=await fetch(u+'/health',{method:'GET',cache:'no-store'});
   if(!health.ok)throw Error('health HTTP '+health.status);
-  let hj=await health.json();
-  if(!hj.ok)throw Error('health応答が正常ではありません');
+  let healthText=await health.text();
+  let hj;
+  try{hj=JSON.parse(healthText)}catch(e){throw Error('health応答をJSONとして読めません：'+healthText.slice(0,160))}
+  if(hj.ok===false)throw Error('health応答が異常です：'+healthText.slice(0,160));
+  if(hj.ok!==true)throw Error('health応答にok:trueがありません：'+healthText.slice(0,160));
   stage='動画送信・解析';
   resultElement.textContent='サーバー接続OK。動画を送信して解析中です。無料サーバーでは起動・解析に数分かかる場合があります…';
   let fd=new FormData();fd.append('file',file,file.name||'upload.mp4');
