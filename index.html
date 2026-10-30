@@ -166,7 +166,7 @@ async function postVideoToAI(file, endpoint, extra, resultElement){
   let raw=await response.text();let j;try{j=JSON.parse(raw)}catch(e){throw Error('サーバー応答を読み取れません（HTTP '+response.status+'）。Renderのログを確認してください')}
   if(!response.ok)throw Error(j.detail||('HTTP '+response.status));
   let summary=j.summary||{};
-  resultElement.innerHTML='<div class="note success"><b>サーバー解析完了</b><br>検出姿勢フレーム：'+(summary.sampled_pose_frames??'—')+'<br>平均膝角度（推定）：'+(summary.average_left_right_knee_angle_deg??'—')+'°<br>体幹傾き（画像上の推定）：'+(summary.average_trunk_lean_image_angle_deg??'—')+'°<br><br>'+(summary.feedback||[]).map(x=>esc(x)).join('<br>')+'</div>';
+  resultElement.innerHTML='<div class="note success"><b>サーバー解析完了</b><br>検出姿勢フレーム：'+(summary.sampled_pose_frames??'—')+'<br>解析間隔：約'+(summary.sampling_interval_seconds??1)+'秒ごと<br>膝角度（左右平均・推定）：'+(summary.average_left_right_knee_angle_deg??'—')+'°<br>股関節角度（左右平均・推定）：'+(summary.average_left_right_hip_angle_deg??'—')+'°<br>体幹傾き（画像上の推定）：'+(summary.average_trunk_lean_image_angle_deg??'—')+'°<br><br>'+(summary.feedback||[]).map(x=>esc(x)).join('<br>')+'</div>';
   resultElement.dataset.result=JSON.stringify(j);
  }catch(e){
   let msg=e.name==='AbortError'?'解析が4分でタイムアウトしました。動画を短くして再試行してください。':e.message==='Load failed'?'通信に失敗しました。AIサーバーが起動中か、通信・CORS設定を確認してください。':'['+stage+'] '+e.message;
