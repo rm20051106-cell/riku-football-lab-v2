@@ -1,4 +1,5 @@
 import os
+import subprocess
 import tempfile
 from pathlib import Path
 from typing import Optional
@@ -164,7 +165,37 @@ async def analyze_upload(file: UploadFile, mode: str):
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             tmp.write(data)
             temp_path = tmp.name
-        return process_video(temp_path, mode)
+        try:
+            return process_video(temp_path, mode)
+        except HTTPException as exc:
+            # iPhone videos may be MOV/HEVC. OpenCV often cannot decode them
+            # directly, so normalize to broadly supported H.264 MP4 with ffmpeg.
+            if "動画を開けませんでした" not in str(exc.detail):
+                raise
+            converted_path = None
+            try:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as converted:
+                    converted_path = converted.name
+                command = [
+                    "ffmpeg", "-y", "-i", temp_path,
+                    "-map", "0:v:0", "-an",
+                    "-vf", "scale='min(1280,iw)':-2",
+                    "-c:v", "libx264", "-preset", "ultrafast",
+                    "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+                    converted_path,
+                ]
+                result = subprocess.run(command, capture_output=True, text=True, timeout=90)
+                if result.returncode != 0:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="動画をMP4に変換できませんでした。iPhoneの写真アプリで再生できる動画を選び直してください。"
+                    )
+                return process_video(converted_path, mode)
+            except subprocess.TimeoutExpired:
+                raise HTTPException(status_code=408, detail="動画変換が時間内に完了しませんでした。")
+            finally:
+                if converted_path and os.path.exists(converted_path):
+                    os.remove(converted_path)
     finally:
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
