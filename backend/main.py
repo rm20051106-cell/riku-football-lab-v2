@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 APP_NAME = "RIKU FOOTBALL LAB Free AI Analysis API"
 MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "120"))
-MAX_SECONDS = int(os.getenv("MAX_VIDEO_SECONDS", "180"))
+MAX_SECONDS = int(os.getenv("MAX_VIDEO_SECONDS", "60"))
 
 app = FastAPI(title=APP_NAME, version="0.1.0")
 # Public demo configuration. Restrict CORS to the GitHub Pages URL after deployment.
@@ -125,11 +125,11 @@ def process_video(path: str, mode: str, camera_angle: str = "未選択"):
     if duration > MAX_SECONDS:
         cap.release()
         raise HTTPException(status_code=413, detail=f"動画が長すぎます。無料枠では{MAX_SECONDS}秒以内にしてください。")
-    # Sample up to three times per second. This is still a pose trend, not true ball-contact detection.
-    target_sample_rate = 3.0
+    # Sample once per second to keep 60-second clips practical on the free CPU tier.
+    target_sample_rate = 1.0
     interval = max(1, int(round(fps / target_sample_rate))) if fps > 0 else 8
     actual_interval = interval / fps if fps > 0 else 1 / target_sample_rate
-    max_samples = 360
+    max_samples = 60
     frames = []
     frame_idx = 0
     with mp_pose.Pose(static_image_mode=False, model_complexity=1,
@@ -140,6 +140,10 @@ def process_video(path: str, mode: str, camera_angle: str = "未選択"):
             if not ok:
                 break
             if frame_idx % interval == 0:
+                h, w = frame.shape[:2]
+                if w > 960:
+                    new_h = max(1, int(round(h * 960 / w)))
+                    frame = cv2.resize(frame, (960, new_h), interpolation=cv2.INTER_AREA)
                 metrics = analyze_frame(frame, pose)
                 if metrics:
                     frames.append({"time_seconds": round(frame_idx / fps, 2) if fps > 0 else frame_idx,
