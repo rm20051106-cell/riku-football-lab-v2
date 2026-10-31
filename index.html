@@ -234,10 +234,11 @@ function renderAiFormCompare(){
  const el=document.getElementById('aiFormCompare');if(!el)return;
  const all=(state.aiFormAnalyses||[]);const newer=all[0];
  if(!newer){el.innerHTML='<div class="empty">AI解析を保存すると比較できます。</div>';return}
- const older=all.slice(1).find(x=>(x.cameraAngle||'未選択')===(newer.cameraAngle||'未選択'));
- if(!older){el.innerHTML='<div class="empty">今回と同じ撮影角度（'+esc(newer.cameraAngle||'未選択')+'）の過去解析がありません。角度をそろえて撮影すると、より公平に比較できます。</div>';return}
+ const sameSetup=x=>(x.cameraAngle||'未選択')===(newer.cameraAngle||'未選択')&&(x.kind||'シュート')===(newer.kind||'シュート')&&(x.foot||'右足')===(newer.foot||'右足');
+ const older=all.slice(1).find(sameSetup);
+ if(!older){el.innerHTML='<div class="empty">同じ撮影角度・キック種別・利き足の過去解析がありません。条件をそろえて撮影すると、より公平に比較できます。</div>';return}
  const metrics=[['膝角度',newer.knee,older.knee],['股関節角度',newer.hip,older.hip],['体幹傾き',newer.trunk,older.trunk]];
- el.innerHTML='<div class="tiny muted">撮影角度：'+esc(newer.cameraAngle||'未選択')+'（同じ角度の記録だけを比較）</div><div class="tiny muted">新しい記録：'+esc(newer.date)+'　／　前回：'+esc(older.date)+'</div><div class="tiny muted">角度の差を示すだけで、改善・悪化の判定ではありません。撮影条件や動作中のタイミングが違うと比較できません。</div>'+metrics.map(m=>{if(!Number.isFinite(m[1])||!Number.isFinite(m[2]))return '<div class="listitem"><b>'+m[0]+'</b><span class="tiny muted">比較データ不足</span></div>';let d=m[1]-m[2],sign=d>0?'+':'';return '<div class="listitem"><div class="grow"><b>'+m[0]+'</b><div class="tiny">今回 '+m[1]+'°　前回 '+m[2]+'°</div></div><b>'+sign+d.toFixed(1)+'°</b></div>'}).join('')+'<div class="tiny muted">※全動画の平均値同士の比較です。蹴る瞬間だけを切り出した比較ではありません。</div>';
+ el.innerHTML='<div class="tiny muted">比較条件：'+esc(newer.cameraAngle||'未選択')+'・'+esc(newer.kind||'シュート')+'・'+esc(newer.foot||'右足')+'（3条件が同じ記録のみ）</div><div class="tiny muted">新しい記録：'+esc(newer.date)+'　／　前回：'+esc(older.date)+'</div><div class="tiny muted">角度の差を示すだけで、改善・悪化の判定ではありません。撮影位置・距離・動作中のタイミングもそろえてください。</div>'+metrics.map(m=>{if(!Number.isFinite(m[1])||!Number.isFinite(m[2]))return '<div class="listitem"><b>'+m[0]+'</b><span class="tiny muted">比較データ不足</span></div>';let d=m[1]-m[2],sign=d>0?'+':'';return '<div class="listitem"><div class="grow"><b>'+m[0]+'</b><div class="tiny">今回 '+m[1]+'°　前回 '+m[2]+'°</div></div><b>'+sign+d.toFixed(1)+'°</b></div>'}).join('')+'<div class="tiny muted">※全動画の平均値同士の比較です。蹴る瞬間だけを切り出した比較ではありません。</div>';
 }
 function deleteAiFormAnalysis(id){if(!confirm('このAI解析履歴を削除しますか？'))return;state.aiFormAnalyses=(state.aiFormAnalyses||[]).filter(x=>x.id!==id);persist()}
 function deleteMeasure(d,t,v){if(!confirm('この測定記録を削除しますか？'))return;let idx=state.measures.findIndex(x=>x.date===d&&x.type===t&&x.value===v);if(idx>=0)state.measures.splice(idx,1);persist()}
