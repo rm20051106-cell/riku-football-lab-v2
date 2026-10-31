@@ -91,7 +91,31 @@ def analyze_frame(frame, pose):
         "landmarks": landmarks,
     }
 
-def process_video(path: str, mode: str):
+
+def camera_angle_guidance(camera_angle: str):
+    guidance = {
+        "斜め後ろから": [
+            "軸足の置き位置と、蹴り足の振り抜きを確認しやすい角度です。",
+            "骨盤・肩の回転も映りますが、ボールとの実距離や接触位置は自動測定できません。",
+        ],
+        "横から": [
+            "助走から軸足を置く動き、蹴り足の前後スイング、体幹の前後傾を確認しやすい角度です。",
+            "左右の膝の向きや身体の左右差は判断しにくい場合があります。",
+        ],
+        "正面から": [
+            "左右の足幅、膝の向き、体幹の左右への傾きを確認しやすい角度です。",
+            "奥行き方向の軸足とボールの距離は判断しにくい角度です。",
+        ],
+        "斜め前から": [
+            "上半身・骨盤の向きと、蹴り足の通り道を確認しやすい角度です。",
+            "身体で足元が隠れる瞬間があるため、接触位置は断定できません。",
+        ],
+    }
+    return guidance.get(camera_angle, [
+        "撮影角度が未指定です。全身とボールが映る動画で、同じ角度・距離から撮影すると比較しやすくなります。"
+    ])
+
+def process_video(path: str, mode: str, camera_angle: str = "未選択"):
     cap = cv2.VideoCapture(path)
     if not cap.isOpened():
         raise HTTPException(status_code=400, detail="動画を開けませんでした。MP4など一般的な形式でお試しください。")
@@ -160,6 +184,8 @@ def process_video(path: str, mode: str):
         tips.append("足先の画像上の移動量も参考値として算出しますが、実速度ではありません。カメラ移動・遠近・遮蔽の影響を受けます。")
         tips.append("この解析では軸足とボールの距離、足とボールの接触位置、インパクト時刻、キック速度、狙ったコースは自動判定していません。")
         summary["feedback"] = tips
+        summary["camera_angle_guidance"] = camera_angle_guidance(camera_angle)
+        summary["camera_angle"] = camera_angle
     else:
         summary["feedback"] = [
             "この無料版は動画から姿勢をサンプリングします。背番号のOCR認識・選手の個体識別・追跡・プレーの意味理解はまだ実装していません。",
@@ -227,10 +253,13 @@ async def analyze_upload(file: UploadFile, mode: str):
             os.remove(temp_path)
 
 @app.post("/analyze/form")
-async def analyze_form(file: UploadFile = File(...), kick_type: str = Form("シュート"), dominant_foot: str = Form("右足")):
+async def analyze_form(file: UploadFile = File(...), kick_type: str = Form("シュート"), dominant_foot: str = Form("右足"), camera_angle: str = Form("未選択")):
     result = await analyze_upload(file, "form")
     result["kick_type"] = kick_type
     result["dominant_foot"] = dominant_foot
+    result["camera_angle"] = camera_angle
+    result["summary"]["camera_angle"] = camera_angle
+    result["summary"]["camera_angle_guidance"] = camera_angle_guidance(camera_angle)
     return result
 
 @app.post("/analyze/match")
