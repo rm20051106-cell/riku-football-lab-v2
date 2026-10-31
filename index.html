@@ -167,11 +167,71 @@ function buildAiFormItems(sm){
   {name:'蹴り足の振り抜き',status:'未判定',detail:'動画を目視確認',source:'蹴り足の動作追跡・フォロースルー評価は未実装です。'}
  ];
 }
+async function compressVideoForAI(file, resultElement){
+ // Re-encode locally before upload: 640px wide, 12fps, silent H.264/VP8 where supported.
+ // The original file remains untouched in Photos and in the local video player.
+ if(!file || !file.type.startsWith('video/')) return file;
+ resultElement.textContent='動画を軽量化しています（端末内で変換中）…';
+ const video=document.createElement('video');
+ video.muted=true; video.playsInline=true; video.preload='auto';
+ const sourceUrl=URL.createObjectURL(file);
+ let stream=null, recorder=null;
+ try{
+  await new Promise((resolve,reject)=>{
+   video.onloadedmetadata=resolve; video.onerror=()=>reject(Error('動画を端末内で読み込めませんでした'));
+   video.src=sourceUrl; video.load();
+  });
+  if(!video.videoWidth || !video.videoHeight) throw Error('動画サイズを取得できません');
+  const duration=Math.min(video.duration||60,60);
+  const scale=Math.min(1,640/video.videoWidth);
+  const canvas=document.createElement('canvas');
+  canvas.width=Math.max(2,Math.round(video.videoWidth*scale/2)*2);
+  canvas.height=Math.max(2,Math.round(video.videoHeight*scale/2)*2);
+  const ctx=canvas.getContext('2d',{alpha:false});
+  if(!ctx || !canvas.captureStream || !window.MediaRecorder) throw Error('この端末のブラウザは動画変換に対応していません');
+  stream=canvas.captureStream(12);
+  const mimeTypes=['video/mp4;codecs=avc1.42E01E','video/mp4','video/webm;codecs=vp8','video/webm'];
+  const mimeType=mimeTypes.find(t=>MediaRecorder.isTypeSupported(t))||'';
+  recorder=new MediaRecorder(stream,mimeType?{mimeType,videoBitsPerSecond:650000}: {videoBitsPerSecond:650000});
+  const chunks=[];
+  recorder.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data)};
+  const stopped=new Promise((resolve,reject)=>{recorder.onstop=resolve;recorder.onerror=()=>reject(Error('動画の変換に失敗しました'))});
+  recorder.start(250);
+  await new Promise((resolve,reject)=>{
+   let start=performance.now();
+   const draw=()=>{
+    if(video.readyState>=2)ctx.drawImage(video,0,0,canvas.width,canvas.height);
+    if(video.ended || video.currentTime>=duration || performance.now()-start>(duration+8)*1000){resolve();return}
+    requestAnimationFrame(draw);
+   };
+   video.onended=resolve;
+   video.onerror=()=>reject(Error('動画の再生中にエラーが発生しました'));
+   video.play().then(draw).catch(reject);
+  });
+  if(recorder.state!=='inactive')recorder.stop();
+  await stopped;
+  const type=recorder.mimeType||chunks[0]?.type||'video/webm';
+  const blob=new Blob(chunks,{type});
+  if(!blob.size) throw Error('変換後の動画が空です');
+  const ext=type.includes('mp4')?'mp4':'webm';
+  const compressed=new File([blob],(file.name||'video').replace(/\.[^.]+$/,'')+'_軽量.'+ext,{type});
+  if(compressed.size>=file.size) return file;
+  resultElement.textContent='軽量化完了：'+(file.size/1024/1024).toFixed(1)+'MB → '+(compressed.size/1024/1024).toFixed(1)+'MB。AI解析へ送信します…';
+  return compressed;
+ }catch(err){
+  resultElement.textContent='端末内変換が使えないため元動画で送信します…';
+  return file;
+ }finally{
+  if(recorder && recorder.state!=='inactive'){try{recorder.stop()}catch(e){}}
+  if(stream)stream.getTracks().forEach(t=>t.stop());
+  video.removeAttribute('src'); video.load(); URL.revokeObjectURL(sourceUrl);
+ }
+}
 async function postVideoToAI(file, endpoint, extra, resultElement){
  let u=getApiUrl();
  if(!u){resultElement.textContent='AIサーバーURLが未設定です。設定画面でURLを保存してください。';return}
  if(!file){resultElement.textContent='先に動画ファイルを選択してください。';return}
- if(file.size>120*1024*1024){resultElement.textContent='動画が120MBを超えています。短くするか画質を下げてください。';return}
+ if(file.size>500*1024*1024){resultElement.textContent='元動画が500MBを超えています。写真アプリで短くしてから選択してください。';return}
  resultElement.textContent='AIサーバーの起動を確認しています…';
  let stage='サーバー接続';
  try{
@@ -182,8 +242,11 @@ async function postVideoToAI(file, endpoint, extra, resultElement){
   try{hj=JSON.parse(healthText)}catch(e){throw Error('health応答をJSONとして読めません：'+healthText.slice(0,160))}
   if(hj.ok===false)throw Error('health応答が異常です：'+healthText.slice(0,160));
   if(hj.ok!==true && !(hj.status==='ready' && hj.service==='RIKU FOOTBALL LAB Free AI Analysis API'))throw Error('health応答が想定外です：'+healthText.slice(0,160));
+  stage='端末内動画変換';
+  file=await compressVideoForAI(file,resultElement);
+  if(file.size>120*1024*1024)throw Error('軽量化後も120MBを超えています。動画を短くして再試行してください。');
   stage='動画送信・解析';
-  resultElement.textContent='サーバー接続OK。動画を送信して解析中です。無料サーバーでは起動・解析に数分かかる場合があります…';
+  resultElement.textContent='軽量動画をサーバーへ送信して解析中です…';
   let fd=new FormData();fd.append('file',file,file.name||'upload.mp4');
   Object.entries(extra||{}).forEach(([k,v])=>fd.append(k,v));
   let controller=new AbortController();let timeout=setTimeout(()=>controller.abort(),480000);
