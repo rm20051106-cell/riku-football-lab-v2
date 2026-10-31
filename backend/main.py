@@ -101,9 +101,11 @@ def process_video(path: str, mode: str):
     if duration > MAX_SECONDS:
         cap.release()
         raise HTTPException(status_code=413, detail=f"動画が長すぎます。無料枠では{MAX_SECONDS}秒以内にしてください。")
-    # Sample twice per second for better movement/form detail while limiting free-tier CPU use.
-    interval = max(1, int(fps / 2)) if fps > 0 else 12
-    max_samples = 180
+    # Sample up to three times per second. This is still a pose trend, not true ball-contact detection.
+    target_sample_rate = 3.0
+    interval = max(1, int(round(fps / target_sample_rate))) if fps > 0 else 8
+    actual_interval = interval / fps if fps > 0 else 1 / target_sample_rate
+    max_samples = 360
     frames = []
     frame_idx = 0
     with mp_pose.Pose(static_image_mode=False, model_complexity=1,
@@ -125,13 +127,27 @@ def process_video(path: str, mode: str):
     knees = [x[k] for x in frames for k in ("left_knee_angle_deg", "right_knee_angle_deg") if x.get(k) is not None]
     trunks = [x["trunk_lean_image_angle_deg"] for x in frames]
     hips = [x[k] for x in frames for k in ("left_hip_angle_deg", "right_hip_angle_deg") if x.get(k) is not None]
+    # Estimate ankle/foot landmark movement between sampled frames in normalized image coordinates.
+    # Values are image-widths per second, not real-world speed; camera motion and perspective affect them.
+    for i, current in enumerate(frames):
+        for side in ("left", "right"):
+            key = side + "_foot_index"
+            prev = frames[i - 1] if i > 0 else None
+            a = current.get("landmarks", {}).get(key)
+            b = prev.get("landmarks", {}).get(key) if prev else None
+            dt = (current.get("time_seconds", 0) - prev.get("time_seconds", 0)) if prev else 0
+            if a and b and dt > 0 and a[2] >= 0.5 and b[2] >= 0.5:
+                current[side + "_foot_image_motion_per_sec"] = round(float(np.linalg.norm(np.array(a[:2]) - np.array(b[:2])) / dt), 4)
+            else:
+                current[side + "_foot_image_motion_per_sec"] = None
     summary = {
         "sampled_pose_frames": len(frames),
         "duration_seconds": round(duration, 2),
         "average_left_right_knee_angle_deg": round(float(np.mean(knees)), 1) if knees else None,
         "average_trunk_lean_image_angle_deg": round(float(np.mean(trunks)), 1) if trunks else None,
         "average_left_right_hip_angle_deg": round(float(np.mean(hips)), 1) if hips else None,
-        "sampling_interval_seconds": 0.5,
+        "sampling_interval_seconds": round(actual_interval, 3),
+        "sampling_rate_fps": round(1 / actual_interval, 2) if actual_interval > 0 else None,
         "frames": frames,
     }
     if mode == "form":
@@ -141,7 +157,8 @@ def process_video(path: str, mode: str):
         if summary["average_left_right_hip_angle_deg"] is not None:
             tips.append("股関節角度（左右平均・画像上の推定）も算出しました。蹴る直前からインパクト後までの変化を確認してください。")
         tips.append("体幹の傾きは画像上の推定値です。カメラ位置・遠近・選手の向きで変わるため、数値だけで良し悪しを断定しません。")
-        tips.append("この解析では軸足とボールの距離、足とボールの接触位置、キック速度、狙ったコースは自動判定していません。")
+        tips.append("足先の画像上の移動量も参考値として算出しますが、実速度ではありません。カメラ移動・遠近・遮蔽の影響を受けます。")
+        tips.append("この解析では軸足とボールの距離、足とボールの接触位置、インパクト時刻、キック速度、狙ったコースは自動判定していません。")
         summary["feedback"] = tips
     else:
         summary["feedback"] = [
