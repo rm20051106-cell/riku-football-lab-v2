@@ -189,7 +189,7 @@ async function postVideoToAI(file, endpoint, extra, resultElement){
   if(!response.ok)throw Error('送信先：'+u+endpoint+' / HTTP '+response.status+' / '+(j&&j.detail?j.detail:raw.slice(0,240)||'応答本文なし'));
   if(!j)throw Error('送信先：'+u+endpoint+' / HTTP '+response.status+' / JSONではない応答：'+raw.slice(0,240));
   let summary=j.summary||{};
-  resultElement.innerHTML='<div class="note success"><b>サーバー解析完了</b><br>検出姿勢フレーム：'+(summary.sampled_pose_frames??'—')+'<br>解析間隔：約'+(summary.sampling_interval_seconds??1)+'秒ごと（'+(summary.sampling_rate_fps??'—')+'回/秒）<br>膝角度（左右平均・推定）：'+(summary.average_left_right_knee_angle_deg??'—')+'°<br>股関節角度（左右平均・推定）：'+(summary.average_left_right_hip_angle_deg??'—')+'°<br>体幹傾き（画像上の推定）：'+(summary.average_trunk_lean_image_angle_deg??'—')+'°<br><br>'+(summary.feedback||[]).map(x=>esc(x)).join('<br>')+'</div>';
+  resultElement.innerHTML='<div class="note success"><b>サーバー解析完了</b><br>検出姿勢フレーム：'+(summary.sampled_pose_frames??'—')+'<br>解析間隔：約'+(summary.sampling_interval_seconds??1)+'秒ごと（'+(summary.sampling_rate_fps??'—')+'回/秒）<br>膝角度（左右平均・推定）：'+(summary.average_left_right_knee_angle_deg??'—')+'°<br>股関節角度（左右平均・推定）：'+(summary.average_left_right_hip_angle_deg??'—')+'°<br>体幹傾き（画像上の推定）：'+(summary.average_trunk_lean_image_angle_deg??'—')+'°<br><br><b>撮影角度：'+esc(summary.camera_angle||extra.camera_angle||'未選択')+'</b><br>'+(summary.camera_angle_guidance||[]).map(x=>'・'+esc(x)).join('<br>')+'<br><br>'+(summary.feedback||[]).map(x=>esc(x)).join('<br>')+'</div>';
   resultElement.dataset.result=JSON.stringify(j);
   if(endpoint==='/analyze/form'){
    state.aiFormAnalyses=state.aiFormAnalyses||[];
@@ -232,11 +232,12 @@ renderCalendar();
 }
 function renderAiFormCompare(){
  const el=document.getElementById('aiFormCompare');if(!el)return;
- const a=(state.aiFormAnalyses||[]).slice(0,2);
- if(a.length<2){el.innerHTML='<div class="empty">解析を2回以上保存すると、前回との数値差を表示します。</div>';return}
- const newer=a[0],older=a[1];
+ const all=(state.aiFormAnalyses||[]);const newer=all[0];
+ if(!newer){el.innerHTML='<div class="empty">AI解析を保存すると比較できます。</div>';return}
+ const older=all.slice(1).find(x=>(x.cameraAngle||'未選択')===(newer.cameraAngle||'未選択'));
+ if(!older){el.innerHTML='<div class="empty">今回と同じ撮影角度（'+esc(newer.cameraAngle||'未選択')+'）の過去解析がありません。角度をそろえて撮影すると、より公平に比較できます。</div>';return}
  const metrics=[['膝角度',newer.knee,older.knee],['股関節角度',newer.hip,older.hip],['体幹傾き',newer.trunk,older.trunk]];
- el.innerHTML='<div class="tiny muted">新しい記録：'+esc(newer.date)+'　／　前回：'+esc(older.date)+'</div><div class="tiny muted">角度の差を示すだけで、改善・悪化の判定ではありません。撮影条件や動作中のタイミングが違うと比較できません。</div>'+metrics.map(m=>{if(!Number.isFinite(m[1])||!Number.isFinite(m[2]))return '<div class="listitem"><b>'+m[0]+'</b><span class="tiny muted">比較データ不足</span></div>';let d=m[1]-m[2],sign=d>0?'+':'';return '<div class="listitem"><div class="grow"><b>'+m[0]+'</b><div class="tiny">今回 '+m[1]+'°　前回 '+m[2]+'°</div></div><b>'+sign+d.toFixed(1)+'°</b></div>'}).join('')+'<div class="tiny muted">※全動画の平均値同士の比較です。蹴る瞬間だけを切り出した比較ではありません。</div>';
+ el.innerHTML='<div class="tiny muted">撮影角度：'+esc(newer.cameraAngle||'未選択')+'（同じ角度の記録だけを比較）</div><div class="tiny muted">新しい記録：'+esc(newer.date)+'　／　前回：'+esc(older.date)+'</div><div class="tiny muted">角度の差を示すだけで、改善・悪化の判定ではありません。撮影条件や動作中のタイミングが違うと比較できません。</div>'+metrics.map(m=>{if(!Number.isFinite(m[1])||!Number.isFinite(m[2]))return '<div class="listitem"><b>'+m[0]+'</b><span class="tiny muted">比較データ不足</span></div>';let d=m[1]-m[2],sign=d>0?'+':'';return '<div class="listitem"><div class="grow"><b>'+m[0]+'</b><div class="tiny">今回 '+m[1]+'°　前回 '+m[2]+'°</div></div><b>'+sign+d.toFixed(1)+'°</b></div>'}).join('')+'<div class="tiny muted">※全動画の平均値同士の比較です。蹴る瞬間だけを切り出した比較ではありません。</div>';
 }
 function deleteAiFormAnalysis(id){if(!confirm('このAI解析履歴を削除しますか？'))return;state.aiFormAnalyses=(state.aiFormAnalyses||[]).filter(x=>x.id!==id);persist()}
 function deleteMeasure(d,t,v){if(!confirm('この測定記録を削除しますか？'))return;let idx=state.measures.findIndex(x=>x.date===d&&x.type===t&&x.value===v);if(idx>=0)state.measures.splice(idx,1);persist()}
