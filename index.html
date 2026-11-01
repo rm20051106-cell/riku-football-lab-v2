@@ -277,6 +277,7 @@ function renderHighlightSaveLink(url,filename){
  return '<div class="card" style="margin-top:8px"><b>iPhoneに保存</b><div class="tiny muted">下のリンクで動画を開き、iPhoneの共有ボタンから「ファイルに保存」を選んでください。サーバー再起動前に保存しておくと安心です。</div><div style="margin-top:7px"><a href="'+esc(full)+'" target="_blank" rel="noopener">動画を開いてiPhoneに保存する</a></div></div>';
 }
 function openMatchEventInHistory(matchId,eventId){
+ showView('video');
  const detail=document.getElementById('match-scan-detail-'+matchId);
  if(detail){detail.hidden=false;const article=[...detail.querySelectorAll('.match-event-timeline article')].find(el=>el.dataset.eventId===String(eventId));detail.scrollIntoView({behavior:'smooth',block:'start'});if(article)article.scrollIntoView({behavior:'smooth',block:'center'});else alert('この場面の詳細が見つかりません。時間順の候補一覧を確認してください。');}
  else alert('元の試合記録が見つかりません。');
