@@ -2,6 +2,7 @@ import os
 import re
 import subprocess
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -11,7 +12,7 @@ import numpy as np
 import pytesseract
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision as mp_vision
-from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Body, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -23,7 +24,7 @@ MAX_MATCH_UPLOAD_MB = int(os.getenv("MAX_MATCH_UPLOAD_MB", "500"))
 MATCH_SAMPLE_RATE = float(os.getenv("MATCH_SAMPLE_RATE", "0.25"))
 MATCH_MAX_SAMPLES = int(os.getenv("MATCH_MAX_SAMPLES", "360"))
 POSE_LANDMARKER_MODEL = os.getenv("POSE_LANDMARKER_MODEL", "/app/models/pose_landmarker_lite.task")
-match_jobs = {}
+match_jobs = {}\nhighlight_collections = {}
 
 app = FastAPI(title=APP_NAME, version="0.1.0")
 # Public demo configuration. Restrict CORS to the GitHub Pages URL after deployment.
@@ -906,6 +907,68 @@ def create_match_highlight(job_id: str, clip_ids: str = Form(...)):
     finally:
         if list_path and os.path.exists(list_path):
             os.remove(list_path)
+
+
+@app.post("/analyze/highlights/collection")
+def create_cross_match_highlight(payload: dict = Body(...)):
+    requested = payload.get("clips", [])
+    if not isinstance(requested, list) or not requested or len(requested) > 12:
+        raise HTTPException(status_code=400, detail="ベストプレー集は1〜12場面を選んでください。")
+    selected = []
+    seen = set()
+    for item in requested:
+        if not isinstance(item, dict):
+            raise HTTPException(status_code=400, detail="場面情報が正しくありません。")
+        job_id = str(item.get("job_id", "")).strip()
+        clip_id = str(item.get("clip_id", "")).strip()
+        key = (job_id, clip_id)
+        if not job_id or not clip_id or key in seen:
+            raise HTTPException(status_code=400, detail="場面情報が重複または不足しています。")
+        seen.add(key)
+        job = match_jobs.get(job_id)
+        if job is None or job.get("status") != "completed":
+            raise HTTPException(status_code=404, detail="過去の解析ジョブが見つかりません。サーバー再起動後は該当試合を再解析してください。")
+        clip = next((x for x in job.get("clips", []) if str(x.get("id")) == clip_id), None)
+        if clip is None or not os.path.isfile(clip.get("path", "")):
+            raise HTTPException(status_code=404, detail="切り抜き動画が残っていません。該当試合を再解析してください。")
+        selected.append(clip)
+    list_path = None
+    output_path = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False, suffix=".txt") as listing:
+            list_path = listing.name
+            for clip in selected:
+                safe_path = clip["path"].replace("'", "'\\''")
+                listing.write("file '" + safe_path + "'\\n")
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as output:
+            output_path = output.name
+        command = ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", list_path,
+                   "-an", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+                   "-pix_fmt", "yuv420p", "-movflags", "+faststart", output_path]
+        proc = subprocess.run(command, capture_output=True, text=True, timeout=360)
+        if proc.returncode != 0 or not os.path.isfile(output_path) or os.path.getsize(output_path) == 0:
+            raise RuntimeError("複数試合のベストプレー動画を作成できませんでした。")
+        collection_id = uuid.uuid4().hex
+        highlight_collections[collection_id] = {"path": output_path, "clip_count": len(selected)}
+        return {"ok": True, "clip_count": len(selected), "url": f"/analyze/highlights/collection/{collection_id}"}
+    except Exception as exc:
+        if output_path and os.path.exists(output_path):
+            os.remove(output_path)
+        if isinstance(exc, HTTPException):
+            raise
+        raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        if list_path and os.path.exists(list_path):
+            os.remove(list_path)
+
+
+@app.get("/analyze/highlights/collection/{collection_id}")
+def get_cross_match_highlight(collection_id: str):
+    collection = highlight_collections.get(collection_id)
+    path = collection.get("path") if collection else None
+    if not path or not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="ベストプレー集がありません。サーバー再起動後は再作成してください。")
+    return FileResponse(path, media_type="video/mp4", filename="riku-best-plays.mp4")
 
 
 @app.get("/analyze/jobs/{job_id}/highlights")
