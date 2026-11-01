@@ -455,6 +455,19 @@ function getCoachTrainingPlan(){
  if(top&&plans[top])return plans[top];
  return {title:'加速ドリブル＋切り返し',minutes:15,category:'突破・ドリブル',note:'マーカーを使って左右に切り返し、前へ運ぶタッチから2〜3歩加速。最後に親子1対1で相手を見て突破方向を選ぶ。',why:'試合の改善データがまだ少ないため、今の育成テーマに合わせた基本メニュー'};
 }
+function getTrainingSessionGuide(focus){
+ const guides={
+ 'ドリブル':{prep:'マーカー間をゆっくり運ぶ（2分）',main:'左右の切り返しを各3回。顔を上げて相手の位置を見て、抜いた後の2〜3歩を加速（6分）',game:'親子1対1を短く3〜5本。毎回、相手の重心を見て突破方向を選ぶ（5分）',goal:'相手を見て方向を選び、ボールを置き去りにせず加速できたらOK'},
+ 'パス':{prep:'近い距離でインサイドパス（2分）',main:'パスが来る前に左右を確認してから受ける。左右の足で正確に返す（5分）',game:'親が立つ位置を左右に変え、確認→受ける→パスを繰り返す（5分）',goal:'受ける前に周囲を確認し、次のプレーにつながる方向へ出せたらOK'},
+ 'シュート':{prep:'近い距離でボールタッチと軽いキック（2分）',main:'軸足をボールの横に置き、狙う場所を決めてインステップまたはインサイドで蹴る（5分）',game:'左右やコースを変えて、力まず狙った場所へ蹴る（5分）',goal:'強さより、軸足とミートを意識して狙った方向へ蹴れたらOK'},
+ 'ボールを受ける':{prep:'ボールが来る前に左右を見る動きを確認（2分）',main:'半身で構え、受ける前に首を振ってから前方向へファーストタッチ（5分）',game:'親がパスを出す方向を変え、前を向ける場所へコントロール（5分）',goal:'ボールが来る前に確認し、次のプレーへ進めるタッチができたらOK'},
+ '守備・プレス':{prep:'小さなステップで相手との距離を保つ（2分）',main:'相手の正面に入り、飛び込まずに体の向きで進行方向を限定（4分）',game:'親子1対1を短く行い、奪えなくてもコースを限定できたら成功（4分）',goal:'無理に足を出さず、相手の進む方向を限定できたらOK'},
+ 'オフザボール':{prep:'ボールを持つ人を見ながら立ち位置を変える（2分）',main:'相手の背中側や斜めの角度へ動き、パスコースを作る（4分）',game:'親がボールを持ち、動き出すタイミングを変えて受ける（4分）',goal:'パスが出る前に動き、受けられる場所を作れたらOK'},
+ 'その他':{prep:'軽いボールタッチ（2分）',main:'今日確認したい動きをゆっくり反復（4分）',game:'親子で試合を想定した短いチャレンジ（4分）',goal:'今日のテーマを一つ意識して実行できたらOK'}
+ };
+ const g=guides[focus]||guides['その他'];
+ return '【今日の進め方】\n①準備：'+g.prep+'\n②メイン：'+g.main+'\n③試合形式：'+g.game+'\n【できた目安】'+g.goal+'\n痛みや違和感が出たら中止。疲れている日は回数を減らし、木〜日曜のチーム練習に疲れを残さない。';
+}
 function getTrainingReviewAdjustment(focus){
  const recent=(state.trainings||[]).filter(t=>(t.focus||inferTrainingFocus(t.menu,t.category))===focus&&['できた','難しかった','まだ試せていない'].includes(t.reviewStatus)).slice(0,5);
  const done=recent.filter(t=>t.reviewStatus==='できた').length;
@@ -495,7 +508,7 @@ function getWeeklyCoachPlan(){
   {day:'火曜',date:dateAt(1),title:'加速ドリブル＋親子1対1',minutes:15,category:'突破・ドリブル',focus:'ドリブル',note:'マーカーを使って左右に切り返す。相手の重心を見て逆を取り、抜いた後の2〜3歩を加速。最後は親子1対1を短く行う。',why:'陸玖の突破力を武器として伸ばす'},
   {day:'水曜',date:dateAt(2),title:'首振り＋前向きファーストタッチ',minutes:12,category:'受ける動き',focus:'ボールを受ける',note:'パスが来る前に左右を確認。半身で受けて前へ運ぶ。最後に練習した動きを使うミニゲーム形式で確認。',why:'試合でボールを受ける準備を整える'}
  ];
- return plans.map(plan=>{const adjustment=getTrainingReviewAdjustment(plan.focus);return {...plan,minutes:Math.max(8,plan.minutes+adjustment.minutesDelta),note:plan.note+' '+adjustment.note,why:plan.why+'｜'+adjustment.note};});
+ return plans.map(plan=>{const adjustment=getTrainingReviewAdjustment(plan.focus);return {...plan,minutes:Math.max(8,plan.minutes+adjustment.minutesDelta),note:plan.note+' '+adjustment.note+'\\n\\n'+getTrainingSessionGuide(plan.focus),why:plan.why+'｜'+adjustment.note};});
 }
 function applyWeeklyCoachSession(index){
  const plan=getWeeklyCoachPlan()[index];if(!plan)return;
@@ -506,7 +519,7 @@ function applyCoachTrainingPlan(){
  const plan=getCoachTrainingPlan();
  let option=Array.from(trainMenu.options).find(o=>o.value===plan.title);
  if(!option){state.menus.unshift({name:plan.title,category:plan.category,minutes:plan.minutes});persist();renderAll();}
- trainMenu.value=plan.title;trainDate.value=today();trainMinutes.value=plan.minutes;trainNote.value=plan.note;showView('training');
+ trainMenu.value=plan.title;trainDate.value=today();trainMinutes.value=plan.minutes;trainFocus.value=plan.title.includes('パス')?'ボールを受ける':plan.title.includes('シュート')?'シュート':plan.title.includes('守備')?'守備・プレス':plan.title.includes('動き出し')?'オフザボール':plan.title.includes('受ける')?'ボールを受ける':'ドリブル';trainNote.value=plan.note+'\\n\\n'+getTrainingSessionGuide(trainFocus.value);showView('training');
 }
 function getTrainingMatchProgress(){const skills=['ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール','その他'];const trainings=(state.trainings||[]).map(t=>({...t,focus:t.focus||inferTrainingFocus(t.menu,t.category)}));const matches=(state.matchAnalyses||[]).map(m=>({date:m.date,events:(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖'&&e.actionType&&e.actionType!=='未選択')}));return skills.map(skill=>{const sessions=trainings.filter(t=>t.focus===skill&&t.date);const latest=sessions.map(t=>t.date).sort().slice(-1)[0]||'';const later=matches.flatMap(m=>m.date&&latest&&m.date>=latest?m.events.filter(e=>e.actionType===skill||((skill==='ボールを受ける')&&e.actionType==='パス')).map(e=>({...e,matchDate:m.date})):[]);return {skill,sessions:sessions.length,latest,later:later.length,good:later.filter(e=>e.assessment==='良かった').length,improve:later.filter(e=>e.assessment==='改善したい').length}}).filter(x=>x.sessions||x.later).sort((a,b)=>b.sessions-a.sessions)}function renderGrowthCharts(){
  const host=document.getElementById('rikuGrowthCharts');if(!host)return;
