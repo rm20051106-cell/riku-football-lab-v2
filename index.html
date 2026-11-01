@@ -642,6 +642,15 @@ function renderRikuSkillProfile(events){
  const cards=rows.map(x=>{const tag=x.good>=2&&x.good>x.improve?'良かった記録が多い':x.improve>=2&&x.improve>x.good?'改善したい記録が多い':'まだ傾向は保留';return '<div class="listitem" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><b>'+esc(x.type)+'</b><span class="tiny muted">'+tag+'</span></div><div class="tiny muted">良かった '+x.good+' ／ 改善したい '+x.improve+'（評価 '+x.total+'場面）</div><div style="height:8px;background:var(--line,#ddd);border-radius:8px;overflow:hidden;margin-top:6px"><div style="height:100%;width:'+x.rate+'%;background:var(--accent,#8bc34a);border-radius:8px"></div></div><div class="tiny muted">良かったの割合 '+x.rate+'%</div></div>';}).join('');
  return '<h3 style="margin-top:14px">得意・改善ポイントマップ</h3><div class="tiny muted">陸玖本人として確認し、評価まで入力した場面だけを集計しています。</div>'+cards+'<div class="tiny muted" style="margin-top:6px">「記録が多い」は現時点の振り返り傾向です。2場面未満の評価では得意・改善を決めつけず、試合数や出場時間が違う場合も参考値として見てください。</div>';
 }
+function renderSkillEvidenceSummary(events){
+ const types=['ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール','その他'];
+ const assessed=(events||[]).filter(e=>e.actionType&&['良かった','改善したい'].includes(e.assessment));
+ const stats=types.map(type=>{const list=assessed.filter(e=>e.actionType===type);const good=list.filter(e=>e.assessment==='良かった').length,improve=list.filter(e=>e.assessment==='改善したい').length;return {type,list,good,improve,total:list.length};}).filter(x=>x.total);
+ const strength=stats.filter(x=>x.good>=3&&x.good>x.improve).sort((a,b)=>(b.good-b.improve)-(a.good-a.improve)||b.total-a.total)[0];
+ const focus=stats.filter(x=>x.improve>=2&&x.improve>x.good).sort((a,b)=>(b.improve-b.good)-(a.improve-a.good)||b.total-a.total)[0];
+ const evidence=(row,label)=>{if(!row)return '<div class="empty">判断できるだけの評価記録がまだありません。</div>';const items=row.list.slice().sort((a,b)=>String(b.matchDate||'').localeCompare(String(a.matchDate||''))||(Number(b.time)||0)-(Number(a.time)||0)).slice(0,3);return '<div class="listitem" style="display:block"><b>'+esc(row.type)+'｜'+label+'</b><div class="tiny muted">良かった '+row.good+' ／ 改善したい '+row.improve+'（評価 '+row.total+'場面）</div>'+items.map(e=>'<div class="tiny" style="margin-top:6px;padding-top:6px;border-top:1px solid var(--line,#ddd)"><b>'+esc(e.matchDate||'日付不明')+' '+formatMatchTime(e.time)+'</b>｜'+esc(e.matchTitle||'試合動画')+'<div class="tiny muted">'+esc(e.assessment)+(e.note?'｜メモ：'+esc(e.note):'')+'</div></div>').join('')+'</div>';};
+ return '<h3 style="margin-top:14px">記録から見る・伸びているプレー候補と次の重点</h3><div class="tiny muted">陸玖本人として確認し、プレー分類と評価が入力された記録だけで判定。強み候補は「良かった」3場面以上かつ改善より多い場合、重点候補は「改善したい」2場面以上かつ良かったより多い場合に限ります。</div><div class="grid"><div class="card"><b>強み候補</b>'+evidence(strength,'良かった記録が多い')+'</div><div class="card"><b>次の重点候補</b>'+evidence(focus,'改善したい記録が多い')+'</div></div><div class="tiny muted">これは客観的な能力判定ではなく、記録に基づく振り返り候補です。対戦相手・ポジション・出場時間なども映像と合わせて確認してください。</div>';
+}
 function renderGrowthEffortScore(){
  const cutoff=new Date();cutoff.setHours(0,0,0,0);cutoff.setDate(cutoff.getDate()-29);
  const inWindow=date=>{const d=new Date(String(date||'')+'T00:00:00');return Number.isFinite(d.getTime())&&d>=cutoff&&d<=new Date();};
@@ -711,6 +720,7 @@ function renderRikuCoachReport(){
   html+='<div class="tiny muted">評価保留・未入力：'+pending+'場面</div><h3 style="margin-top:14px">プレー内容の記録</h3>';
   html+=typeCounts.length?typeCounts.map(x=>'<div class="listitem"><div class="grow"><b>'+esc(x.type)+'</b><div class="tiny muted">確認 '+x.count+'場面 ・ 良かった '+x.good+' ・ 改善したい '+x.improve+'</div></div></div>').join(''):'<div class="tiny muted">プレー内容の分類はまだありません。</div>';
   html+=renderRikuSkillProfile(events);
+  html+=renderSkillEvidenceSummary(events);
   html+=renderMonthlySkillTrend();
   html+='<h3 style="margin-top:14px">次の練習テーマ</h3>';
   html+=focus?'<div class="note"><b>'+esc(focus.type)+'を重点確認</b><div class="tiny">本人確認済みの記録のうち「改善したい」が'+focus.improve+'場面ありました。</div><div style="margin-top:6px">'+esc(focusDrills[focus.type]||focusDrills['その他'])+'</div></div>':'<div class="note">今は改善テーマを決めるだけの評価データがありません。次の試合でも「良かった」「改善したい」を記録していこう。</div>';
