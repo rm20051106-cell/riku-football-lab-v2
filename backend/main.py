@@ -24,7 +24,8 @@ MAX_MATCH_UPLOAD_MB = int(os.getenv("MAX_MATCH_UPLOAD_MB", "500"))
 MATCH_SAMPLE_RATE = float(os.getenv("MATCH_SAMPLE_RATE", "0.25"))
 MATCH_MAX_SAMPLES = int(os.getenv("MATCH_MAX_SAMPLES", "360"))
 POSE_LANDMARKER_MODEL = os.getenv("POSE_LANDMARKER_MODEL", "/app/models/pose_landmarker_lite.task")
-match_jobs = {}\nhighlight_collections = {}
+match_jobs = {}
+highlight_collections = {}
 
 app = FastAPI(title=APP_NAME, version="0.1.0")
 # Public demo configuration. Restrict CORS to the GitHub Pages URL after deployment.
