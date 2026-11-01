@@ -863,6 +863,60 @@ def get_match_job(job_id: str):
         payload["clips"] = [{key: value for key, value in clip.items() if key != "path"} for clip in job.get("clips", [])]
     return payload
 
+@app.post("/analyze/jobs/{job_id}/highlights")
+def create_match_highlight(job_id: str, clip_ids: str = Form(...)):
+    job = match_jobs.get(job_id)
+    if job is None or job.get("status") != "completed":
+        raise HTTPException(status_code=404, detail="完了した試合解析ジョブが見つかりません。")
+    requested = [x.strip() for x in clip_ids.split(",") if x.strip()]
+    if not requested or len(requested) > 8 or len(set(requested)) != len(requested):
+        raise HTTPException(status_code=400, detail="ハイライトに含める場面は1〜8件選んでください。")
+    clip_map = {str(x.get("id")): x for x in job.get("clips", [])}
+    selected = [clip_map.get(x) for x in requested]
+    if any(x is None or not os.path.isfile(x.get("path", "")) for x in selected):
+        raise HTTPException(status_code=404, detail="選択した候補動画が見つかりません。試合動画を再解析してください。")
+    list_path = None
+    output_path = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False, suffix=".txt") as listing:
+            list_path = listing.name
+            for clip in selected:
+                listing.write("file '" + clip["path"].replace("'", "'\\''") + "'\\n")
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as output:
+            output_path = output.name
+        command = ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", list_path,
+                   "-an", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+                   "-pix_fmt", "yuv420p", "-movflags", "+faststart", output_path]
+        proc = subprocess.run(command, capture_output=True, text=True, timeout=300)
+        if proc.returncode != 0 or not os.path.isfile(output_path) or os.path.getsize(output_path) == 0:
+            raise RuntimeError("ハイライト動画を作成できませんでした。")
+        old_path = job.get("highlight_path")
+        if old_path and os.path.exists(old_path):
+            os.remove(old_path)
+        job["highlight_path"] = output_path
+        job["highlight_clip_ids"] = requested
+        return {"ok": True, "clip_count": len(selected),
+                "url": f"/analyze/jobs/{job_id}/highlights"}
+    except Exception as exc:
+        if output_path and os.path.exists(output_path):
+            os.remove(output_path)
+        if isinstance(exc, HTTPException):
+            raise
+        raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        if list_path and os.path.exists(list_path):
+            os.remove(list_path)
+
+
+@app.get("/analyze/jobs/{job_id}/highlights")
+def get_match_highlight(job_id: str):
+    job = match_jobs.get(job_id)
+    path = job.get("highlight_path") if job else None
+    if not path or not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="ハイライト動画がありません。先に作成してください。")
+    return FileResponse(path, media_type="video/mp4", filename="riku-highlight.mp4")
+
+
 @app.get("/analyze/jobs/{job_id}/clips/{clip_id}")
 def get_match_candidate_clip(job_id: str, clip_id: str):
     job = match_jobs.get(job_id)
