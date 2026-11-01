@@ -254,6 +254,9 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
                 timestamp_ms = int((current_frame_idx / fps if fps > 0 else sample_index * actual_interval) * 1000)
                 detected = landmarker.detect_for_video(mp_image, timestamp_ms)
                 people = []
+                person_metrics = []
+                time_seconds = round(current_frame_idx / fps, 2) if fps > 0 else round(sample_index * actual_interval, 2)
+                detected_count = len(detected.pose_landmarks or [])
                 for person_index, pose_lm in enumerate(detected.pose_landmarks or []):
                     metrics = analyze_task_pose(pose_lm)
                     ocr = read_jersey_number(frame, metrics["landmarks"], targets)
@@ -267,22 +270,12 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
                     })
                     metrics["jersey_ocr_candidates"] = ocr
                     metrics["person_index"] = person_index
-                    metrics["time_seconds"] = round(current_frame_idx / fps, 2) if fps > 0 else round(sample_index * actual_interval, 2)
-                    metrics["detected_people_in_frame"] = len(detected.pose_landmarks or [])
-                    if person_index == 0:
-                        primary = metrics
-                people_per_frame.append(len(people))
-                if people:
-                    primary = max((x for x in [analyze_task_pose(pose_lm) for pose_lm in detected.pose_landmarks]),
-                                  key=lambda x: x["visible_landmarks"])
-                    primary["time_seconds"] = round(current_frame_idx / fps, 2) if fps > 0 else round(sample_index * actual_interval, 2)
-                    primary["detected_people_in_frame"] = len(people)
-                    primary["jersey_ocr_candidates"] = []
-                    for person in detected.pose_landmarks:
-                        m = analyze_task_pose(person)
-                        if m["visible_landmarks"] == primary["visible_landmarks"]:
-                            primary["jersey_ocr_candidates"] = read_jersey_number(frame, m["landmarks"], targets)
-                            break
+                    metrics["time_seconds"] = time_seconds
+                    metrics["detected_people_in_frame"] = detected_count
+                    person_metrics.append(metrics)
+                people_per_frame.append(detected_count)
+                if person_metrics:
+                    primary = max(person_metrics, key=lambda x: x["visible_landmarks"])
                     frames.append(primary)
                 if progress_callback and duration > 0:
                     progress_callback(min(90, 15 + int(75 * min(1.0, (current_frame_idx / fps if fps > 0 else 0) / duration))))
