@@ -7,12 +7,17 @@ from typing import Optional
 import cv2
 import mediapipe as mp
 import numpy as np
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 APP_NAME = "RIKU FOOTBALL LAB Free AI Analysis API"
 MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "120"))
 MAX_SECONDS = int(os.getenv("MAX_VIDEO_SECONDS", "60"))
+MAX_MATCH_SECONDS = int(os.getenv("MAX_MATCH_VIDEO_SECONDS", "1200"))
+MAX_MATCH_UPLOAD_MB = int(os.getenv("MAX_MATCH_UPLOAD_MB", "500"))
+MATCH_SAMPLE_RATE = float(os.getenv("MATCH_SAMPLE_RATE", "0.25"))
+MATCH_MAX_SAMPLES = int(os.getenv("MATCH_MAX_SAMPLES", "360"))
+match_jobs = {}
 
 app = FastAPI(title=APP_NAME, version="0.1.0")
 # Public demo configuration. Restrict CORS to the GitHub Pages URL after deployment.
@@ -115,21 +120,22 @@ def camera_angle_guidance(camera_angle: str):
         "撮影角度が未指定です。全身とボールが映る動画で、同じ角度・距離から撮影すると比較しやすくなります。"
     ])
 
-def process_video(path: str, mode: str, camera_angle: str = "未選択"):
+def process_video(path: str, mode: str, camera_angle: str = "未選択", progress_callback=None):
     cap = cv2.VideoCapture(path)
     if not cap.isOpened():
         raise HTTPException(status_code=400, detail="動画を開けませんでした。MP4など一般的な形式でお試しください。")
     fps = cap.get(cv2.CAP_PROP_FPS) or 0
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
     duration = total_frames / fps if fps > 0 else 0
-    if duration > MAX_SECONDS:
+    allowed_seconds = MAX_MATCH_SECONDS if mode == "match" else MAX_SECONDS
+    if duration > allowed_seconds:
         cap.release()
-        raise HTTPException(status_code=413, detail=f"動画が長すぎます。無料枠では{MAX_SECONDS}秒以内にしてください。")
-    # Sample once per second to keep 60-second clips practical on the free CPU tier.
-    target_sample_rate = 1.0
-    interval = max(1, int(round(fps / target_sample_rate))) if fps > 0 else 8
+        raise HTTPException(status_code=413, detail=f"動画が長すぎます。{mode}解析は{allowed_seconds}秒以内にしてください。")
+    # Match mode scans the full match at a light sampling rate; form mode stays dense.
+    target_sample_rate = MATCH_SAMPLE_RATE if mode == "match" else 1.0
+    interval = max(1, int(round(fps / target_sample_rate))) if fps > 0 else max(1, int(round(1 / target_sample_rate)))
     actual_interval = interval / fps if fps > 0 else 1 / target_sample_rate
-    max_samples = 60
+    max_samples = MATCH_MAX_SAMPLES if mode == "match" else 60
     frames = []
     frame_idx = 0
     with mp_pose.Pose(static_image_mode=False, model_complexity=1,
@@ -148,6 +154,8 @@ def process_video(path: str, mode: str, camera_angle: str = "未選択"):
                 if metrics:
                     frames.append({"time_seconds": round(frame_idx / fps, 2) if fps > 0 else frame_idx,
                                    **metrics})
+                if progress_callback and duration > 0:
+                    progress_callback(min(90, 15 + int(75 * min(1.0, (frame_idx / fps if fps > 0 else 0) / duration))))
             frame_idx += 1
     cap.release()
     if not frames:
@@ -192,9 +200,12 @@ def process_video(path: str, mode: str, camera_angle: str = "未選択"):
         summary["camera_angle"] = camera_angle
     else:
         summary["feedback"] = [
-            "この無料版は動画から姿勢をサンプリングします。背番号のOCR認識・選手の個体識別・追跡・プレーの意味理解はまだ実装していません。",
-            "背番号による自動抽出を行うには、別の人物検出・ユニフォーム番号認識・追跡モデルを追加して精度検証する必要があります。"
+            "この段階では動画全体を低頻度でスキャンし、画面内で検出できた人物の姿勢を記録します。",
+            "背番号OCR・陸玖本人の個体識別・複数選手追跡・プレー内容の自動判定・ハイライト切り出しは次の開発段階です。",
+            "姿勢検出フレームは陸玖本人と確認されたものではありません。"
         ]
+        summary["scan_type"] = "full_video_coarse_pose_scan"
+        summary["identity_confirmed"] = False
     return {"ok": True, "mode": mode, "engine": "MediaPipe Pose (open-source)", "summary": summary}
 
 @app.get("/")
@@ -271,3 +282,92 @@ async def analyze_match(file: UploadFile = File(...), jersey_numbers: str = Form
     result = await analyze_upload(file, "match")
     result["requested_jersey_numbers"] = jersey_numbers
     return result
+
+
+def _set_match_job(job_id: str, **updates):
+    job = match_jobs.get(job_id)
+    if job is not None:
+        job.update(updates)
+
+
+def run_match_job(job_id: str, source_path: str, jersey_numbers: str):
+    converted_path = None
+    try:
+        _set_match_job(job_id, status="processing", progress=5, stage="動画を解析用MP4に変換中")
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as converted:
+            converted_path = converted.name
+        command = [
+            "ffmpeg", "-y", "-i", source_path, "-map", "0:v:0", "-an",
+            "-vf", "scale='min(960,iw)':-2", "-c:v", "libx264",
+            "-preset", "ultrafast", "-crf", "30", "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart", converted_path,
+        ]
+        converted_result = subprocess.run(command, capture_output=True, text=True, timeout=900)
+        if converted_result.returncode != 0:
+            raise RuntimeError("動画を解析用MP4に変換できませんでした。")
+        _set_match_job(job_id, progress=15, stage="動画全体をスキャン中")
+        def progress(value):
+            _set_match_job(job_id, progress=value, stage="動画全体をスキャン中")
+        result = process_video(converted_path, "match", progress_callback=progress)
+        result["requested_jersey_numbers"] = jersey_numbers
+        result["job_id"] = job_id
+        _set_match_job(job_id, status="completed", progress=100, stage="解析完了", result=result)
+    except Exception as exc:
+        detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
+        _set_match_job(job_id, status="failed", progress=100, stage="解析に失敗", error=detail)
+    finally:
+        for path in (source_path, converted_path):
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+
+
+@app.post("/analyze/match/jobs", status_code=202)
+async def create_match_job(background_tasks: BackgroundTasks, file: UploadFile = File(...),
+                           jersey_numbers: str = Form("10,74")):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="動画ファイルがありません。")
+    suffix = Path(file.filename).suffix.lower()
+    if suffix not in {".mp4", ".mov", ".m4v", ".avi", ".webm", ".mkv"}:
+        suffix = ".mp4"
+    job_id = __import__("uuid").uuid4().hex
+    temp_path = None
+    size = 0
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            temp_path = tmp.name
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > MAX_MATCH_UPLOAD_MB * 1024 * 1024:
+                    raise HTTPException(status_code=413, detail=f"試合動画は{MAX_MATCH_UPLOAD_MB}MB以内にしてください。")
+                tmp.write(chunk)
+        if size == 0:
+            raise HTTPException(status_code=400, detail="ファイルが空です。")
+        match_jobs[job_id] = {
+            "job_id": job_id, "status": "queued", "progress": 0,
+            "stage": "解析待ち", "filename": file.filename,
+            "size_bytes": size, "result": None, "error": None,
+        }
+        background_tasks.add_task(run_match_job, job_id, temp_path, jersey_numbers)
+        return {"ok": True, "job_id": job_id, "status": "queued",
+                "status_url": f"/analyze/jobs/{job_id}"}
+    except Exception:
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
+        raise
+
+
+@app.get("/analyze/jobs/{job_id}")
+def get_match_job(job_id: str):
+    job = match_jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="解析ジョブが見つかりません。サーバー再起動後は再送信が必要です。")
+    payload = {key: value for key, value in job.items() if key != "result"}
+    if job.get("status") == "completed":
+        payload["result"] = job["result"]
+    return payload
