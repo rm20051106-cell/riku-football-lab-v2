@@ -593,10 +593,20 @@ function toggleMatchdayFocus(id){
  state.settings.matchdayChecklist=checks;
  persist();
 }
+function updateMatchdayReflection(id,value){
+ state.settings=state.settings||{};
+ const key=today(),all=state.settings.matchdayReflection||{};
+ all[key]=all[key]||{};
+ all[key][id]=value;
+ state.settings.matchdayReflection=all;
+ persist();
+}
 function renderMatchdayFocus(){
  const host=document.getElementById('matchdayFocus');if(!host)return;
- const items=getMatchdayFocusItems(),checks=state.settings.matchdayChecklist?.[today()]||{};
- host.innerHTML=items.map((item,i)=>'<label class="listitem" style="align-items:flex-start;cursor:pointer"><input type="checkbox" '+(checks[item.id]?'checked':'')+' onchange="toggleMatchdayFocus(\''+esc(item.id)+'\')"><div class="grow"><b>'+String(i+1)+'. '+esc(item.title)+'</b><div class="tiny muted">'+esc(item.detail)+'</div></div></label>').join('')+'<div class="tiny muted">チェック済み '+items.filter(x=>checks[x.id]).length+'/'+items.length+'。全部できなくても大丈夫。ひとつ意識して挑戦しよう。</div>';
+ const key=today(),items=getMatchdayFocusItems(),checks=state.settings.matchdayChecklist?.[key]||{},reflections=state.settings.matchdayReflection?.[key]||{};
+ const done=items.filter(x=>reflections[x.id]).length,achieved=items.filter(x=>reflections[x.id]==='できた').length;
+ const rows=items.map((item,i)=>'<div class="listitem" style="display:block"><label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer"><input type="checkbox" '+(checks[item.id]?'checked':'')+' onchange="toggleMatchdayFocus(\\''+esc(item.id)+'\\')"><span class="grow"><b>'+String(i+1)+'. '+esc(item.title)+'</b><div class="tiny muted">'+esc(item.detail)+'</div></span></label><label class="label" style="margin-top:8px">試合後の振り返り</label><select onchange="updateMatchdayReflection(\\''+esc(item.id)+'\\',this.value)"><option value="">まだ振り返っていない</option><option value="できた" '+(reflections[item.id]==='できた'?'selected':'')+'>できた</option><option value="もう少し" '+(reflections[item.id]==='もう少し'?'selected':'')+'>もう少し</option><option value="試せなかった" '+(reflections[item.id]==='試せなかった'?'selected':'')+'>試せなかった</option></select></div>').join('');
+ host.innerHTML='<h3>試合前に意識すること</h3>'+rows+'<div class="tiny muted">試合前チェック '+items.filter(x=>checks[x.id]).length+'/'+items.length+' ・ 試合後の振り返り '+done+'/'+items.length+'（できた '+achieved+'）</div><div class="note">「できなかった」も大切な記録。次の練習テーマを考える材料にしよう。</div>';
 }
 function renderAll(){
  state.aiFormAnalyses=state.aiFormAnalyses||[];state.matchAnalyses=state.matchAnalyses||[];let date=today(),month=date.slice(0,7),days=new Set(state.trainings.filter(x=>x.date.startsWith(month)).map(x=>x.date)).size;homeDays.innerHTML=`${days} <small>日</small>`;monthProgress.style.width=Math.min(100,days/12*100)+'%';homeVideos.innerHTML=`${state.clips.length+state.forms.length} <small>件</small>`;let sprint=state.measures.find(x=>x.type==='30m走');homeSprint.innerHTML=sprint?`${esc(sprint.value)} <small>${esc(sprint.unit)}</small>`:'—';homeNumbers.textContent=`${state.settings.jersey1} / ${state.settings.jersey2}`;const coachPlan=getCoachTrainingPlan();dailyPlan.innerHTML='<div class="listitem"><span class="tag good">AIコーチ提案</span><div class="grow"><b>'+esc(coachPlan.title)+'</b><div class="tiny muted">'+coachPlan.minutes+'分・'+esc(coachPlan.why)+'</div><div class="tiny">'+esc(coachPlan.note)+'</div><button class="secondary small" onclick="applyCoachTrainingPlan()">このメニューで練習を始める</button></div></div>';renderMatchdayFocus();
