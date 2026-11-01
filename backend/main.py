@@ -375,7 +375,10 @@ def run_match_job(job_id: str, source_path: str, jersey_numbers: str):
         _set_match_job(job_id, progress=92, stage="動きの候補場面を短い動画に切り出し中")
         clips = extract_candidate_clips(converted_path, job_id, candidates, float(summary.get("duration_seconds", 0)))
         for event in candidates:
-            event["clip_available"] = any(x["id"] == event["id"] for x in clips)
+            matching_clip = next((x for x in clips if x["id"] == event["id"]), None)
+            event["clip_available"] = matching_clip is not None
+            if matching_clip:
+                event["clip_url"] = f"/analyze/jobs/{job_id}/clips/{event['id']}"
         summary["candidate_events"] = candidates
         summary["candidate_event_count"] = len(candidates)
         summary["candidate_event_note"] = "足先の画像上の動きから抽出した確認候補です。サッカーのプレーや陸玖本人の動きと確認されたものではありません。"
@@ -437,9 +440,10 @@ def get_match_job(job_id: str):
     job = match_jobs.get(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="解析ジョブが見つかりません。サーバー再起動後は再送信が必要です。")
-    payload = {key: value for key, value in job.items() if key != "result"}
+    payload = {key: value for key, value in job.items() if key not in {"result", "clips"}}
     if job.get("status") == "completed":
         payload["result"] = job["result"]
+        payload["clips"] = [{key: value for key, value in clip.items() if key != "path"} for clip in job.get("clips", [])]
     return payload
 
 @app.get("/analyze/jobs/{job_id}/clips/{clip_id}")
