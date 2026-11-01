@@ -138,7 +138,7 @@ def process_video(path: str, mode: str, camera_angle: str = "未選択", progres
     max_samples = MATCH_MAX_SAMPLES if mode == "match" else 60
     frames = []
     frame_idx = 0
-    with mp_pose.Pose(static_image_mode=False, model_complexity=1,
+    with mp_pose.Pose(static_image_mode=(mode == "match"), model_complexity=1,
                       enable_segmentation=False, min_detection_confidence=0.5,
                       min_tracking_confidence=0.5) as pose:
         while len(frames) < max_samples:
