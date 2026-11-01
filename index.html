@@ -131,6 +131,24 @@ async function removeClipVideo(id){try{const db=await openVideoDB();await new Pr
 async function playSavedClip(id,time){try{const saved=await getClipVideo(id);if(!saved){alert('この記録には動画が保存されていません。新しい記録から動画を一緒に保存できます。');return}if(matchVideo.dataset.objectUrl)URL.revokeObjectURL(matchVideo.dataset.objectUrl);const url=URL.createObjectURL(saved.blob);matchVideo.dataset.objectUrl=url;matchVideo.src=url;matchVideo.load();showView('video');matchVideo.onloadedmetadata=()=>{matchVideo.currentTime=Math.min(Number(time)||0,matchVideo.duration||0);matchVideo.play().catch(()=>{})};videoMeta.textContent='保存動画：'+saved.name+'（端末内に保存）';videoWrap.scrollIntoView({behavior:'smooth',block:'center'})}catch(e){alert('保存動画を開けませんでした。端末の空き容量を確認してください。')}}
 async function playSavedForm(id){try{const saved=await getClipVideo('form-'+id);if(!saved){alert('このフォーム記録には動画が保存されていません。');return}if(formVideo.dataset.objectUrl)URL.revokeObjectURL(formVideo.dataset.objectUrl);const url=URL.createObjectURL(saved.blob);formVideo.dataset.objectUrl=url;formVideo.src=url;formVideo.load();showView('form');formVideo.play().catch(()=>{});formVideo.scrollIntoView({behavior:'smooth',block:'center'})}catch(e){alert('保存したフォーム動画を開けませんでした。')}}
 async function saveClip(){if(!videoTitle.value.trim()){alert('動画タイトルを入力してください');return}const id=Date.now();let file=videoFile.files[0]||await pendingMatchSave;if(!file){try{const pending=await getClipVideo('__pending_match_video__');if(pending&&pending.blob)file=pending.blob}catch(e){console.warn('仮保存動画の取得失敗',e)}}let scores=[+s1.value,+s2.value,+s3.value,+s4.value];const record={id,date:today(),title:videoTitle.value.trim(),time:clipTime.value===''?null:+clipTime.value,type:clipType.value,scores,score:Math.round(scores.reduce((a,b)=>a+b,0)/20*100),good:clipGood.value.trim(),improve:clipImprove.value.trim(),hasVideo:false};if(file){try{await storeClipVideo(id,file);record.hasVideo=true;await removeClipVideo('__pending_match_video__')}catch(e){console.error('動画保存失敗',e);if(!confirm('動画を端末に保存できませんでした。分析メモだけ保存しますか？'))return}}state.clips.unshift(record);clipGood.value='';clipImprove.value='';persist();alert(record.hasVideo?'プレー分析と動画をこのiPhoneに保存しました':'プレー分析を保存しました（動画ファイルは未保存）')}
+function setCandidateReview(candidateId,reviewLabel){
+ const raw=matchAiResult.dataset.result;
+ if(!raw)return;
+ let result;try{result=JSON.parse(raw)}catch(e){return}
+ const event=(result.summary?.candidate_events||[]).find(x=>String(x.id)===String(candidateId));
+ if(!event)return;
+ event.review_label=reviewLabel;
+ matchAiResult.dataset.result=JSON.stringify(result);
+ const savedId=Number(matchAiResult.dataset.savedId||0);
+ if(savedId){
+  const record=(state.matchAnalyses||[]).find(x=>x.id===savedId);
+  const saved=(record?.candidateEvents||[]).find(x=>String(x.id)===String(candidateId));
+  if(saved)saved.reviewLabel=reviewLabel;
+  persist();
+ }
+ const status=document.getElementById('candidate-review-'+candidateId);
+ if(status)status.textContent='確認結果：'+reviewLabel+(savedId?'（履歴に保存済み）':'（履歴保存時に記録）');
+}
 function saveMatchScanResult(){
  const raw=matchAiResult.dataset.result;
  if(!raw){alert('先にAI試合スキャンを完了してください');return}
@@ -138,7 +156,7 @@ function saveMatchScanResult(){
  const sm=result.summary||{},id=Date.now();
  const timeline=(sm.frames||[]).map(f=>({time:f.time_seconds??null,leftKnee:f.left_knee_angle_deg??null,rightKnee:f.right_knee_angle_deg??null,leftHip:f.left_hip_angle_deg??null,rightHip:f.right_hip_angle_deg??null,trunk:f.trunk_lean_image_angle_deg??null,leftFootMotion:f.left_foot_image_motion_per_sec??null,rightFootMotion:f.right_foot_image_motion_per_sec??null}));
  state.matchAnalyses=state.matchAnalyses||[];
- state.matchAnalyses.unshift({id,date:today(),title:videoTitle.value.trim()||(videoFile.files[0]?.name)||'試合動画',jerseyNumbers:result.requested_jersey_numbers||String(state.settings.jersey1)+','+String(state.settings.jersey2),duration:sm.duration_seconds??null,frames:sm.sampled_pose_frames??0,interval:sm.sampling_interval_seconds??null,knee:sm.average_left_right_knee_angle_deg??null,hip:sm.average_left_right_hip_angle_deg??null,trunk:sm.average_trunk_lean_image_angle_deg??null,identityConfirmed:sm.identity_confirmed===true,jobId:result.job_id||null,timeline,candidateEvents:(sm.candidate_events||[]).map(ev=>({time:ev.time_seconds,label:ev.label,reason:ev.reason,clipAvailable:ev.clip_available===true,clipUrl:ev.clip_url||null})),feedback:sm.feedback||[]});
+ state.matchAnalyses.unshift({id,date:today(),title:videoTitle.value.trim()||(videoFile.files[0]?.name)||'試合動画',jerseyNumbers:result.requested_jersey_numbers||String(state.settings.jersey1)+','+String(state.settings.jersey2),duration:sm.duration_seconds??null,frames:sm.sampled_pose_frames??0,interval:sm.sampling_interval_seconds??null,knee:sm.average_left_right_knee_angle_deg??null,hip:sm.average_left_right_hip_angle_deg??null,trunk:sm.average_trunk_lean_image_angle_deg??null,identityConfirmed:sm.identity_confirmed===true,jobId:result.job_id||null,timeline,candidateEvents:(sm.candidate_events||[]).map(ev=>({id:ev.id,time:ev.time_seconds,label:ev.label,reason:ev.reason,clipAvailable:ev.clip_available===true,clipUrl:ev.clip_url||null,reviewLabel:ev.review_label||'未確認'})),feedback:sm.feedback||[]});
  matchAiResult.dataset.savedId=String(id);persist();alert('AI試合スキャン結果を履歴に保存しました');
 }
 function toggleMatchScanDetail(id){const el=document.getElementById('match-scan-detail-'+id);if(el)el.hidden=!el.hidden}
