@@ -682,7 +682,7 @@ function renderIntegratedDevelopmentBrief(){
   const latest=list[0],previous=list[1];
   const delta=previous?Number(latest.value)-Number(previous.value):null;
   const unit=latest.unit|| (type==='立ち幅跳び'?'cm':'秒');
-  const change=previous?(type==='立ち幅跳び'?(delta>0?'+':'')+delta.toFixed(2):(delta>0?'+':'')+delta.toFixed(2):'')+unit:'比較記録なし';
+  const change=previous?((delta>0?'+':'')+delta.toFixed(2)+' '+unit):'比較記録なし';
   return {type,latest,previous,change};
  }).filter(Boolean);
  const top=priority[0];
@@ -694,6 +694,47 @@ function renderIntegratedDevelopmentBrief(){
  const next=top&&top.score>0?top.focus:(form?((form.kind==='フリーキック')?'シュート':form.kind==='パスキック'?'パス':'シュート'):'ドリブル');
  const nextReason=top&&top.score>0?'試合の本人確認済み評価と練習後の振り返りで優先度が高いテーマ。':form?'最新のフォーム解析を保存済み。フォーム動画を見返し、同じ条件で次回撮影しよう。':'記録が少ないため、基本の加速ドリブルを短時間で続けよう。';
  return '<section class="note" style="margin-top:12px"><h3 style="margin-top:0">成長データ統合レポート</h3><div class="tiny muted">試合・フォーム・練習・測定の保存記録をまとめた参考レポート。自動でプレーの良否を断定するものではありません。</div><div class="listitem"><div class="grow"><b>試合から見えるテーマ</b><div class="tiny">'+esc(matchText)+'</div><div class="tiny muted">評価済み '+reviewed.length+'場面／本人確認済み '+matches.length+'場面</div></div></div><div class="listitem"><div class="grow"><b>最新フォーム解析</b><div class="tiny">'+esc(formText)+'</div>'+feedbackHtml+'</div></div><div class="listitem"><div class="grow"><b>身体測定の推移</b>'+measureHtml+'</div></div><div class="listitem"><div class="grow"><b>練習の継続</b><div class="tiny">直近30日 '+trainingCount+'回の練習記録</div></div></div><div class="note"><b>次に取り組む候補：'+esc(next)+'</b><div class="tiny">'+esc(nextReason)+'</div></div><div class="tiny muted">測定値の比較は記録された数値の差です。計測条件が異なる場合は単純比較せず、同じ方法で測定してください。</div></section>';
+}
+function renderMonthlyGrowthTrajectory(){
+ const now=new Date();
+ const dayStart=d=>{const x=new Date(String(d||'')+'T12:00:00');return Number.isFinite(x.getTime())?x.getTime():null;};
+ const currentStart=now.getTime()-30*86400000,previousStart=now.getTime()-60*86400000;
+ const inRange=(date,start,end)=>{const t=dayStart(date);return t!==null&&t>=start&&t<end;};
+ const matches=(state.matchAnalyses||[]);
+ const events=matches.flatMap(m=>(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖').map(e=>({...e,date:m.date||e.date||''})));
+ const currentEvents=events.filter(e=>inRange(e.date,currentStart,now.getTime()));
+ const previousEvents=events.filter(e=>inRange(e.date,previousStart,currentStart));
+ const assessed=list=>list.filter(e=>e.assessment==='良かった'||e.assessment==='改善したい');
+ const curAssessed=assessed(currentEvents),prevAssessed=assessed(previousEvents);
+ const trainings=(state.trainings||[]);
+ const currentTraining=trainings.filter(t=>inRange(t.date,currentStart,now.getTime()));
+ const previousTraining=trainings.filter(t=>inRange(t.date,previousStart,currentStart));
+ const forms=(state.aiFormAnalyses||[]);
+ const currentForms=forms.filter(x=>inRange(x.date,currentStart,now.getTime()));
+ const previousForms=forms.filter(x=>inRange(x.date,previousStart,currentStart));
+ const fmt=n=>(n>0?'+':'')+n;
+ const skills=['ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール','その他'];
+ const skillRows=skills.map(skill=>{
+  const c=curAssessed.filter(e=>e.actionType===skill),p=prevAssessed.filter(e=>e.actionType===skill);
+  return {skill,currentGood:c.filter(e=>e.assessment==='良かった').length,currentImprove:c.filter(e=>e.assessment==='改善したい').length,previousGood:p.filter(e=>e.assessment==='良かった').length,previousImprove:p.filter(e=>e.assessment==='改善したい').length};
+ }).filter(x=>x.currentGood+x.currentImprove+x.previousGood+x.previousImprove);
+ const focus=skillRows.filter(x=>x.currentImprove>=2&&x.currentImprove>x.currentGood).sort((a,b)=>b.currentImprove-a.currentImprove)[0];
+ const drills={'ドリブル':'親子1対1を短く4本。相手の重心を見て逆を取り、抜いた後の2〜3歩を速くする。','パス':'受ける前に左右を確認し、半身で受けて前向きのファーストタッチからパス。','シュート':'近距離から軸足の位置とミートを確認し、左右のコースへ正確に蹴る。','ボールを受ける':'首振り→半身→前へ運べるファーストタッチを左右から反復。','守備・プレス':'飛び込まず相手の進路を限定する短い親子1対1。','オフザボール':'パスが出る前に斜め・背後へ動いて受ける角度を作る。','その他':'試合映像から場面を一つ選び、動きをゆっくり再現する。'};
+ const trainingThemes=currentTraining.map(t=>t.focus||inferTrainingFocus(t.menu,t.category)).filter(Boolean);
+ const linkedFocus=focus?trainingThemes.filter(x=>x===focus.skill).length:0;
+ const measureTypes=['30m走','アジリティ','立ち幅跳び'];
+ const measureRows=measureTypes.map(type=>{
+  const list=(state.measures||[]).filter(m=>m.type===type&&Number.isFinite(Number(m.value))).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+  if(!list.length)return '';
+  const latest=list[list.length-1],prior=list.length>1?list[list.length-2]:null;
+  const delta=prior?Number(latest.value)-Number(prior.value):null;
+  const better=prior?(type==='立ち幅跳び'?delta>0:delta<0):false;
+  return '<div class="tiny">・'+esc(type)+'：<b>'+esc(latest.value)+' '+esc(latest.unit||'')+'</b>'+(prior?'（前回比 '+(delta>0?'+':'')+esc(delta.toFixed(2))+' '+esc(latest.unit||'')+'／'+(delta===0?'同じ':better?'改善方向':'変化')+'）':'（比較記録なし）')+'</div>';
+ }).filter(Boolean).join('');
+ const deltaLabel=(a,b)=>fmt(a-b);
+ const skillHtml=skillRows.length?'<div style="overflow-x:auto"><table class="table"><thead><tr><th>プレー</th><th>前30日<br>良／改善</th><th>直近30日<br>良／改善</th><th>改善記録の差</th></tr></thead><tbody>'+skillRows.map(x=>'<tr><td>'+esc(x.skill)+'</td><td>'+x.previousGood+' / '+x.previousImprove+'</td><td>'+x.currentGood+' / '+x.currentImprove+'</td><td>'+deltaLabel(x.currentImprove,x.previousImprove)+'</td></tr>').join('')+'</tbody></table></div>':'<div class="tiny muted">比較できる評価済み場面がまだありません。陸玖本人として確認し、プレー分類と評価を入力すると反映されます。</div>';
+ const focusHtml=focus?'<b>次の1か月の重点候補：'+esc(focus.skill)+'</b><div class="tiny">'+esc(drills[focus.skill]||'試合映像を見ながら一つの動きを確認しよう')+'</div><div class="tiny muted">根拠：直近30日で改善したい '+focus.currentImprove+'場面、良かった '+focus.currentGood+'場面。関連テーマの練習記録 '+linkedFocus+'回。手動評価に基づく暫定候補です。</div>':'<b>次の1か月は暫定テーマ</b><div class="tiny">まだ重点課題を断定できるだけの評価記録がありません。まずは陸玖の得意な加速ドリブルを短時間続け、試合後に本人と場面を確認しよう。</div>';
+ return '<section class="note" style="margin-top:12px"><h3 style="margin-top:0">成長トラッカー｜直近30日 vs 前30日</h3><div class="tiny muted">同じ30日幅で、本人確認済み試合場面・練習・フォーム解析を比較します。記録数の増減は活動量の変化であり、技術向上を直接示すものではありません。</div><div class="grid"><div class="card"><div class="tiny muted">試合場面</div><div class="stat">'+currentEvents.length+'<small>件</small></div><div class="tiny muted">前30日 '+previousEvents.length+'件（'+fmt(currentEvents.length-previousEvents.length)+'）</div></div><div class="card"><div class="tiny muted">練習記録</div><div class="stat">'+currentTraining.length+'<small>回</small></div><div class="tiny muted">前30日 '+previousTraining.length+'回（'+fmt(currentTraining.length-previousTraining.length)+'）</div></div><div class="card"><div class="tiny muted">フォーム解析</div><div class="stat">'+currentForms.length+'<small>回</small></div><div class="tiny muted">前30日 '+previousForms.length+'回（'+fmt(currentForms.length-previousForms.length)+'）</div></div></div><h4 style="margin-bottom:6px">プレー別の振り返り比較</h4>'+skillHtml+'<h4 style="margin-bottom:6px">次の1か月に向けたコーチメモ</h4><div class="listitem" style="display:block">'+focusHtml+'</div><h4 style="margin-bottom:6px">身体測定の最新記録</h4>'+(measureRows||'<div class="tiny muted">測定記録はまだありません。</div>')+'<div class="tiny muted" style="margin-top:8px">注意：試合場面は保護者・本人が陸玖として確認した記録のみ。評価は手入力です。測定条件や撮影角度が異なる場合は単純比較せず、痛みや違和感があれば練習を中止してください。</div></section>';
 }
 function renderCoachOverallAssessment(){
  const a=getCoachOverallAssessment();
@@ -1225,7 +1266,7 @@ function renderMatchdayFocus(){
  host.innerHTML='<h3>試合前に意識すること</h3>'+rows+'<div class="tiny muted">試合前チェック '+items.filter(x=>checks[x.id]).length+'/'+items.length+' ・ 試合後の振り返り '+done+'/'+items.length+'（できた '+achieved+'）</div><div class="note">「できなかった」も大切な記録。次の練習テーマを考える材料にしよう。</div>';
 }
 function renderAll(){
- state.aiFormAnalyses=state.aiFormAnalyses||[];state.matchAnalyses=state.matchAnalyses||[];let date=today(),month=date.slice(0,7),days=new Set(state.trainings.filter(x=>x.date.startsWith(month)).map(x=>x.date)).size;homeDays.innerHTML=`${days} <small>日</small>`;monthProgress.style.width=Math.min(100,days/12*100)+'%';homeVideos.innerHTML=`${state.clips.length+state.forms.length} <small>件</small>`;let sprint=state.measures.find(x=>x.type==='30m走');homeSprint.innerHTML=sprint?`${esc(sprint.value)} <small>${esc(sprint.unit)}</small>`:'—';homeNumbers.textContent=`${state.settings.jersey1} / ${state.settings.jersey2}`;const coachPlan=getCoachTrainingPlan();const weekPlan=getWeeklyCoachPlan();dailyPlan.innerHTML='<div class="listitem"><span class="tag good">AIコーチ提案</span><div class="grow"><b>'+esc(coachPlan.title)+'</b><div class="tiny muted">'+coachPlan.minutes+'分・'+esc(coachPlan.why)+'</div><div class="tiny">'+esc(coachPlan.note)+'</div><button class="secondary small" onclick="applyCoachTrainingPlan()">このメニューで練習を始める</button></div></div><h3 style="margin:14px 0 6px">今週の3日間・専属コーチメニュー</h3><div class="tiny muted">月〜水に短時間で実施。木〜日はチーム活動を優先し、追加練習は休みにしてあります。疲れや痛みがある日は休み、日程は練習画面で変更できます。</div>'+weekPlan.map((p,i)=>'<div class="listitem"><div class="grow"><b>'+p.day+'｜'+esc(p.title)+'</b><div class="tiny muted">'+p.date+'・'+p.minutes+'分・'+esc(p.why)+'</div><div class="tiny">'+esc(p.note)+'</div><button class="secondary small" onclick="applyWeeklyCoachSession('+i+')">この日の練習を始める</button></div></div>').join('')+renderCoachOverallAssessment()+renderIntegratedDevelopmentBrief();renderMatchdayFocus();
+ state.aiFormAnalyses=state.aiFormAnalyses||[];state.matchAnalyses=state.matchAnalyses||[];let date=today(),month=date.slice(0,7),days=new Set(state.trainings.filter(x=>x.date.startsWith(month)).map(x=>x.date)).size;homeDays.innerHTML=`${days} <small>日</small>`;monthProgress.style.width=Math.min(100,days/12*100)+'%';homeVideos.innerHTML=`${state.clips.length+state.forms.length} <small>件</small>`;let sprint=state.measures.find(x=>x.type==='30m走');homeSprint.innerHTML=sprint?`${esc(sprint.value)} <small>${esc(sprint.unit)}</small>`:'—';homeNumbers.textContent=`${state.settings.jersey1} / ${state.settings.jersey2}`;const coachPlan=getCoachTrainingPlan();const weekPlan=getWeeklyCoachPlan();dailyPlan.innerHTML='<div class="listitem"><span class="tag good">AIコーチ提案</span><div class="grow"><b>'+esc(coachPlan.title)+'</b><div class="tiny muted">'+coachPlan.minutes+'分・'+esc(coachPlan.why)+'</div><div class="tiny">'+esc(coachPlan.note)+'</div><button class="secondary small" onclick="applyCoachTrainingPlan()">このメニューで練習を始める</button></div></div><h3 style="margin:14px 0 6px">今週の3日間・専属コーチメニュー</h3><div class="tiny muted">月〜水に短時間で実施。木〜日はチーム活動を優先し、追加練習は休みにしてあります。疲れや痛みがある日は休み、日程は練習画面で変更できます。</div>'+weekPlan.map((p,i)=>'<div class="listitem"><div class="grow"><b>'+p.day+'｜'+esc(p.title)+'</b><div class="tiny muted">'+p.date+'・'+p.minutes+'分・'+esc(p.why)+'</div><div class="tiny">'+esc(p.note)+'</div><button class="secondary small" onclick="applyWeeklyCoachSession('+i+')">この日の練習を始める</button></div></div>').join('')+renderCoachOverallAssessment()+renderIntegratedDevelopmentBrief()+renderMonthlyGrowthTrajectory();renderMatchdayFocus();
 trainDate.value=trainDate.value||date;measureDate.value=measureDate.value||date;
 trainMenu.innerHTML=state.menus.map((m,i)=>`<option value="${esc(m.name)}">${esc(m.category)}｜${esc(m.name)}</option>`).join('');
 menuList.innerHTML=state.menus.map((m,i)=>`<div class="listitem"><div class="grow"><b>${esc(m.name)}</b><div class="tiny muted">${esc(m.category)}・目安${m.minutes||10}分</div></div><button class="danger small" onclick="removeMenu(${i})">削除</button></div>`).join('');
