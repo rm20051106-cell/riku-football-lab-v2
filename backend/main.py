@@ -8,6 +8,7 @@ import cv2
 import mediapipe as mp
 import numpy as np
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 APP_NAME = "RIKU FOOTBALL LAB Free AI Analysis API"
@@ -291,6 +292,59 @@ async def analyze_match(file: UploadFile = File(...), jersey_numbers: str = Form
     return result
 
 
+def build_movement_candidates(summary, max_events=8):
+    frames = summary.get('frames', [])
+    scored = []
+    for frame in frames:
+        speeds = [frame.get('left_foot_image_motion_per_sec'), frame.get('right_foot_image_motion_per_sec')]
+        speeds = [float(v) for v in speeds if isinstance(v, (int, float))]
+        if not speeds:
+            continue
+        score = max(speeds)
+        if score > 0:
+            scored.append({'time_seconds': float(frame.get('time_seconds', 0)), 'score': score})
+    if len(scored) < 3:
+        return []
+    values = sorted(x['score'] for x in scored)
+    threshold = values[min(len(values) - 1, int((len(values) - 1) * 0.75))]
+    selected = [x for x in scored if x['score'] >= threshold and x['score'] > 0.015]
+    selected.sort(key=lambda x: x['score'], reverse=True)
+    chosen = []
+    for item in selected:
+        if all(abs(item['time_seconds'] - old['time_seconds']) >= 10 for old in chosen):
+            chosen.append(item)
+        if len(chosen) >= max_events:
+            break
+    chosen.sort(key=lambda x: x['time_seconds'])
+    return [{'id': str(i + 1), 'time_seconds': round(x['time_seconds'], 2),
+             'movement_score': round(x['score'], 4),
+             'label': '動きの変化候補',
+             'reason': '足先の画像上の移動量が、スキャンした場面の中で大きい時間帯です。',
+             'is_football_action_confirmed': False}
+            for i, x in enumerate(chosen)]
+
+def extract_candidate_clips(video_path, job_id, candidates, duration):
+    clips = []
+    for event in candidates:
+        center = float(event['time_seconds'])
+        start = max(0.0, center - 4.0)
+        length = min(8.0, max(0.5, duration - start))
+        if length < 0.5:
+            continue
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp:
+            clip_path = tmp.name
+        command = ['ffmpeg', '-y', '-ss', str(start), '-i', video_path, '-t', str(length),
+                   '-map', '0:v:0', '-an', '-c:v', 'libx264', '-preset', 'ultrafast',
+                   '-crf', '28', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', clip_path]
+        proc = subprocess.run(command, capture_output=True, text=True, timeout=120)
+        if proc.returncode == 0 and os.path.exists(clip_path) and os.path.getsize(clip_path) > 0:
+            clips.append({'id': event['id'], 'time_seconds': event['time_seconds'],
+                          'label': event['label'], 'reason': event['reason'], 'path': clip_path})
+        else:
+            if os.path.exists(clip_path):
+                os.remove(clip_path)
+    return clips
+
 def _set_match_job(job_id: str, **updates):
     job = match_jobs.get(job_id)
     if job is not None:
@@ -316,9 +370,18 @@ def run_match_job(job_id: str, source_path: str, jersey_numbers: str):
         def progress(value):
             _set_match_job(job_id, progress=value, stage="動画全体をスキャン中")
         result = process_video(converted_path, "match", progress_callback=progress)
+        summary = result.get("summary", {})
+        candidates = build_movement_candidates(summary)
+        _set_match_job(job_id, progress=92, stage="動きの候補場面を短い動画に切り出し中")
+        clips = extract_candidate_clips(converted_path, job_id, candidates, float(summary.get("duration_seconds", 0)))
+        for event in candidates:
+            event["clip_available"] = any(x["id"] == event["id"] for x in clips)
+        summary["candidate_events"] = candidates
+        summary["candidate_event_count"] = len(candidates)
+        summary["candidate_event_note"] = "足先の画像上の動きから抽出した確認候補です。サッカーのプレーや陸玖本人の動きと確認されたものではありません。"
         result["requested_jersey_numbers"] = jersey_numbers
         result["job_id"] = job_id
-        _set_match_job(job_id, status="completed", progress=100, stage="解析完了", result=result)
+        _set_match_job(job_id, status="completed", progress=100, stage="解析完了", result=result, clips=clips)
     except Exception as exc:
         detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
         _set_match_job(job_id, status="failed", progress=100, stage="解析に失敗", error=detail)
@@ -378,3 +441,13 @@ def get_match_job(job_id: str):
     if job.get("status") == "completed":
         payload["result"] = job["result"]
     return payload
+
+@app.get("/analyze/jobs/{job_id}/clips/{clip_id}")
+def get_match_candidate_clip(job_id: str, clip_id: str):
+    job = match_jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="解析ジョブが見つかりません。")
+    clip = next((x for x in job.get("clips", []) if x.get("id") == clip_id), None)
+    if clip is None or not os.path.exists(clip.get("path", "")):
+        raise HTTPException(status_code=404, detail="候補動画が見つかりません。サーバー再起動後は再解析が必要です。")
+    return FileResponse(clip["path"], media_type="video/mp4", filename=f"movement-candidate-{clip_id}.mp4")
