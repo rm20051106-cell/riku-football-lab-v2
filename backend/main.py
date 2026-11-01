@@ -209,6 +209,123 @@ def analyze_task_pose(lm):
     }
 
 
+
+def associate_person_tracks(frames, max_gap_seconds=9.0):
+    """Create provisional short-term tracks from sparse pose detections.
+    These are geometric associations, not verified player identities.
+    """
+    tracks = []
+    next_track_id = 1
+
+    def iou(a, b):
+        if not a or not b:
+            return 0.0
+        x1, y1 = max(a[0], b[0]), max(a[1], b[1])
+        x2, y2 = min(a[2], b[2]), min(a[3], b[3])
+        intersection = max(0.0, x2 - x1) * max(0.0, y2 - y1)
+        area_a = max(0.0, a[2] - a[0]) * max(0.0, a[3] - a[1])
+        area_b = max(0.0, b[2] - b[0]) * max(0.0, b[3] - b[1])
+        union = area_a + area_b - intersection
+        return intersection / union if union > 1e-9 else 0.0
+
+    def center(box):
+        return ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)
+
+    def jersey_set(person):
+        return {str(x.get("number")) for x in person.get("jersey_ocr_candidates", [])
+                if x.get("number")}
+
+    for frame in frames:
+        now = float(frame.get("time_seconds", 0))
+        people = frame.get("detected_people", [])
+        pairs = []
+        for person_index, person in enumerate(people):
+            box = person.get("bbox")
+            if not box:
+                continue
+            pc = center(box)
+            for track_index, track in enumerate(tracks):
+                gap = now - track["last_time"]
+                if gap <= 0 or gap > max_gap_seconds:
+                    continue
+                old_box = track["last_bbox"]
+                old_center = center(old_box)
+                distance = float(np.linalg.norm(np.array(pc) - np.array(old_center)))
+                overlap = iou(box, old_box)
+                if distance > 0.22 and overlap < 0.03:
+                    continue
+                current_numbers = jersey_set(person)
+                previous_numbers = set(track["jersey_votes"])
+                number_match = bool(current_numbers & previous_numbers)
+                number_conflict = bool(current_numbers and previous_numbers and not number_match)
+                if number_conflict and distance > 0.08 and overlap < 0.20:
+                    continue
+                size_a = max(1e-4, (box[2] - box[0]) * (box[3] - box[1]))
+                size_b = max(1e-4, (old_box[2] - old_box[0]) * (old_box[3] - old_box[1]))
+                size_ratio = min(size_a, size_b) / max(size_a, size_b)
+                cost = distance - (0.10 * overlap) - (0.08 if number_match else 0.0) + (0.08 if number_conflict else 0.0) + (0.025 * (1 - size_ratio))
+                pairs.append((cost, person_index, track_index, distance, overlap, number_match))
+        used_people, used_tracks = set(), set()
+        assignments = {}
+        for cost, person_index, track_index, distance, overlap, number_match in sorted(pairs):
+            if person_index in used_people or track_index in used_tracks:
+                continue
+            if cost > 0.22:
+                continue
+            confidence = max(0.15, min(0.85, 0.75 - distance * 1.8 + overlap * 0.35 + (0.12 if number_match else 0)))
+            assignments[person_index] = (tracks[track_index], round(confidence, 2),
+                                         "背番号候補＋位置" if number_match else "位置・大きさ")
+            used_people.add(person_index)
+            used_tracks.add(track_index)
+
+        for person_index, person in enumerate(people):
+            box = person.get("bbox")
+            if not box:
+                person["track_id"] = None
+                person["track_confidence"] = 0.0
+                person["track_method"] = "位置情報なし"
+                continue
+            if person_index in assignments:
+                track, confidence, method = assignments[person_index]
+            else:
+                track = {
+                    "track_id": f"T{next_track_id}",
+                    "first_time": now,
+                    "last_time": now,
+                    "last_bbox": box,
+                    "sample_count": 0,
+                    "jersey_votes": {},
+                    "confidence_sum": 0.0,
+                }
+                tracks.append(track)
+                next_track_id += 1
+                confidence, method = 0.35, "新規検出"
+            track["last_time"] = now
+            track["last_bbox"] = box
+            track["sample_count"] += 1
+            track["confidence_sum"] += confidence
+            for number in jersey_set(person):
+                track["jersey_votes"][number] = track["jersey_votes"].get(number, 0) + 1
+            person["track_id"] = track["track_id"]
+            person["track_confidence"] = confidence
+            person["track_method"] = method
+
+    summaries = []
+    for track in tracks:
+        summaries.append({
+            "track_id": track["track_id"],
+            "first_time_seconds": round(track["first_time"], 2),
+            "last_time_seconds": round(track["last_time"], 2),
+            "sample_count": track["sample_count"],
+            "average_association_confidence": round(track["confidence_sum"] / max(1, track["sample_count"]), 2),
+            "jersey_number_candidates": track["jersey_votes"],
+        })
+    return {
+        "provisional_track_count": len(summaries),
+        "tracks": summaries,
+        "note": "約4秒間隔の検出位置・大きさ・背番号OCR候補による暫定的な関連付けです。選手の継続追跡・背番号・陸玖本人を保証せず、交差や遮蔽でIDが入れ替わる可能性があります。"
+    }
+
 def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
     cap = cv2.VideoCapture(path)
     if not cap.isOpened():
@@ -298,7 +415,7 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
                 current[side + "_foot_image_motion_per_sec"] = round(float(np.linalg.norm(np.array(a[:2]) - np.array(b[:2])) / dt), 4)
             else:
                 current[side + "_foot_image_motion_per_sec"] = None
-    knees = [x[k] for x in frames for k in ("left_knee_angle_deg", "right_knee_angle_deg") if x.get(k) is not None]
+    track_summary = associate_person_tracks(frames, max_gap_seconds=max(9.0, actual_interval * 2.1))\n    knees = [x[k] for x in frames for k in ("left_knee_angle_deg", "right_knee_angle_deg") if x.get(k) is not None]
     hips = [x[k] for x in frames for k in ("left_hip_angle_deg", "right_hip_angle_deg") if x.get(k) is not None]
     trunks = [x["trunk_lean_image_angle_deg"] for x in frames]
     summary = {
@@ -310,7 +427,7 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
         "sampling_interval_seconds": round(actual_interval, 3),
         "sampling_rate_fps": round(1 / actual_interval, 2) if actual_interval > 0 else None,
         "frames": frames,
-        "person_detection_summary": {
+        "person_track_summary": track_summary,\n        "person_detection_summary": {
             "frames_with_people": sum(1 for n in people_per_frame if n > 0),
             "average_people_per_sample": round(float(np.mean(people_per_frame)), 2) if people_per_frame else 0,
             "max_people_in_one_frame": max(people_per_frame) if people_per_frame else 0,
