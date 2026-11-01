@@ -273,7 +273,49 @@ async function postVideoToAI(file, endpoint, extra, resultElement){
   resultElement.textContent='解析に失敗：'+msg+'。設定画面の「接続テスト」も確認してください。';
  }
 }
-function sendMatchToAI(){postVideoToAI(videoFile.files[0],'/analyze/match',{jersey_numbers:String(state.settings.jersey1)+','+String(state.settings.jersey2)},matchAiResult)}
+async function postMatchJobToAI(file,resultElement){
+ const u=getApiUrl();
+ if(!u){resultElement.textContent='AIサーバーURLが未設定です。設定画面でURLを保存してください。';return}
+ if(!file){resultElement.textContent='先に試合動画を選択してください。';return}
+ if(file.size>500*1024*1024){resultElement.textContent='試合動画は500MB以内にしてください。';return}
+ let jobId=null;
+ try{
+  resultElement.textContent='AIサーバーの起動を確認しています…';
+  const health=await fetch(u+'/health',{cache:'no-store'});
+  if(!health.ok)throw Error('health HTTP '+health.status);
+  const hj=await health.json();
+  if(hj.ok!==true && !(hj.status==='ready' && hj.service==='RIKU FOOTBALL LAB Free AI Analysis API'))throw Error('サーバーの応答が想定外です');
+  resultElement.textContent='元動画を送信しています。15〜20分の動画は送信に時間がかかる場合があります…';
+  const fd=new FormData();
+  fd.append('file',file,file.name||'match-video.mp4');
+  fd.append('jersey_numbers',String(state.settings.jersey1)+','+String(state.settings.jersey2));
+  const response=await fetch(u+'/analyze/match/jobs',{method:'POST',body:fd,credentials:'omit',cache:'no-store'});
+  const raw=await response.text();
+  let created;try{created=JSON.parse(raw)}catch(e){created=null}
+  if(!response.ok||!created||!created.job_id)throw Error('動画送信 HTTP '+response.status+'：'+(created&&created.detail?created.detail:raw.slice(0,220)));
+  jobId=created.job_id;
+  resultElement.textContent='動画を受け付けました。解析ジョブを開始します…';
+  while(true){
+   await new Promise(resolve=>setTimeout(resolve,3000));
+   const statusResponse=await fetch(u+'/analyze/jobs/'+encodeURIComponent(jobId),{cache:'no-store'});
+   const statusRaw=await statusResponse.text();
+   let status;try{status=JSON.parse(statusRaw)}catch(e){status=null}
+   if(!statusResponse.ok||!status)throw Error('進捗の取得に失敗しました。サーバーが再起動した場合は再送信が必要です。');
+   resultElement.textContent='試合動画を解析中：'+(status.progress??0)+'%｜'+(status.stage||'処理中')+'。この画面を閉じずにお待ちください。';
+   if(status.status==='failed')throw Error(status.error||'解析に失敗しました');
+   if(status.status==='completed'){
+    const j=status.result||{},sm=j.summary||{};
+    const notes=(sm.feedback||[]).map(x=>esc(x)).join('<br>');
+    resultElement.innerHTML='<div class="note success"><b>試合動画の全編スキャンが完了しました</b><br>動画の長さ：'+(sm.duration_seconds??'—')+'秒<br>姿勢検出フレーム：'+(sm.sampled_pose_frames??'—')+'<br>スキャン間隔：約'+(sm.sampling_interval_seconds??'—')+'秒ごと<br>膝角度（左右平均・推定）：'+(sm.average_left_right_knee_angle_deg??'—')+'°<br>股関節角度（左右平均・推定）：'+(sm.average_left_right_hip_angle_deg??'—')+'°<br><br><b>現在の段階について</b><br>'+notes+'<br><br>※背番号の自動認識・陸玖本人の特定・プレー評価・ハイライト動画の自動切り出しは、これから追加する機能です。</div>';
+    resultElement.dataset.result=JSON.stringify(j);
+    return;
+   }
+  }
+ }catch(e){
+  resultElement.textContent='試合動画の解析に失敗：'+e.message+(jobId?'（ジョブID：'+jobId+'）':'');
+ }
+}
+function sendMatchToAI(){postMatchJobToAI(videoFile.files[0],matchAiResult)}
 function sendFormToAI(){postVideoToAI(formFile.files[0],'/analyze/form',{kick_type:formKind.value,dominant_foot:formFoot.value,camera_angle:formCameraAngle.value},formAiResult)}
 function exportData(){let blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='riku-football-lab-backup-'+today()+'.json';a.click();URL.revokeObjectURL(url)}
 importFile.addEventListener('change',async e=>{let f=e.target.files[0];if(!f)return;try{let s=JSON.parse(await f.text());if(!s.settings||!Array.isArray(s.trainings)||!Array.isArray(s.measures))throw Error();if(!confirm('現在のデータを読み込んだバックアップで置き換えますか？'))return;state=s;persist();alert('バックアップを読み込みました')}catch(err){alert('バックアップファイルを読み込めませんでした')}e.target.value=''});
