@@ -1044,7 +1044,7 @@ function renderMatchToMatchComparison(analyses){
  if(matches.length<2)return '<h3 style="margin-top:16px">試合ごとのプレー変化</h3><div class="empty">陸玖本人として確認した試合が2試合以上になると、プレー別の前回比較を表示します。各試合で本人確認・プレー分類・評価を保存してください。</div>';
  const current=matches[0],previous=matches[1];
  const delta=(a,b)=>{const d=a-b;return (d>0?'+':'')+d;};
- const row=(label,a,b)=>'<div class="listitem"><div class="grow"><b>'+label+'</b><div class="tiny muted">前回 '+b+' → 今回 '+a+'（'+delta(a,b)+'）</div></div></div>';
+ const row=(label,a,b)=>{const numeric=Number.isFinite(Number(a))&&Number.isFinite(Number(b));return '<div class="listitem"><div class="grow"><b>'+label+'</b><div class="tiny muted">前回 '+b+' → 今回 '+a+(numeric?'（'+delta(Number(a),Number(b))+'）':'')+'</div></div></div>';};
  const types=['ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール','その他'];
  const trendRows=matches.slice().reverse().map(m=>{
   const rate=m.goodRate===null?'評価なし':m.goodRate+'%';
