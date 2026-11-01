@@ -3,8 +3,10 @@ name: Validate RIKU FOOTBALL LAB
 on:
   pull_request:
     branches: [main]
-  push:
-    branches: [feature/riku-match-ai-analysis]
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   syntax-and-container:
