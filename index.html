@@ -455,6 +455,24 @@ function getCoachTrainingPlan(){
  if(top&&plans[top])return plans[top];
  return {title:'加速ドリブル＋切り返し',minutes:15,category:'突破・ドリブル',note:'マーカーを使って左右に切り返し、前へ運ぶタッチから2〜3歩加速。最後に親子1対1で相手を見て突破方向を選ぶ。',why:'試合の改善データがまだ少ないため、今の育成テーマに合わせた基本メニュー'};
 }
+function getWeeklyCoachPlan(){
+ const base=getCoachTrainingPlan();
+ const weekday=new Date(today()+'T00:00:00').getDay();
+ const mondayOffset=weekday===0?-6:1-weekday;
+ const start=new Date(today()+'T00:00:00');start.setDate(start.getDate()+mondayOffset+(weekday>=4||weekday===0?7:0));
+ const dateAt=(offset)=>{const d=new Date(start);d.setDate(d.getDate()+offset);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
+ const plans=[
+  {day:'月曜',date:dateAt(0),title:base.title,minutes:base.minutes,category:base.category,focus:base.title.includes('パス')?'ボールを受ける':base.title.includes('シュート')?'シュート':base.title.includes('守備')?'守備・プレス':base.title.includes('動き出し')?'オフザボール':base.title.includes('受ける')?'ボールを受ける':'ドリブル',note:base.note,why:'試合の改善テーマを優先'},
+  {day:'火曜',date:dateAt(1),title:'加速ドリブル＋親子1対1',minutes:15,category:'突破・ドリブル',focus:'ドリブル',note:'マーカーを使って左右に切り返す。相手の重心を見て逆を取り、抜いた後の2〜3歩を加速。最後は親子1対1を短く行う。',why:'陸玖の突破力を武器として伸ばす'},
+  {day:'水曜',date:dateAt(2),title:'首振り＋前向きファーストタッチ',minutes:12,category:'受ける動き',focus:'ボールを受ける',note:'パスが来る前に左右を確認。半身で受けて前へ運ぶ。最後に練習した動きを使うミニゲーム形式で確認。',why:'試合でボールを受ける準備を整える'}
+ ];
+ return plans;
+}
+function applyWeeklyCoachSession(index){
+ const plan=getWeeklyCoachPlan()[index];if(!plan)return;
+ if(!state.menus.some(m=>m.name===plan.title)){state.menus.unshift({name:plan.title,category:plan.category,minutes:plan.minutes});persist();}
+ renderAll();trainMenu.value=plan.title;trainDate.value=plan.date;trainMinutes.value=plan.minutes;trainFocus.value=plan.focus;trainNote.value=plan.note;showView('training');
+}
 function applyCoachTrainingPlan(){
  const plan=getCoachTrainingPlan();
  let option=Array.from(trainMenu.options).find(o=>o.value===plan.title);
@@ -667,7 +685,7 @@ function renderMatchdayFocus(){
  host.innerHTML='<h3>試合前に意識すること</h3>'+rows+'<div class="tiny muted">試合前チェック '+items.filter(x=>checks[x.id]).length+'/'+items.length+' ・ 試合後の振り返り '+done+'/'+items.length+'（できた '+achieved+'）</div><div class="note">「できなかった」も大切な記録。次の練習テーマを考える材料にしよう。</div>';
 }
 function renderAll(){
- state.aiFormAnalyses=state.aiFormAnalyses||[];state.matchAnalyses=state.matchAnalyses||[];let date=today(),month=date.slice(0,7),days=new Set(state.trainings.filter(x=>x.date.startsWith(month)).map(x=>x.date)).size;homeDays.innerHTML=`${days} <small>日</small>`;monthProgress.style.width=Math.min(100,days/12*100)+'%';homeVideos.innerHTML=`${state.clips.length+state.forms.length} <small>件</small>`;let sprint=state.measures.find(x=>x.type==='30m走');homeSprint.innerHTML=sprint?`${esc(sprint.value)} <small>${esc(sprint.unit)}</small>`:'—';homeNumbers.textContent=`${state.settings.jersey1} / ${state.settings.jersey2}`;const coachPlan=getCoachTrainingPlan();dailyPlan.innerHTML='<div class="listitem"><span class="tag good">AIコーチ提案</span><div class="grow"><b>'+esc(coachPlan.title)+'</b><div class="tiny muted">'+coachPlan.minutes+'分・'+esc(coachPlan.why)+'</div><div class="tiny">'+esc(coachPlan.note)+'</div><button class="secondary small" onclick="applyCoachTrainingPlan()">このメニューで練習を始める</button></div></div>';renderMatchdayFocus();
+ state.aiFormAnalyses=state.aiFormAnalyses||[];state.matchAnalyses=state.matchAnalyses||[];let date=today(),month=date.slice(0,7),days=new Set(state.trainings.filter(x=>x.date.startsWith(month)).map(x=>x.date)).size;homeDays.innerHTML=`${days} <small>日</small>`;monthProgress.style.width=Math.min(100,days/12*100)+'%';homeVideos.innerHTML=`${state.clips.length+state.forms.length} <small>件</small>`;let sprint=state.measures.find(x=>x.type==='30m走');homeSprint.innerHTML=sprint?`${esc(sprint.value)} <small>${esc(sprint.unit)}</small>`:'—';homeNumbers.textContent=`${state.settings.jersey1} / ${state.settings.jersey2}`;const coachPlan=getCoachTrainingPlan();const weekPlan=getWeeklyCoachPlan();dailyPlan.innerHTML='<div class="listitem"><span class="tag good">AIコーチ提案</span><div class="grow"><b>'+esc(coachPlan.title)+'</b><div class="tiny muted">'+coachPlan.minutes+'分・'+esc(coachPlan.why)+'</div><div class="tiny">'+esc(coachPlan.note)+'</div><button class="secondary small" onclick="applyCoachTrainingPlan()">このメニューで練習を始める</button></div></div><h3 style="margin:14px 0 6px">今週の3日間・専属コーチメニュー</h3><div class="tiny muted">月〜水に短時間で実施。木〜日はチーム活動を優先し、追加練習は休みにしてあります。疲れや痛みがある日は休み、日程は練習画面で変更できます。</div>'+weekPlan.map((p,i)=>'<div class="listitem"><div class="grow"><b>'+p.day+'｜'+esc(p.title)+'</b><div class="tiny muted">'+p.date+'・'+p.minutes+'分・'+esc(p.why)+'</div><div class="tiny">'+esc(p.note)+'</div><button class="secondary small" onclick="applyWeeklyCoachSession('+i+')">この日の練習を始める</button></div></div>').join('');renderMatchdayFocus();
 trainDate.value=trainDate.value||date;measureDate.value=measureDate.value||date;
 trainMenu.innerHTML=state.menus.map((m,i)=>`<option value="${esc(m.name)}">${esc(m.category)}｜${esc(m.name)}</option>`).join('');
 menuList.innerHTML=state.menus.map((m,i)=>`<div class="listitem"><div class="grow"><b>${esc(m.name)}</b><div class="tiny muted">${esc(m.category)}・目安${m.minutes||10}分</div></div><button class="danger small" onclick="removeMenu(${i})">削除</button></div>`).join('');
