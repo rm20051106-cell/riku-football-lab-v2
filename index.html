@@ -977,6 +977,43 @@ function renderSkillEvidenceSummary(events){
  const evidence=(row,label)=>{if(!row)return '<div class="empty">判断できるだけの評価記録がまだありません。</div>';const items=row.list.slice().sort((a,b)=>String(b.matchDate||'').localeCompare(String(a.matchDate||''))||(Number(b.time)||0)-(Number(a.time)||0)).slice(0,3);return '<div class="listitem" style="display:block"><b>'+esc(row.type)+'｜'+label+'</b><div class="tiny muted">良かった '+row.good+' ／ 改善したい '+row.improve+'（評価 '+row.total+'場面）</div>'+items.map(e=>'<div class="tiny" style="margin-top:6px;padding-top:6px;border-top:1px solid var(--line,#ddd)"><b>'+esc(e.matchDate||'日付不明')+' '+formatMatchTime(e.time)+'</b>｜'+esc(e.matchTitle||'試合動画')+'<div class="tiny muted">'+esc(e.assessment)+(e.note?'｜メモ：'+esc(e.note):'')+'</div></div>').join('')+'</div>';};
  return '<h3 style="margin-top:14px">記録から見る・伸びているプレー候補と次の重点</h3><div class="tiny muted">陸玖本人として確認し、プレー分類と評価が入力された記録だけで判定。強み候補は「良かった」3場面以上かつ改善より多い場合、重点候補は「改善したい」2場面以上かつ良かったより多い場合に限ります。</div><div class="grid"><div class="card"><b>強み候補</b>'+evidence(strength,'良かった記録が多い')+'</div><div class="card"><b>次の重点候補</b>'+evidence(focus,'改善したい記録が多い')+'</div></div><div class="tiny muted">これは客観的な能力判定ではなく、記録に基づく振り返り候補です。対戦相手・ポジション・出場時間なども映像と合わせて確認してください。</div>';
 }
+function renderRecentSkillAssessmentTrend(events){
+ const types=['ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール','その他'];
+ const matches=new Map();
+ (events||[]).filter(e=>e.actionType&&e.actionType!=='未選択').forEach(e=>{
+  const key=String(e.matchId||'')+'|'+String(e.matchDate||'')+'|'+String(e.matchTitle||'');
+  if(!matches.has(key))matches.set(key,{key,date:e.matchDate||'',title:e.matchTitle||'試合動画',events:[]});
+  matches.get(key).events.push(e);
+ });
+ const recent=Array.from(matches.values()).sort((a,b)=>String(b.date).localeCompare(String(a.date))).slice(0,5);
+ const assessed=e=>e.filter(x=>x.assessment==='良かった'||x.assessment==='改善したい');
+ const rows=types.map(type=>{
+  const perMatch=recent.map(m=>{
+   const list=assessed(m.events.filter(e=>e.actionType===type));
+   return {match:m,good:list.filter(e=>e.assessment==='良かった').length,improve:list.filter(e=>e.assessment==='改善したい').length,total:list.length};
+  }).filter(x=>x.total);
+  const good=perMatch.reduce((n,x)=>n+x.good,0),improve=perMatch.reduce((n,x)=>n+x.improve,0),total=good+improve;
+  return {type,good,improve,total,perMatch};
+ }).filter(x=>x.total).sort((a,b)=>b.total-a.total);
+ if(!rows.length)return '<h3 style="margin-top:14px">プレー別・直近試合の評価推移</h3><div class="empty">陸玖本人として確認し、プレー分類と評価を入力した場面が増えると、プレー別の試合推移を表示します。</div>';
+ const body=rows.map(row=>{
+  const latest=row.perMatch.slice(0,3).map(x=>{
+   const label=(x.match.date?esc(x.match.date):'日付不明')+'｜'+esc(x.match.title);
+   const pct=x.total>=2?Math.round(x.good/x.total*100)+'%':'評価1場面・割合は参考外';
+   return '<div class="tiny muted" style="margin-top:4px">'+label+'：良かった '+x.good+'／改善 '+x.improve+'（'+pct+'）</div>';
+  }).join('');
+  const recentTwo=row.perMatch.slice(0,2);
+  let comparison='直近比較はまだ判断できません';
+  if(recentTwo.length===2&&recentTwo.every(x=>x.total>=2)){
+   const a=Math.round(recentTwo[0].good/recentTwo[0].total*100),b=Math.round(recentTwo[1].good/recentTwo[1].total*100),d=a-b;
+   comparison='直近2試合の参考比較：'+b+'% → '+a+'%（'+(d>0?'+':'')+d+'ポイント）';
+  }else if(recentTwo.length===2){
+   comparison='直近2試合の比較：評価場面が少ないため割合比較は保留';
+  }
+  return '<tr><td><b>'+esc(row.type)+'</b><div class="tiny muted">評価 '+row.total+'場面／'+row.perMatch.length+'試合</div>'+latest+'</td><td style="text-align:center">'+row.good+'</td><td style="text-align:center">'+row.improve+'</td><td><div class="tiny">'+comparison+'</div></td></tr>';
+ }).join('');
+ return '<h3 style="margin-top:14px">プレー別・直近試合の評価推移</h3><div class="tiny muted">陸玖本人として確認済みで、プレー分類と「良かった／改善したい」の両方を入力した場面のみ。直近最大5試合を対象にしています。</div><div style="overflow-x:auto"><table class="table"><thead><tr><th>プレー・直近の内訳</th><th>良かった</th><th>改善</th><th>試合間の参考比較</th></tr></thead><tbody>'+body+'</tbody></table></div><div class="tiny muted" style="margin-top:6px">「良かった」は入力された振り返り評価であり、AIが成功を判定した結果ではありません。割合比較は各試合2評価以上の場合だけ表示します。対戦相手・ポジション・出場時間・撮影条件が異なるため、上達の断定には使わず、映像と一緒に確認してください。</div>';
+}
 function renderGrowthEffortScore(){
  const cutoff=new Date();cutoff.setHours(0,0,0,0);cutoff.setDate(cutoff.getDate()-29);
  const inWindow=date=>{const d=new Date(String(date||'')+'T00:00:00');return Number.isFinite(d.getTime())&&d>=cutoff&&d<=new Date();};
@@ -1020,7 +1057,7 @@ function renderMeasurementMatchTimeline(){
 function renderRikuCoachReport(){
  const el=document.getElementById('rikuCoachReport');if(!el)return;
  const analyses=(state.matchAnalyses||[]).slice();
- const events=analyses.flatMap(match=>(match.candidateEvents||[]).filter(ev=>ev.reviewLabel==='陸玖').map(ev=>({...ev,matchDate:match.date,matchTitle:match.title})));
+ const events=analyses.flatMap(match=>(match.candidateEvents||[]).filter(ev=>ev.reviewLabel==='陸玖').map(ev=>({...ev,matchId:match.id,matchDate:match.date,matchTitle:match.title})));
  const confirmed=events.length;
  const good=events.filter(ev=>ev.assessment==='良かった').length;
  const improve=events.filter(ev=>ev.assessment==='改善したい').length;
@@ -1048,6 +1085,7 @@ function renderRikuCoachReport(){
   html+=renderRikuSkillProfile(events);
   html+=renderSkillEvidenceSummary(events);
   html+=renderMonthlySkillTrend();
+  html+=renderRecentSkillAssessmentTrend(events);
   html+='<h3 style="margin-top:14px">次の練習テーマ</h3>';
   html+=focus?'<div class="note"><b>'+esc(focus.type)+'を重点確認</b><div class="tiny">本人確認済みの記録のうち「改善したい」が'+focus.improve+'場面ありました。</div><div style="margin-top:6px">'+esc(focusDrills[focus.type]||focusDrills['その他'])+'</div></div>':'<div class="note">今は改善テーマを決めるだけの評価データがありません。次の試合でも「良かった」「改善したい」を記録していこう。</div>';
  }
