@@ -881,7 +881,7 @@ def create_match_highlight(job_id: str, clip_ids: str = Form(...)):
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False, suffix=".txt") as listing:
             list_path = listing.name
             for clip in selected:
-                listing.write("file '" + clip["path"].replace("'", "'\\''") + "'\\n")
+                listing.write("file '" + clip["path"] + "'\n")
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as output:
             output_path = output.name
         command = ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", list_path,
