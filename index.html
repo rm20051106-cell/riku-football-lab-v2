@@ -487,6 +487,20 @@ function renderMonthlyGrowthReport(monthKey){
  html+='<h4 style="margin-top:12px">練習テーマ別の記録</h4>'+(skillRows.length?skillRows.map(x=>'<div class="listitem"><div class="grow"><b>'+esc(x.skill)+'</b><div class="tiny muted">練習 '+x.training+'回 ／ 試合確認 '+x.seen+'場面（良かった '+x.good+'・改善 '+x.improve+'）</div></div></div>').join(''):'<div class="empty">この月の練習・試合記録はありません。</div>');
  html+='<h4 style="margin-top:12px">今月の測定</h4>'+measureSummary;
  html+='<div class="tiny muted" style="margin-top:8px">この月の保存記録だけを集計しています。「強み」「改善候補」は手動で本人確認・評価した場面に基づく目安です。練習回数だけで上達を断定しません。</div>';
+ const parts=key.split('-').map(Number),prevDate=new Date(parts[0],parts[1]-2,1),prevKey=prevDate.getFullYear()+'-'+String(prevDate.getMonth()+1).padStart(2,'0');
+ const prevTrainings=(state.trainings||[]).filter(t=>String(t.date||'').startsWith(prevKey));
+ const prevMatches=(state.matchAnalyses||[]).filter(m=>String(m.date||'').startsWith(prevKey));
+ const prevEvents=prevMatches.flatMap(m=>(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖'));
+ const prevGood=prevEvents.filter(e=>e.assessment==='良かった').length,prevImprove=prevEvents.filter(e=>e.assessment==='改善したい').length;
+ const deltaLabel=(a,b)=>{const d=a-b;return d===0?'前月と同じ':(d>0?'+':'')+d+'回';};
+ html+='<h4 style="margin-top:16px">前月との比較（'+prevKey.replace('-','年')+'月）</h4><div class="grid">';
+ [['練習記録',trainings.length,prevTrainings.length],['本人確認した試合場面',events.length,prevEvents.length],['良かった評価',good.length,prevGood],['改善したい評価',improve.length,prevImprove]].forEach(([label,current,previous])=>{html+='<div class="card"><div class="tiny muted">'+label+'</div><div class="stat">'+current+'<small>件</small></div><div class="tiny muted">前月 '+previous+'件 ／ '+deltaLabel(current,previous)+'</div></div>'});
+ html+='</div>';
+ const measurementTypes=[...new Set([...(state.measures||[]).filter(m=>String(m.date||'').startsWith(key)),...(state.measures||[]).filter(m=>String(m.date||'').startsWith(prevKey))].map(m=>m.type))];
+ const measureComparisons=measurementTypes.map(type=>{const a=(state.measures||[]).filter(m=>m.type===type&&String(m.date||'').startsWith(key)).sort((x,y)=>String(x.date).localeCompare(String(y.date))).slice(-1)[0];const b=(state.measures||[]).filter(m=>m.type===type&&String(m.date||'').startsWith(prevKey)).sort((x,y)=>String(x.date).localeCompare(String(y.date))).slice(-1)[0];return {type,a,b}}).filter(x=>x.a&&x.b);
+ if(measureComparisons.length){html+='<h4 style="margin-top:12px">測定値の前月比較</h4>'+measureComparisons.map(x=>{const d=Number(x.a.value)-Number(x.b.value),lowerBetter=/30m走|100m走|アジリティ/.test(x.type),better=lowerBetter?d<0:d>0;const msg=d===0?'変化なし':(better?'改善方向':'数値は反対方向')+' '+(d>0?'+':'')+d.toFixed(2)+' '+(x.a.unit||'');return '<div class="listitem"><div class="grow"><b>'+esc(x.type)+'</b><div class="tiny muted">前月 '+esc(x.b.value)+' '+esc(x.b.unit||'')+' → 今月 '+esc(x.a.value)+' '+esc(x.a.unit||'')+'</div><div class="tiny">'+esc(msg)+'</div></div></div>'}).join('')+'<div class="tiny muted">タイム・アジリティは数値が小さい方向、跳躍距離などは数値が大きい方向を改善の目安として表示。測定条件が違う場合は単純比較しないでね。</div>'}
+ else{html+='<div class="tiny muted">前月と今月の両方に同じ種目の測定があると、測定値も比較できます。</div>'}
+ html+='<div class="tiny muted" style="margin-top:8px">前月比較は保存件数の差です。記録数の増減だけで、実力の向上・低下を断定するものではありません。</div>';
  host.innerHTML=html;
 }
 function renderRikuCoachReport(){
