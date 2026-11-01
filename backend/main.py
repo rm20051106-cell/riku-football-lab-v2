@@ -317,7 +317,7 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
             "note": "MediaPipe Pose Landmarkerの複数姿勢検出結果です。人物IDの継続追跡や陸玖本人の特定を保証しません。"
         },
         "jersey_ocr_summary": {
-            "candidate_frame_counts": jersey_counts,
+            "candidate_detection_counts": jersey_counts,
             "note": "検出された各人物の胴体領域から読み取った背番号候補です。読み間違いがあり、本人確認ではありません。"
         },
     }
