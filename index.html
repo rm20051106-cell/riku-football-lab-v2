@@ -455,6 +455,21 @@ function getCoachTrainingPlan(){
  if(top&&plans[top])return plans[top];
  return {title:'加速ドリブル＋切り返し',minutes:15,category:'突破・ドリブル',note:'マーカーを使って左右に切り返し、前へ運ぶタッチから2〜3歩加速。最後に親子1対1で相手を見て突破方向を選ぶ。',why:'試合の改善データがまだ少ないため、今の育成テーマに合わせた基本メニュー'};
 }
+function getTrainingReviewAdjustment(focus){
+ const recent=(state.trainings||[]).filter(t=>(t.focus||inferTrainingFocus(t.menu,t.category))===focus&&['できた','難しかった','まだ試せていない'].includes(t.reviewStatus)).slice(0,5);
+ const done=recent.filter(t=>t.reviewStatus==='できた').length;
+ const hard=recent.filter(t=>t.reviewStatus==='難しかった').length;
+ const notTried=recent.filter(t=>t.reviewStatus==='まだ試せていない').length;
+ if(recent.length<2)return {minutesDelta:0,note:'振り返り記録がまだ少ないため、基本メニューで進めます。'};
+ if(hard>done)return {minutesDelta:-2,note:'前回「難しかった」が多かったので、回数や速さを抑えて動きを丁寧に確認します。'};
+ if(done>=2&&done>=hard)return {minutesDelta:0,note:'前回「できた」が続いたので、最後に相手や方向を変える判断課題を加えます。'};
+ if(notTried>0)return {minutesDelta:0,note:'前回試せなかった動きを、今回はゆっくりした形から確認します。'};
+ return {minutesDelta:0,note:'前回の振り返りを参考に、同じテーマをもう一度確認します。'};
+}
+function updateTrainingReview(id,value){
+ const record=(state.trainings||[]).find(t=>String(t.id)===String(id));if(!record)return;
+ record.reviewStatus=value;record.reviewedAt=today();persist();renderAll();
+}
 function getWeeklyCoachPlan(){
  const base=getCoachTrainingPlan();
  const weekday=new Date(today()+'T00:00:00').getDay();
@@ -466,7 +481,7 @@ function getWeeklyCoachPlan(){
   {day:'火曜',date:dateAt(1),title:'加速ドリブル＋親子1対1',minutes:15,category:'突破・ドリブル',focus:'ドリブル',note:'マーカーを使って左右に切り返す。相手の重心を見て逆を取り、抜いた後の2〜3歩を加速。最後は親子1対1を短く行う。',why:'陸玖の突破力を武器として伸ばす'},
   {day:'水曜',date:dateAt(2),title:'首振り＋前向きファーストタッチ',minutes:12,category:'受ける動き',focus:'ボールを受ける',note:'パスが来る前に左右を確認。半身で受けて前へ運ぶ。最後に練習した動きを使うミニゲーム形式で確認。',why:'試合でボールを受ける準備を整える'}
  ];
- return plans;
+ return plans.map(plan=>{const adjustment=getTrainingReviewAdjustment(plan.focus);return {...plan,minutes:Math.max(8,plan.minutes+adjustment.minutesDelta),note:plan.note+' '+adjustment.note,why:plan.why+'｜'+adjustment.note};});
 }
 function applyWeeklyCoachSession(index){
  const plan=getWeeklyCoachPlan()[index];if(!plan)return;
@@ -689,7 +704,7 @@ function renderAll(){
 trainDate.value=trainDate.value||date;measureDate.value=measureDate.value||date;
 trainMenu.innerHTML=state.menus.map((m,i)=>`<option value="${esc(m.name)}">${esc(m.category)}｜${esc(m.name)}</option>`).join('');
 menuList.innerHTML=state.menus.map((m,i)=>`<div class="listitem"><div class="grow"><b>${esc(m.name)}</b><div class="tiny muted">${esc(m.category)}・目安${m.minutes||10}分</div></div><button class="danger small" onclick="removeMenu(${i})">削除</button></div>`).join('');
-trainingRecords.innerHTML=state.trainings.length?state.trainings.slice(0,12).map(x=>`<div class="listitem"><div class="grow"><b>${esc(x.menu)}</b><div class="tiny muted">${x.date}・${x.minutes}分・${esc(x.effort)}・テーマ：${esc(x.focus||inferTrainingFocus(x.menu,""))}</div>${x.note?`<div class="tiny">${esc(x.note)}</div>`:''}</div><button class="danger small" onclick="deleteItem('trainings',${x.id})">削除</button></div>`).join(''):'<div class="empty">まだ練習記録がありません</div>';
+trainingRecords.innerHTML=state.trainings.length?state.trainings.slice(0,12).map(x=>`<div class="listitem"><div class="grow"><b>${esc(x.menu)}</b><div class="tiny muted">${x.date}・${x.minutes}分・${esc(x.effort)}・テーマ：${esc(x.focus||inferTrainingFocus(x.menu,""))}</div>${x.note?`<div class="tiny">${esc(x.note)}</div>`:''}<label class="label" style="margin-top:8px">練習後の振り返り（次週のメニューに反映）</label><select onchange="updateTrainingReview(${x.id},this.value)"><option value="" ${!x.reviewStatus?'selected':''}>まだ選んでいない</option><option value="できた" ${x.reviewStatus==='できた'?'selected':''}>できた</option><option value="難しかった" ${x.reviewStatus==='難しかった'?'selected':''}>難しかった</option><option value="まだ試せていない" ${x.reviewStatus==='まだ試せていない'?'selected':''}>まだ試せていない</option></select></div><button class="danger small" onclick="deleteItem('trainings',${x.id})">削除</button></div>`).join(''):'<div class="empty">まだ練習記録がありません</div>';
 matchScanRecords.innerHTML=(state.matchAnalyses||[]).length?state.matchAnalyses.map(x=>'<div class="listitem"><div class="grow"><b>'+esc(x.title)+'｜全編スキャン</b><div class="tiny muted">'+esc(x.date)+'・動画 '+(x.duration??'—')+'秒・姿勢検出 '+(x.frames??0)+'フレーム・約'+(x.interval??'—')+'秒間隔</div><div class="tiny">背番号候補：'+esc(x.jerseyNumbers||'—')+'・膝 '+(x.knee??'—')+'°・股関節 '+(x.hip??'—')+'°・体幹 '+(x.trunk??'—')+'°</div><div class="tiny muted">'+(x.identityConfirmed?'選手本人確認済み':'陸玖本人の識別は未確認')+'</div><div class="tiny">複数選手検出：'+(x.personDetection?('最大'+(x.personDetection.max_people_in_one_frame??0)+'人／1フレーム・平均'+(x.personDetection.average_people_per_sample??0)+'人'):'未記録')+'</div><div class="tiny">背番号OCR読取候補：'+(x.jerseyOcrSummary&&Object.keys(x.jerseyOcrSummary.candidate_detection_counts||x.jerseyOcrSummary.candidate_frame_counts||{}).length?Object.entries(x.jerseyOcrSummary.candidate_frame_counts).map(([n,count])=>n+'番 '+count+'件').join('／'):'該当なし')+'</div><div class="tiny">動きの変化候補：'+((x.candidateEvents||[]).length)+'場面</div>'+candidateReviewSummary((x.candidateEvents||[]).map(ev=>({review_label:ev.reviewLabel,assessment:ev.assessment})))+'<button class="secondary small" onclick="toggleMatchScanDetail('+x.id+')">詳細を見る</button><div id="match-scan-detail-'+x.id+'" hidden>'+((x.timeline||[]).slice(0,60).map(t=>'<div class="tiny">'+(t.time==null?'—':Number(t.time).toFixed(1)+'秒')+'｜膝 '+(t.leftKnee??'—')+'/'+(t.rightKnee??'—')+'°｜股関節 '+(t.leftHip??'—')+'/'+(t.rightHip??'—')+'°｜体幹 '+(t.trunk??'—')+'°</div>').join(''))+'<div class="tiny muted">※姿勢検出は画面内の人物に対する推定値で、陸玖本人のものとは限りません。</div>'+renderMatchPeriodSummary(x)+renderMatchEventTimeline(x.candidateEvents||[])+(x.highlight?'<div class="card"><b>陸玖ハイライト（'+(x.highlight.clipCount||0)+'場面）</b><video controls playsinline preload="metadata" style="width:100%;max-width:520px;border-radius:12px;margin:6px 0" src="'+getApiUrl()+esc(x.highlight.url)+'"></video><div><a href="'+getApiUrl()+esc(x.highlight.url)+'" download="riku-highlight.mp4">ハイライト動画を保存</a></div><div class="tiny muted">サーバー再起動後は再作成が必要な場合があります。</div></div>':'')+((x.feedback||[]).map(t=>'<div class="tiny muted">'+esc(t)+'</div>').join(''))+'</div></div><button class="danger small" onclick="deleteMatchScan('+x.id+')">削除</button></div>').join(''):'<div class="empty">AI解析の履歴はまだありません</div>';
 renderRikuCoachReport();
 clipRecords.innerHTML=state.clips.length?state.clips.map(x=>`<div class="listitem"><div class="scorebig">${x.score}</div><div class="grow"><b>${esc(x.title)}｜${esc(x.type)}</b><div class="tiny muted">${x.date}${x.time!==null?'・'+x.time+'秒':''}・評価 ${x.score}/100</div>${x.good?`<div class="tiny">👍 ${esc(x.good)}</div>`:''}${x.improve?`<div class="tiny">🎯 ${esc(x.improve)}</div>`:''}<button class="secondary small" id="clip-detail-btn-${x.id}" onclick="toggleClipDetail(${x.id})">詳細を見る</button><div id="clip-detail-${x.id}" hidden><div class="tiny muted">評価内訳</div><div class="tiny">判断・準備：${x.scores?.[0]??'-'}/5　技術・実行：${x.scores?.[1]??'-'}/5</div><div class="tiny">スピード・強度：${x.scores?.[2]??'-'}/5　チーム貢献：${x.scores?.[3]??'-'}/5</div><div class="tiny">👍 良かった点：${esc(x.good||'未入力')}</div><div class="tiny">🎯 改善点：${esc(x.improve||'未入力')}</div><div class="tiny muted">${x.hasVideo?'<button class="secondary small" onclick="playSavedClip('+x.id+','+(x.time??0)+')">保存動画を再生</button>':'動画ファイルは未保存の記録です。'}</div></div></div><button class="danger small" onclick="deleteItem('clips',${x.id})">削除</button></div>`).join(''):'<div class="empty">保存したプレー分析はありません</div>';
