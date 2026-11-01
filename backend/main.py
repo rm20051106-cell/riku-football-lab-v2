@@ -415,7 +415,8 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
                 current[side + "_foot_image_motion_per_sec"] = round(float(np.linalg.norm(np.array(a[:2]) - np.array(b[:2])) / dt), 4)
             else:
                 current[side + "_foot_image_motion_per_sec"] = None
-    track_summary = associate_person_tracks(frames, max_gap_seconds=max(9.0, actual_interval * 2.1))\n    knees = [x[k] for x in frames for k in ("left_knee_angle_deg", "right_knee_angle_deg") if x.get(k) is not None]
+    track_summary = associate_person_tracks(frames, max_gap_seconds=max(9.0, actual_interval * 2.1))
+    knees = [x[k] for x in frames for k in ("left_knee_angle_deg", "right_knee_angle_deg") if x.get(k) is not None]
     hips = [x[k] for x in frames for k in ("left_hip_angle_deg", "right_hip_angle_deg") if x.get(k) is not None]
     trunks = [x["trunk_lean_image_angle_deg"] for x in frames]
     summary = {
