@@ -529,6 +529,40 @@ function getTrainingSessionGuide(focus){
  const g=guides[focus]||guides['その他'];
  return '【今日の進め方】\n①準備：'+g.prep+'\n②メイン：'+g.main+'\n③試合形式：'+g.game+'\n【できた目安】'+g.goal+'\n痛みや違和感が出たら中止。疲れている日は回数を減らし、木〜日曜のチーム練習に疲れを残さない。';
 }
+function getCoachPrioritySummary(){
+ const skills=['ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール','その他'];
+ const events=(state.matchAnalyses||[]).flatMap(m=>(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖').map(e=>({...e,matchDate:m.date})));
+ const rows=skills.map(focus=>{
+  const related=events.filter(e=>e.actionType===focus||(focus==='ボールを受ける'&&e.actionType==='パス'));
+  const improve=related.filter(e=>e.assessment==='改善したい').length;
+  const good=related.filter(e=>e.assessment==='良かった').length;
+  const trainings=(state.trainings||[]).filter(t=>(t.focus||inferTrainingFocus(t.menu,t.category))===focus);
+  const reviewHard=trainings.filter(t=>t.reviewStatus==='難しかった').length;
+  const transferNotYet=trainings.filter(t=>t.matchTransferStatus==='まだ').length;
+  const transferPartial=trainings.filter(t=>t.matchTransferStatus==='少しできた').length;
+  const transferDone=trainings.filter(t=>t.matchTransferStatus==='できた').length;
+  const linkedImprove=trainings.flatMap(t=>t.linkedMatchEvents||[]).filter(e=>(e.actionType===focus||(focus==='ボールを受ける'&&e.actionType==='パス'))&&e.assessment==='改善したい').length;
+  const score=improve*3+linkedImprove*2+transferNotYet*2+transferPartial+reviewHard*1.5-good*.5-transferDone*.5;
+  return {focus,score,improve,good,reviewHard,transferNotYet,transferPartial,transferDone,sessions:trainings.length,scenes:related.length};
+ }).filter(x=>x.sessions||x.scenes).sort((a,b)=>b.score-a.score||b.improve-a.improve||b.sessions-a.sessions);
+ return rows.slice(0,3);
+}
+function applyCoachFocusPriority(focus){
+ const plans={
+ 'ドリブル':{title:'試合課題｜加速ドリブル＋切り返し',category:'突破・ドリブル',minutes:15},
+ 'パス':{title:'試合課題｜受ける前の確認＋パス',category:'受ける動き',minutes:12},
+ 'シュート':{title:'試合課題｜軸足・ミート確認',category:'シュート',minutes:12},
+ 'ボールを受ける':{title:'試合課題｜首振り＋前向きタッチ',category:'受ける動き',minutes:12},
+ '守備・プレス':{title:'試合課題｜1対1の守備',category:'アジリティ',minutes:10},
+ 'オフザボール':{title:'試合課題｜パス前の動き出し',category:'受ける動き',minutes:10},
+ 'その他':{title:'試合課題｜プレー確認',category:'その他',minutes:10}
+ };
+ const plan=plans[focus];if(!plan)return;
+ if(!state.menus.some(m=>m.name===plan.title))state.menus.unshift({...plan});
+ renderAll();trainMenu.value=plan.title;trainDate.value=today();trainMinutes.value=plan.minutes;trainFocus.value=focus;
+ trainNote.value='【試合・練習記録から選んだ重点テーマ】'+focus+'\n\n'+getTrainingSessionGuide(focus);
+ showView('training');
+}
 function getTrainingReviewAdjustment(focus){
  const recent=(state.trainings||[]).filter(t=>(t.focus||inferTrainingFocus(t.menu,t.category))===focus&&['できた','難しかった','まだ試せていない'].includes(t.reviewStatus)).slice(0,5);
  const done=recent.filter(t=>t.reviewStatus==='できた').length;
@@ -815,6 +849,9 @@ function renderRikuCoachReport(){
   html+=focus?'<div class="note"><b>'+esc(focus.type)+'を重点確認</b><div class="tiny">本人確認済みの記録のうち「改善したい」が'+focus.improve+'場面ありました。</div><div style="margin-top:6px">'+esc(focusDrills[focus.type]||focusDrills['その他'])+'</div></div>':'<div class="note">今は改善テーマを決めるだけの評価データがありません。次の試合でも「良かった」「改善したい」を記録していこう。</div>';
  }
  const checkpoints=getTrainingMatchCheckpoints();
+ const priorities=getCoachPrioritySummary();
+ html+='<h3 style="margin-top:14px">練習記録と試合評価から選ぶ、次の重点テーマ</h3>';
+ html+=priorities.length?'<div class="card">'+priorities.map((p,i)=>'<div class="listitem"><div class="grow"><b>'+(i+1)+'. '+esc(p.focus)+'</b><div class="tiny muted">試合確認 '+p.scenes+'場面（改善 '+p.improve+'／良かった '+p.good+'）・練習 '+p.sessions+'回</div><div class="tiny muted">練習後「難しかった」 '+p.reviewHard+'回・試合で「まだ」 '+p.transferNotYet+'回／「少しできた」 '+p.transferPartial+'回／「できた」 '+p.transferDone+'回</div><button class="secondary small" onclick="applyCoachFocusPriority(\''+p.focus+'\')">このテーマで練習メニューを作る</button></div></div>').join('')+'<div class="tiny muted">本人確認済みの試合場面と、保護者・選手が入力した練習後の振り返りを組み合わせた優先候補です。回数は能力の点数や自動判定ではありません。記録が少ないテーマは表示されない場合があります。</div></div>':'<div class="empty">練習記録や本人確認済みの試合評価が増えると、次の重点テーマを提案します。</div>';
  html+='<h3 style="margin-top:14px">次の試合で確認すること</h3>';
  html+=checkpoints.length?checkpoints.map(t=>'<div class="listitem"><div class="grow"><b>'+esc(t.focus)+'｜'+esc(t.menu)+'</b><div class="tiny muted">練習日 '+esc(t.date)+' ・ '+(t.minutes||0)+'分</div><div class="tiny">'+esc(t.matchCheckPrompt||'練習テーマを試合で試せたか確認')+'</div><div class="tiny muted">'+(t.later.length?'その後の本人確認場面 '+t.later.length+'件：'+t.later.slice(0,2).map(e=>esc(e.date)+' '+esc(e.assessment)).join('／'):'まだ該当する試合場面の記録なし')+'</div></div></div>').join(''):'<div class="empty">練習を保存すると、次の試合で確認するポイントがここに残ります。</div>';
  html+='<div class="tiny muted">試合場面は陸玖本人として手動確認され、練習テーマと一致したものだけを表示します。自動でプレーを判定する機能ではありません。</div>';
