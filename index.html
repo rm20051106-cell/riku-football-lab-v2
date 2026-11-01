@@ -440,6 +440,8 @@ function renderRikuCoachReport(){
  }
  html+='<h3 style="margin-top:14px">練習・測定の記録</h3><div class="listitem"><div class="grow"><b>直近30日間の練習記録</b><div class="tiny muted">'+training.length+'件（入力された記録数）</div></div></div>';
  html+='<div class="listitem"><div class="grow"><b>30m走</b><div class="tiny muted">'+(sprintLatest?(esc(sprintLatest.value)+' '+esc(sprintLatest.unit)+'（'+esc(sprintLatest.date)+'）'):'測定記録なし')+(sprintPrev?' ／ 前回 '+esc(sprintPrev.value)+' '+esc(sprintPrev.unit):'')+'</div></div></div>';
+ const recent=analyses.map(match=>({date:match.date,title:match.title,events:(match.candidateEvents||[]).filter(ev=>ev.reviewLabel==='陸玖')})).filter(x=>x.events.length).sort((a,b)=>String(b.date).localeCompare(String(a.date))).slice(0,5);
+ if(recent.length){html+='<h3 style="margin-top:14px">試合ごとの振り返り</h3>'+recent.map(x=>{const g=x.events.filter(ev=>ev.assessment==='良かった').length,im=x.events.filter(ev=>ev.assessment==='改善したい').length;return '<div class="listitem"><div class="grow"><b>'+esc(x.title||'試合動画')+'</b><div class="tiny muted">'+esc(x.date)+'・本人確認 '+x.events.length+'場面／良かった '+g+'／改善したい '+im+'</div></div></div>'}).join('');}
  html+='<div class="tiny muted" style="margin-top:10px">このレポートは保存された手動確認・評価・練習・測定記録の集計です。映像から自動でプレーの良し悪しを判定したものではありません。記録が少ない場合は傾向を断定しません。</div>';
  el.innerHTML=html;
 }
