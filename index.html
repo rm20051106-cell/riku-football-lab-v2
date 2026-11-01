@@ -246,7 +246,7 @@ function renderMatchLibrary(){
  const riku=rows.filter(x=>x.ev.reviewLabel==='陸玖').length;
  const eligible=rows.filter(({match,ev})=>ev.reviewLabel==='陸玖'&&ev.assessment==='良かった'&&ev.clipAvailable&&ev.clipUrl&&match.jobId);
  const saved=state.settings?.latestCrossMatchHighlight;
- host.innerHTML='<div class="tiny muted">全 '+total+'場面候補 ／ 表示 '+rows.length+'件'+(filter==='riku'?'（陸玖本人として確認済み '+riku+'件）':'')+'</div><div class="card" style="margin:8px 0"><b>試合をまたいだベストプレー集</b><div class="tiny muted">「陸玖」と本人確認し、評価を「良かった」にした切り抜き動画だけを選べます。対象候補 '+eligible.length+'件／最大12場面</div><div class="btnrow"><button class="secondary small" onclick="createCrossMatchHighlight()">チェックした場面でベストプレー集を作る</button></div><div id="crossMatchHighlightResult" class="tiny" style="margin-top:8px">'+(saved&&saved.url?'<b>前回作成したベストプレー集（'+esc(String(saved.clipCount||0))+'場面）</b><video controls playsinline preload="metadata" style="width:100%;max-width:520px;border-radius:12px;margin-top:8px" src="'+getApiUrl()+esc(saved.url)+'"></video><div class="tiny muted">サーバー一時保存のため、再起動後は再作成が必要です。</div>':'')+'</div></div>'+(rows.length?rows.map(({match,ev})=>{
+ host.innerHTML='<div class="tiny muted">全 '+total+'場面候補 ／ 表示 '+rows.length+'件'+(filter==='riku'?'（陸玖本人として確認済み '+riku+'件）':'')+'</div><div class="card" style="margin:8px 0"><b>試合をまたいだベストプレー集</b><div class="tiny muted">「陸玖」と本人確認し、評価を「良かった」にした切り抜き動画だけを選べます。対象候補 '+eligible.length+'件／最大12場面</div><div class="btnrow"><button class="secondary small" onclick="createCrossMatchHighlight()">チェックした場面でベストプレー集を作る</button></div><div id="crossMatchHighlightResult" class="tiny" style="margin-top:8px">'+(saved&&saved.url?'<b>前回作成したベストプレー集（'+esc(String(saved.clipCount||0))+'場面）</b><video controls playsinline preload="metadata" style="width:100%;max-width:520px;border-radius:12px;margin-top:8px" src="'+getApiUrl()+esc(saved.url)+'"></video><div class="tiny muted">サーバー一時保存のため、再起動後は再作成が必要です。</div>'+renderHighlightSaveLink(saved.url,'riku-best-plays.mp4'):'')+'</div></div>'+(rows.length?rows.map(({match,ev})=>{
   const idArg=Number.isFinite(Number(ev.id))?String(Number(ev.id)):"'"+String(ev.id).replace(/\\/g,"\\\\").replace(/'/g,"\\'")+"'";
   const status=ev.reviewLabel==='陸玖'?'陸玖確認済み':ev.reviewLabel==='別の選手'?'別の選手':'未確認';
   const canPick=ev.reviewLabel==='陸玖'&&ev.assessment==='良かった'&&ev.clipAvailable&&ev.clipUrl&&match.jobId;
@@ -268,10 +268,14 @@ async function createCrossMatchHighlight(){
   if(!response.ok||!data?.url)throw Error(data?.detail||('HTTP '+response.status));
   const meta={url:data.url,clipCount:data.clip_count,createdAt:today(),clips};
   state.settings=state.settings||{};state.settings.latestCrossMatchHighlight=meta;persist();
-  if(out)out.innerHTML='<b>ベストプレー集完成（'+data.clip_count+'場面）</b><video controls playsinline preload="metadata" style="width:100%;max-width:520px;border-radius:12px;margin-top:8px" src="'+base+esc(data.url)+'"></video><div class="tiny muted">サーバー一時保存のため、再起動後は再作成が必要です。</div>';
+  if(out)out.innerHTML='<b>ベストプレー集完成（'+data.clip_count+'場面）</b><video controls playsinline preload="metadata" style="width:100%;max-width:520px;border-radius:12px;margin-top:8px" src="'+base+esc(data.url)+'"></video><div class="tiny muted">サーバー一時保存のため、再起動後は再作成が必要です。</div>'+renderHighlightSaveLink(data.url,'riku-best-plays.mp4');
  }catch(e){if(out)out.textContent='ベストプレー集を作成できませんでした：'+e.message+'。解析サーバーが再起動していないか、切り抜き動画が残っているか確認してください。'}
 }
 
+function renderHighlightSaveLink(url,filename){
+ const full=getApiUrl()+url;
+ return '<div class="card" style="margin-top:8px"><b>iPhoneに保存</b><div class="tiny muted">下のリンクで動画を開き、iPhoneの共有ボタンから「ファイルに保存」を選んでください。サーバー再起動前に保存しておくと安心です。</div><div style="margin-top:7px"><a href="'+esc(full)+'" target="_blank" rel="noopener">動画を開いてiPhoneに保存する</a></div></div>';
+}
 function openMatchEventInHistory(matchId,eventId){
  const detail=document.getElementById('match-scan-detail-'+matchId);
  if(detail){detail.hidden=false;const article=[...detail.querySelectorAll('.match-event-timeline article')].find(el=>el.textContent.includes(formatMatchTime((state.matchAnalyses||[]).find(m=>Number(m.id)===Number(matchId))?.candidateEvents?.find(e=>String(e.id)===String(eventId))?.time)));detail.scrollIntoView({behavior:'smooth',block:'start'});if(article)article.scrollIntoView({behavior:'smooth',block:'center'});}
@@ -534,7 +538,7 @@ async function createRikuHighlight(){
   matchAiResult.dataset.highlight=JSON.stringify(highlightMeta);
   const savedId=Number(matchAiResult.dataset.savedId||0);
   if(savedId){const record=(state.matchAnalyses||[]).find(x=>x.id===savedId);if(record){record.highlight=highlightMeta;persist();}}
-  if(out)out.innerHTML='<b>陸玖ハイライト完成（'+data.clip_count+'場面）</b><video controls playsinline preload="metadata" style="width:100%;max-width:520px;border-radius:12px;margin-top:8px" src="'+url+'"></video><div><a href="'+url+'" download="riku-highlight.mp4">ハイライト動画を保存</a></div><div class="tiny muted">選択した「陸玖確認済み・良かった」場面のみを連結しました。動画はサーバーの一時保存です。サーバー再起動後は再作成が必要です。'+(savedId?'履歴にも紐づけました。':'解析履歴を保存すると、この動画を履歴にも紐づけられます。')+'</div>';
+  if(out)out.innerHTML='<b>陸玖ハイライト完成（'+data.clip_count+'場面）</b><video controls playsinline preload="metadata" style="width:100%;max-width:520px;border-radius:12px;margin-top:8px" src="'+url+'"></video><div><a href="'+url+'" target="_blank" rel="noopener">ハイライト動画を開く</a></div><div class="tiny muted">選択した「陸玖確認済み・良かった」場面のみを連結しました。動画はサーバーの一時保存です。iPhoneでは動画を開き、共有ボタンから「ファイルに保存」を選んでください。サーバー再起動後は再作成が必要です。'+(savedId?'履歴にも紐づけました。':'解析履歴を保存すると、この動画を履歴にも紐づけられます。')+'</div>';
  }catch(e){if(out)out.textContent='ハイライト作成に失敗：'+e.message}
 }
 function sendMatchToAI(){postMatchJobToAI(videoFile.files[0],matchAiResult)}
