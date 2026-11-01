@@ -572,10 +572,8 @@ function renderCalendar(){let y=calDate.getFullYear(),m=calDate.getMonth();month
 function selectCalendarDate(dt){selectedDate=dt;renderSelectedDate()}
 function renderSelectedDate(){selectedDateTitle.textContent=selectedDate+' の記録';let a=state.trainings.filter(x=>x.date===selectedDate);selectedDateRecords.innerHTML=a.length?a.map(x=>`<div class="listitem"><div class="grow"><b>${esc(x.menu)}</b><div class="tiny muted">${x.minutes}分・${esc(x.effort)} ${esc(x.note)}</div></div></div>`).join(''):'<div class="empty">この日の練習記録はありません</div>'}
 function getCoachTrainingPlan(){
- const events=(state.matchAnalyses||[]).flatMap(match=>(match.candidateEvents||[]).filter(ev=>ev.reviewLabel==='陸玖'));
- const improvements=events.filter(ev=>ev.assessment==='改善したい'&&ev.actionType&&ev.actionType!=='未選択');
- const counts={};improvements.forEach(ev=>counts[ev.actionType]=(counts[ev.actionType]||0)+1);
- const top=Object.entries(counts).sort((a,b)=>b[1]-a[1])[0]?.[0]||'';
+ const priority=getCoachPrioritySummary();
+ const top=priority[0]?.score>0?priority[0].focus:'';
  const plans={
  'ドリブル':{title:'加速ドリブル＋切り返し',minutes:15,category:'突破・ドリブル',note:'最初のタッチで前へ運び、相手の逆を取る。抜いた後の2〜3歩も加速。左右の切り返しを交互に行う。',why:'試合の振り返りでドリブルの改善テーマが多かったため'},
  'パス':{title:'受ける前の首振り＋パス',minutes:12,category:'受ける動き',note:'受ける前に左右を確認し、前を向ける位置へファーストタッチ。左右両足でパス。',why:'試合の振り返りでパスの改善テーマが多かったため'},
@@ -584,7 +582,7 @@ function getCoachTrainingPlan(){
  '守備・プレス':{title:'1対1の守備・コース限定',minutes:10,category:'アジリティ',note:'相手に飛び込まず、体の向きで進行方向を限定。無理のない距離で行う。',why:'試合の振り返りで守備の改善テーマが多かったため'},
  'オフザボール':{title:'パス前の動き出し',minutes:10,category:'受ける動き',note:'相手の背中側や見えにくい角度へ動き、受ける場所を作る。',why:'試合の振り返りでボールを持たない時の改善テーマが多かったため'}
  };
- if(top&&plans[top])return plans[top];
+ if(top&&plans[top]){const p=priority[0];return {...plans[top],why:'直近の記録から「'+top+'」を優先。本人確認済み試合 '+p.scenes+'場面（改善 '+p.improve+'／良かった '+p.good+'）、直近の練習 '+p.sessions+'回。'+p.sampleNote+'。'};}
  return {title:'加速ドリブル＋切り返し',minutes:15,category:'突破・ドリブル',note:'マーカーを使って左右に切り返し、前へ運ぶタッチから2〜3歩加速。最後に親子1対1で相手を見て突破方向を選ぶ。',why:'試合の改善データがまだ少ないため、今の育成テーマに合わせた基本メニュー'};
 }
 function getTrainingSessionGuide(focus){
@@ -647,19 +645,28 @@ function renderCoachOverallAssessment(){
 }
 function getCoachPrioritySummary(){
  const skills=['ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール','その他'];
- const events=(state.matchAnalyses||[]).flatMap(m=>(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖').map(e=>({...e,matchDate:m.date})));
+ const events=(state.matchAnalyses||[]).flatMap(m=>(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖'&&e.actionType&&e.actionType!=='未選択').map(e=>({...e,matchDate:m.date,matchTitle:m.title})));
+ const trainings=(state.trainings||[]).filter(t=>t.date);
+ const todayMs=Date.parse(today()+'T00:00:00');
  const rows=skills.map(focus=>{
-  const related=events.filter(e=>e.actionType===focus||(focus==='ボールを受ける'&&e.actionType==='パス'));
-  const improve=related.filter(e=>e.assessment==='改善したい').length;
-  const good=related.filter(e=>e.assessment==='良かった').length;
-  const trainings=(state.trainings||[]).filter(t=>(t.focus||inferTrainingFocus(t.menu,t.category))===focus);
-  const reviewHard=trainings.filter(t=>t.reviewStatus==='難しかった').length;
-  const transferNotYet=trainings.filter(t=>t.matchTransferStatus==='まだ').length;
-  const transferPartial=trainings.filter(t=>t.matchTransferStatus==='少しできた').length;
-  const transferDone=trainings.filter(t=>t.matchTransferStatus==='できた').length;
-  const linkedImprove=trainings.flatMap(t=>t.linkedMatchEvents||[]).filter(e=>(e.actionType===focus||(focus==='ボールを受ける'&&e.actionType==='パス'))&&e.assessment==='改善したい').length;
-  const score=improve*3+linkedImprove*2+transferNotYet*2+transferPartial+reviewHard*1.5-good*.5-transferDone*.5;
-  return {focus,score,improve,good,reviewHard,transferNotYet,transferPartial,transferDone,sessions:trainings.length,scenes:related.length};
+  const related=events.filter(e=>e.actionType===focus||(focus==='ボールを受ける'&&e.actionType==='パス')).sort((a,b)=>String(b.matchDate||'').localeCompare(String(a.matchDate||''))||Number(b.time||0)-Number(a.time||0)).slice(0,8);
+  const weighted=related.reduce((acc,e)=>{
+   const stamp=Date.parse(String(e.matchDate||'')+'T00:00:00');
+   const age=Number.isFinite(stamp)&&Number.isFinite(todayMs)?Math.max(0,(todayMs-stamp)/86400000):365;
+   const weight=age<=90?1:age<=180?.65:.35;
+   if(e.assessment==='改善したい')acc.improve+=weight;
+   if(e.assessment==='良かった')acc.good+=weight;
+   return acc;
+  },{improve:0,good:0});
+  const sessions=trainings.filter(t=>(t.focus||inferTrainingFocus(t.menu,t.category))===focus).sort((a,b)=>String(b.date).localeCompare(String(a.date))).slice(0,5);
+  const reviewHard=sessions.filter(t=>t.reviewStatus==='難しかった').length;
+  const transferNotYet=sessions.filter(t=>t.matchTransferStatus==='まだ').length;
+  const transferPartial=sessions.filter(t=>t.matchTransferStatus==='少しできた').length;
+  const transferDone=sessions.filter(t=>t.matchTransferStatus==='できた').length;
+  const score=weighted.improve*3+transferNotYet*2+transferPartial*.75+reviewHard*1.25-weighted.good*.75-transferDone*.75;
+  const hasEvaluated=related.some(e=>e.assessment==='改善したい'||e.assessment==='良かった');
+  const sampleNote=related.length<2&&!sessions.some(t=>t.reviewStatus||t.matchTransferStatus)?'記録が少ないため参考順位':!hasEvaluated?'試合評価が少ないため練習振り返りを重視':'直近の記録を反映';
+  return {focus,score,improve:related.filter(e=>e.assessment==='改善したい').length,good:related.filter(e=>e.assessment==='良かった').length,reviewHard,transferNotYet,transferPartial,transferDone,sessions:sessions.length,scenes:related.length,lastMatchDate:related[0]?.matchDate||'',lastTrainingDate:sessions[0]?.date||'',sampleNote};
  }).filter(x=>x.sessions||x.scenes).sort((a,b)=>b.score-a.score||b.improve-a.improve||b.sessions-a.sessions);
  return rows.slice(0,3);
 }
