@@ -454,6 +454,19 @@ function getTrainingMatchProgress(){const skills=['ドリブル','パス','シ�
  }).join('');
  host.innerHTML=cards||'<div class="empty">測定記録を保存すると、ここに成長グラフが表示されます。</div>';
 }
+function printMonthlyGrowthReport(){
+ const select=document.getElementById('monthlyGrowthMonth');
+ const host=document.getElementById('monthlyGrowthReport');
+ if(!host)return;
+ const key=select?select.value:today().slice(0,7);
+ const title=key.replace('-','年')+'月 陸玖 月間成長レポート';
+ const win=window.open('','_blank');
+ if(!win){alert('印刷画面を開けませんでした。Safariのポップアップ設定を確認してください。');return;}
+ const style='<style>body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;color:#172033;padding:24px;line-height:1.55}h1{font-size:22px;margin:0 0 6px}h2,h3,h4{margin:18px 0 8px} .grid{display:flex;gap:10px;flex-wrap:wrap}.card{border:1px solid #ccd3dc;border-radius:10px;padding:12px;flex:1;min-width:130px}.stat{font-size:25px;font-weight:700}.stat small{font-size:13px}.note,.empty,.listitem{border:1px solid #d7dce3;border-radius:8px;padding:10px;margin:7px 0}.tiny{font-size:12px;color:#4b5563}.muted{color:#596579}.brand{display:flex;justify-content:space-between}svg{max-width:100%}button,select{display:none}@media print{body{padding:0}@page{size:A4;margin:14mm}}</style>';
+ win.document.open();
+ win.document.write('<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+title+'</title>'+style+'</head><body><h1>'+title+'</h1><p class="tiny">RIKU FOOTBALL LAB｜保存された練習・試合・測定記録から作成</p>'+host.innerHTML+'<script>window.onload=function(){setTimeout(function(){window.print()},300)};<\/script></body></html>');
+ win.document.close();
+}
 function renderMonthlyGrowthReport(monthKey){
  const host=document.getElementById('monthlyGrowthReport');if(!host)return;
  const key=monthKey||today().slice(0,7);
@@ -513,7 +526,7 @@ function renderRikuCoachReport(){
  html+='<div class="listitem"><div class="grow"><b>30m走</b><div class="tiny muted">'+(sprintLatest?(esc(sprintLatest.value)+' '+esc(sprintLatest.unit)+'（'+esc(sprintLatest.date)+'）'):'測定記録なし')+(sprintPrev?' ／ 前回 '+esc(sprintPrev.value)+' '+esc(sprintPrev.unit):'')+'</div></div></div>';
  const recent=analyses.map(match=>({date:match.date,title:match.title,events:(match.candidateEvents||[]).filter(ev=>ev.reviewLabel==='陸玖')})).filter(x=>x.events.length).sort((a,b)=>String(b.date).localeCompare(String(a.date))).slice(0,5);
  if(recent.length){html+='<h3 style="margin-top:14px">試合ごとの振り返り</h3>'+recent.map(x=>{const g=x.events.filter(ev=>ev.assessment==='良かった').length,im=x.events.filter(ev=>ev.assessment==='改善したい').length;return '<div class="listitem"><div class="grow"><b>'+esc(x.title||'試合動画')+'</b><div class="tiny muted">'+esc(x.date)+'・本人確認 '+x.events.length+'場面／良かった '+g+'／改善したい '+im+'</div></div></div>'}).join('');}
- html+=`<h3 style="margin-top:18px">月間成長レポート</h3><label class="label" for="monthlyGrowthMonth">対象月</label><select id="monthlyGrowthMonth" onchange="renderMonthlyGrowthReport(this.value)">${Array.from({length:12},(_,i)=>{const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-i);const k=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");return `<option value="${k}"${i===0?" selected":""}>${d.getFullYear()}年${d.getMonth()+1}月</option>`}).join("")}</select><div id="monthlyGrowthReport"></div>`;
+ html+=`<h3 style="margin-top:18px">月間成長レポート</h3><label class="label" for="monthlyGrowthMonth">対象月</label><button class="secondary small" onclick="printMonthlyGrowthReport()">印刷・PDF保存</button><select id="monthlyGrowthMonth" onchange="renderMonthlyGrowthReport(this.value)">${Array.from({length:12},(_,i)=>{const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-i);const k=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");return `<option value="${k}"${i===0?" selected":""}>${d.getFullYear()}年${d.getMonth()+1}月</option>`}).join("")}</select><div id="monthlyGrowthReport"></div>`;
  html+='<div class="tiny muted" style="margin-top:10px">このレポートは保存された手動確認・評価・練習・測定記録の集計です。映像から自動でプレーの良し悪しを判定したものではありません。記録が少ない場合は傾向を断定しません。</div>';
  el.innerHTML=html;
  renderGrowthCharts();
