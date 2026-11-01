@@ -681,25 +681,30 @@ function applyCoachFocusPriority(focus){
  'その他':{title:'試合課題｜プレー確認',category:'その他',minutes:10}
  };
  const plan=plans[focus];if(!plan)return;
- if(!state.menus.some(m=>m.name===plan.title))state.menus.unshift({...plan});
- renderAll();trainMenu.value=plan.title;trainDate.value=today();trainMinutes.value=plan.minutes;trainFocus.value=focus;
- trainNote.value='【試合・練習記録から選んだ重点テーマ】'+focus+'\n\n'+getTrainingSessionGuide(focus);
+ const adjustment=getTrainingReviewAdjustment(focus);
+ const plannedMinutes=Math.max(8,Math.min(15,plan.minutes+adjustment.minutesDelta));
+ if(!state.menus.some(m=>m.name===plan.title))state.menus.unshift({...plan,minutes:plannedMinutes});
+ renderAll();trainMenu.value=plan.title;trainDate.value=today();trainMinutes.value=plannedMinutes;trainFocus.value=focus;
+ trainNote.value='【試合・練習記録から選んだ重点テーマ】'+focus+'\n\n【今回の時間設定】'+plannedMinutes+'分\n'+adjustment.note+'\n\n'+getTrainingSessionGuide(focus);
  showView('training');
 }
 function getTrainingReviewAdjustment(focus){
- const recent=(state.trainings||[]).filter(t=>(t.focus||inferTrainingFocus(t.menu,t.category))===focus&&['できた','難しかった','まだ試せていない'].includes(t.reviewStatus)).slice(0,5);
+ const byRecent=(a,b)=>String(b.date||'').localeCompare(String(a.date||''));
+ const recent=(state.trainings||[]).filter(t=>(t.focus||inferTrainingFocus(t.menu,t.category))===focus&&['できた','難しかった','まだ試せていない'].includes(t.reviewStatus)).sort(byRecent).slice(0,5);
  const done=recent.filter(t=>t.reviewStatus==='できた').length;
  const hard=recent.filter(t=>t.reviewStatus==='難しかった').length;
  const notTried=recent.filter(t=>t.reviewStatus==='まだ試せていない').length;
- const transfer=(state.trainings||[]).filter(t=>(t.focus||inferTrainingFocus(t.menu,t.category))===focus&&['できた','少しできた','まだ'].includes(t.matchTransferStatus)).slice(0,5);
+ const transfer=(state.trainings||[]).filter(t=>(t.focus||inferTrainingFocus(t.menu,t.category))===focus&&['できた','少しできた','まだ'].includes(t.matchTransferStatus)).sort(byRecent).slice(0,5);
  const transferNotYet=transfer.filter(t=>t.matchTransferStatus==='まだ').length;
+ const transferPartial=transfer.filter(t=>t.matchTransferStatus==='少しできた').length;
  const transferDone=transfer.filter(t=>t.matchTransferStatus==='できた').length;
- if(recent.length<2&&transfer.length<2)return {minutesDelta:0,note:'振り返り記録がまだ少ないため、基本メニューで進めます。'};
- if(transfer.length>=2&&transferNotYet>transferDone)return {minutesDelta:0,note:'試合でまだ出せていない記録が多いため、練習の最後に試合を想定した場面練習を加えます。'};
- if(hard>done)return {minutesDelta:-2,note:'前回「難しかった」が多かったので、回数や速さを抑えて動きを丁寧に確認します。'};
- if(done>=2&&done>=hard||transfer.length>=2&&transferDone>=2)return {minutesDelta:0,note:'練習でできた動きを試合でも再現できるよう、最後に相手や方向を変える判断課題を加えます。'};
- if(notTried>0)return {minutesDelta:0,note:'前回試せなかった動きを、今回はゆっくりした形から確認します。'};
- return {minutesDelta:0,note:'前回の振り返りを参考に、同じテーマをもう一度確認します。'};
+ const counts='直近の振り返り：練習「できた」'+done+'・「難しかった」'+hard+'・未実施'+notTried+'／試合「できた」'+transferDone+'・少し'+transferPartial+'・まだ'+transferNotYet+'（各最大5件）';
+ if(recent.length<2&&transfer.length<2)return {minutesDelta:0,note:'振り返り記録がまだ少ないため、基本メニューで進めます。'+(recent.length||transfer.length?' '+counts:'')};
+ if(hard>done)return {minutesDelta:-2,note:'前回「難しかった」が多かったため、練習時間を少し短くし、回数や速さを抑えて動きを丁寧に確認します。'+counts};
+ if(transfer.length>=2&&transferNotYet>transferDone)return {minutesDelta:0,note:'試合でまだ出せていない記録が多いため、最後に試合を想定した判断・実戦形式を加えます。'+counts};
+ if(done>=2&&done>=hard||transfer.length>=2&&transferDone>=2)return {minutesDelta:0,note:'できた動きを試合でも再現できるよう、最後に相手や方向を変える判断課題を加えます。'+counts};
+ if(notTried>0)return {minutesDelta:0,note:'前回試せなかった動きを、今回はゆっくりした形から確認します。'+counts};
+ return {minutesDelta:0,note:'前回の振り返りを参考に、同じテーマをもう一度確認します。'+counts};
 }
 function updateTrainingMatchTransfer(id,value){
  const record=(state.trainings||[]).find(t=>String(t.id)===String(id));if(!record)return;
