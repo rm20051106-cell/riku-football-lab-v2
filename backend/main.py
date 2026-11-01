@@ -142,21 +142,28 @@ def process_video(path: str, mode: str, camera_angle: str = "未選択", progres
                       enable_segmentation=False, min_detection_confidence=0.5,
                       min_tracking_confidence=0.5) as pose:
         while len(frames) < max_samples:
-            ok, frame = cap.read()
+            if mode == "match":
+                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+                ok, frame = cap.read()
+                current_frame_idx = frame_idx
+                frame_idx += interval
+            else:
+                ok, frame = cap.read()
+                current_frame_idx = frame_idx
+                frame_idx += 1
             if not ok:
                 break
-            if frame_idx % interval == 0:
+            if mode == "match" or current_frame_idx % interval == 0:
                 h, w = frame.shape[:2]
                 if w > 960:
                     new_h = max(1, int(round(h * 960 / w)))
                     frame = cv2.resize(frame, (960, new_h), interpolation=cv2.INTER_AREA)
                 metrics = analyze_frame(frame, pose)
                 if metrics:
-                    frames.append({"time_seconds": round(frame_idx / fps, 2) if fps > 0 else frame_idx,
+                    frames.append({"time_seconds": round(current_frame_idx / fps, 2) if fps > 0 else current_frame_idx,
                                    **metrics})
                 if progress_callback and duration > 0:
-                    progress_callback(min(90, 15 + int(75 * min(1.0, (frame_idx / fps if fps > 0 else 0) / duration))))
-            frame_idx += 1
+                    progress_callback(min(90, 15 + int(75 * min(1.0, (current_frame_idx / fps if fps > 0 else 0) / duration))))
     cap.release()
     if not frames:
         raise HTTPException(status_code=422, detail="人物の姿勢を検出できませんでした。人物全身が見える明るい動画で再試行してください。")
