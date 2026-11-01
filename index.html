@@ -541,6 +541,21 @@ function applyCoachTrainingPlan(){
  if(!option){state.menus.unshift({name:plan.title,category:plan.category,minutes:plan.minutes});persist();renderAll();}
  trainMenu.value=plan.title;trainDate.value=today();trainMinutes.value=plan.minutes;trainFocus.value=plan.title.includes('パス')?'ボールを受ける':plan.title.includes('シュート')?'シュート':plan.title.includes('守備')?'守備・プレス':plan.title.includes('動き出し')?'オフザボール':plan.title.includes('受ける')?'ボールを受ける':'ドリブル';trainNote.value=plan.note+'\\n\\n'+getTrainingSessionGuide(trainFocus.value);showView('training');
 }
+function getTrainingEvidenceLinkSummary(){
+ const skills=['ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール','その他'];
+ const matches=(state.matchAnalyses||[]).filter(m=>m.date);
+ const trainings=(state.trainings||[]).filter(t=>t.date).map(t=>({...t,focus:t.focus||inferTrainingFocus(t.menu,t.category)}));
+ return skills.map(focus=>{
+  const sessions=trainings.filter(t=>t.focus===focus);if(!sessions.length)return null;
+  const linked=sessions.map(t=>{
+   const steps=t.steps||getTrainingSteps(focus),done=Array.isArray(t.stepsDone)?t.stepsDone.length:0;
+   const events=matches.filter(m=>String(m.date)>String(t.date)).flatMap(m=>(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖'&&(e.actionType===focus||(focus==='ボールを受ける'&&e.actionType==='パス'))).map(e=>({...e,matchDate:m.date,matchTitle:m.title})));
+   return {date:t.date,completion:steps.length?Math.round(done/steps.length*100):0,events};
+  });
+  const scenes=linked.flatMap(x=>x.events);
+  return {focus,sessions:sessions.length,averageCompletion:Math.round(linked.reduce((n,x)=>n+x.completion,0)/linked.length),sessionsWithLaterMatch:linked.filter(x=>x.events.length).length,scenes:scenes.length,good:scenes.filter(e=>e.assessment==='良かった').length,improve:scenes.filter(e=>e.assessment==='改善したい').length};
+ }).filter(Boolean).sort((a,b)=>b.sessions-a.sessions);
+}
 function getTrainingMatchProgress(){const skills=['ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール','その他'];const trainings=(state.trainings||[]).map(t=>({...t,focus:t.focus||inferTrainingFocus(t.menu,t.category)}));const matches=(state.matchAnalyses||[]).map(m=>({date:m.date,events:(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖'&&e.actionType&&e.actionType!=='未選択')}));return skills.map(skill=>{const sessions=trainings.filter(t=>t.focus===skill&&t.date);const latest=sessions.map(t=>t.date).sort().slice(-1)[0]||'';const later=matches.flatMap(m=>m.date&&latest&&m.date>=latest?m.events.filter(e=>e.actionType===skill||((skill==='ボールを受ける')&&e.actionType==='パス')).map(e=>({...e,matchDate:m.date})):[]);return {skill,sessions:sessions.length,latest,later:later.length,good:later.filter(e=>e.assessment==='良かった').length,improve:later.filter(e=>e.assessment==='改善したい').length}}).filter(x=>x.sessions||x.later).sort((a,b)=>b.sessions-a.sessions)}function renderGrowthCharts(){
  const host=document.getElementById('rikuGrowthCharts');if(!host)return;
  const types=['30m走','アジリティ','立ち幅跳び','100m走'];
@@ -762,6 +777,9 @@ function renderRikuCoachReport(){
  html+='<h3 style="margin-top:14px">次の試合で確認すること</h3>';
  html+=checkpoints.length?checkpoints.map(t=>'<div class="listitem"><div class="grow"><b>'+esc(t.focus)+'｜'+esc(t.menu)+'</b><div class="tiny muted">練習日 '+esc(t.date)+' ・ '+(t.minutes||0)+'分</div><div class="tiny">'+esc(t.matchCheckPrompt||'練習テーマを試合で試せたか確認')+'</div><div class="tiny muted">'+(t.later.length?'その後の本人確認場面 '+t.later.length+'件：'+t.later.slice(0,2).map(e=>esc(e.date)+' '+esc(e.assessment)).join('／'):'まだ該当する試合場面の記録なし')+'</div></div></div>').join(''):'<div class="empty">練習を保存すると、次の試合で確認するポイントがここに残ります。</div>';
  html+='<div class="tiny muted">試合場面は陸玖本人として手動確認され、練習テーマと一致したものだけを表示します。自動でプレーを判定する機能ではありません。</div>';
+ const evidenceLinks=getTrainingEvidenceLinkSummary();
+ html+='<h3 style="margin-top:14px">練習の取り組みと、その後の試合記録</h3>';
+ html+=evidenceLinks.length?'<div class="card">'+evidenceLinks.map(x=>'<div class="listitem"><div class="grow"><b>'+esc(x.focus)+'</b><div class="tiny muted">練習 '+x.sessions+'回・チェック平均 '+x.averageCompletion+'%・その後に試合記録がある練習 '+x.sessionsWithLaterMatch+'回</div><div class="tiny">本人確認場面 '+x.scenes+'件（良かった '+x.good+'／改善したい '+x.improve+'）</div></div></div>').join('')+'<div class="tiny muted">チェック達成率は練習記録の入力状況、試合場面は陸玖本人として手動確認した記録です。練習と試合の関連を振り返る目安であり、練習が上達の原因だと証明するものではありません。同じ試合場面が複数の練習後に数えられる場合があります。</div></div>':'<div class="empty">練習チェックと、その後の日付の試合記録がたまると、テーマごとに表示します。</div>';
  const progress=getTrainingMatchProgress();
  html+='<h3 style="margin-top:14px">練習したことは試合で出せた？</h3>';
  const transferSummary=getTrainingTransferSummary();
