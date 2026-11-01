@@ -684,6 +684,77 @@ def extract_candidate_clips(video_path, job_id, candidates, duration):
                 os.remove(clip_path)
     return clips
 
+
+def analyze_candidate_clip_dense(clip_path, jersey_numbers=None, sample_rate=1.5, max_samples=16):
+    """Re-scan a short movement candidate at a denser rate and summarize provisional tracks."""
+    cap = cv2.VideoCapture(clip_path)
+    if not cap.isOpened():
+        raise RuntimeError("候補動画を開けませんでした。")
+    fps = cap.get(cv2.CAP_PROP_FPS) or 0
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    duration = total / fps if fps > 0 else 0
+    interval = max(1, int(round(fps / sample_rate))) if fps > 0 else 1
+    actual_rate = fps / interval if fps > 0 else sample_rate
+    targets = [x.strip() for x in (jersey_numbers or "10,74").replace("；", ",").split(",") if x.strip()]
+    frames, jersey_counts, people_counts = [], {}, []
+    options = mp_vision.PoseLandmarkerOptions(
+        base_options=mp_python.BaseOptions(model_asset_path=POSE_LANDMARKER_MODEL),
+        running_mode=mp_vision.RunningMode.VIDEO,
+        num_poses=8,
+        min_pose_detection_confidence=0.35,
+        min_pose_presence_confidence=0.35,
+        min_tracking_confidence=0.35,
+    )
+    try:
+        with mp_vision.PoseLandmarker.create_from_options(options) as landmarker:
+            sample_index = 0
+            frame_index = 0
+            while sample_index < max_samples and (duration <= 0 or frame_index / max(fps, 1) <= duration):
+                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
+                ok, frame = cap.read()
+                if not ok:
+                    break
+                h, w = frame.shape[:2]
+                if w > 960:
+                    frame = cv2.resize(frame, (960, max(1, int(round(h * 960 / w)))), interpolation=cv2.INTER_AREA)
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+                timestamp_ms = int(sample_index * 1000 / max(actual_rate, 0.1))
+                detected = landmarker.detect_for_video(mp_image, timestamp_ms)
+                people = []
+                for person_index, pose_lm in enumerate(detected.pose_landmarks or []):
+                    metrics = analyze_task_pose(pose_lm)
+                    ocr = read_jersey_number(frame, metrics["landmarks"], targets)
+                    for item in ocr:
+                        jersey_counts[item["number"]] = jersey_counts.get(item["number"], 0) + 1
+                    people.append({
+                        "person_index": person_index,
+                        "visible_landmarks": metrics["visible_landmarks"],
+                        "bbox": metrics["bbox"],
+                        "jersey_ocr_candidates": ocr,
+                    })
+                frames.append({
+                    "time_seconds": round(frame_index / fps, 2) if fps > 0 else round(sample_index / max(actual_rate, 0.1), 2),
+                    "detected_people": people,
+                    "detected_people_in_frame": len(people),
+                })
+                people_counts.append(len(people))
+                frame_index += interval
+                sample_index += 1
+    finally:
+        cap.release()
+    track_summary = associate_person_tracks(frames, max_gap_seconds=max(1.5, 2.2 / max(actual_rate, 0.1)))
+    return {
+        "sampled_frames": len(frames),
+        "sampling_rate_fps": round(actual_rate, 2),
+        "duration_seconds": round(duration, 2),
+        "max_people_in_one_frame": max(people_counts) if people_counts else 0,
+        "jersey_candidate_detection_counts": jersey_counts,
+        "track_summary": track_summary,
+        "note": "候補動画を約1.5fpsで再解析した暫定結果です。トラックID・背番号候補は本人確認ではなく、選手の交差や遮蔽で入れ替わる可能性があります。"
+    }
+
+
 def _set_match_job(job_id: str, **updates):
     job = match_jobs.get(job_id)
     if job is not None:
@@ -718,9 +789,16 @@ def run_match_job(job_id: str, source_path: str, jersey_numbers: str):
             event["clip_available"] = matching_clip is not None
             if matching_clip:
                 event["clip_url"] = f"/analyze/jobs/{job_id}/clips/{event['id']}"
+                try:
+                    event["dense_analysis"] = analyze_candidate_clip_dense(
+                        matching_clip["path"], jersey_numbers=jersey_numbers,
+                        sample_rate=1.5, max_samples=16
+                    )
+                except Exception as clip_exc:
+                    event["dense_analysis"] = {"error": str(clip_exc), "note": "候補動画の詳細再解析は完了しませんでした。"}
         summary["candidate_events"] = candidates
         summary["candidate_event_count"] = len(candidates)
-        summary["candidate_event_note"] = "足先の画像上の動きから抽出した確認候補です。サッカーのプレーや陸玖本人の動きと確認されたものではありません。"
+        summary["candidate_event_note"] = "足先の画像上の動きから抽出した確認候補です。候補動画は約1.5fpsで追加解析しますが、サッカーのプレーや陸玖本人の動きと確認されたものではありません。"
         result["requested_jersey_numbers"] = jersey_numbers
         result["job_id"] = job_id
         _set_match_job(job_id, status="completed", progress=100, stage="解析完了", result=result, clips=clips)
