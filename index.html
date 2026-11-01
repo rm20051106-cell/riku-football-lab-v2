@@ -1254,6 +1254,22 @@ function renderNextMatchGoalProgress(){
  const rows=focuses.map(focus=>{const items=history.filter(x=>x.focus===focus);return {focus,total:items.length,done:items.filter(x=>x.result==='できた').length,partial:items.filter(x=>x.result==='少しできた').length,notYet:items.filter(x=>x.result==='まだ').length,last:items.slice(-3)};}).filter(x=>x.total>0);
  return '<div class="card"><div class="tiny muted">本人・保護者が入力した試合後評価の累計。自動判定や能力スコアではありません。</div>'+rows.map(x=>'<div class="listitem" style="display:block"><b>'+esc(x.focus)+'</b><div class="tiny muted">記録 '+x.total+'試合｜できた '+x.done+'・少しできた '+x.partial+'・まだ '+x.notYet+'</div><div style="display:flex;height:9px;border-radius:8px;overflow:hidden;background:var(--line,#ddd);margin-top:6px"><span style="width:'+(x.done/x.total*100)+'%;background:var(--accent,#8bc34a)"></span><span style="width:'+(x.partial/x.total*100)+'%;background:#d6b45c"></span><span style="width:'+(x.notYet/x.total*100)+'%;background:#b9c0ca"></span></div><div class="tiny muted" style="margin-top:5px">直近：'+x.last.map(v=>esc(v.result)+'（'+esc(v.matchDate||v.reviewDate||v.date||'日付なし')+'）').join(' → ')+'</div></div>').join('')+'<div class="tiny muted">回数は取り組みの記録です。試合状況や出場時間なども異なるため、割合だけで上達を断定しません。</div></div>';
 }
+function renderNextMatchGoalVideoEvidence(){
+ const history=getNextMatchGoalHistory().filter(x=>x.result&&x.matchId);
+ const matches=state.matchAnalyses||[];
+ if(!history.length)return '<div class="empty">試合後評価と試合記録を連携すると、本人確認済みの映像場面をここに表示します。</div>';
+ const cards=history.slice(-10).reverse().map(goal=>{
+  const match=matches.find(m=>String(m.id)===String(goal.matchId));
+  if(!match)return '<div class="listitem" style="display:block"><b>'+esc(goal.focus)+'｜'+esc(goal.result)+'</b><div class="tiny muted">'+esc(goal.matchDate||goal.reviewDate||'')+'｜'+esc(goal.matchTitle||'試合記録')+'</div><div class="tiny muted">元の試合記録が見つかりません。記録は残っていますが映像との照合はできません。</div></div>';
+  const events=(match.candidateEvents||[]).filter(ev=>ev.reviewLabel==='陸玖'&&ev.actionType===goal.focus);
+  const rows=events.map(ev=>{
+   const eventArg=encodeURIComponent(String(ev.id));
+   return '<div class="tiny" style="margin-top:5px">⚽ '+formatMatchTime(ev.time)+'｜'+esc(ev.label||ev.reason||ev.actionType)+'｜映像評価：'+esc(ev.assessment||'未評価')+(ev.note?'｜'+esc(ev.note):'')+' <button class="secondary small" onclick="openMatchEventInHistory('+Number(match.id)+',decodeURIComponent(\''+eventArg+'\'))">映像場面を見る</button></div>';
+  }).join('');
+  return '<div class="listitem" style="display:block"><b>'+esc(goal.focus)+'｜自己評価：'+esc(goal.result)+'</b><div class="tiny muted">'+esc(match.date||goal.matchDate||'')+'｜'+esc(match.title||goal.matchTitle||'試合')+'</div>'+(events.length?'<div class="tiny muted">陸玖本人として確認済み・同じテーマの場面 '+events.length+'件</div>'+rows:'<div class="tiny muted">同じテーマで陸玖本人として確認済みの場面はまだありません。未確認候補や別テーマの場面を成功・失敗として数えません。</div>')+'</div>';
+ }).join('');
+ return '<div class="card"><div class="tiny muted">試合後の自己評価と、動画内で「陸玖」本人・同じプレー分類として手動確認した場面を並べています。映像候補は動きの変化であり、AIがプレー成功を判定したものではありません。</div>'+cards+'</div>';
+}
 function renderNextMatchGoalPanel(){
  const goal=state.settings?.nextMatchGoal||null;
  const history=getNextMatchGoalHistory();
@@ -1273,6 +1289,7 @@ function renderNextMatchGoalPanel(){
   html+='</div>';
  }else html+='<div class="empty" style="margin-top:8px">まずは次の試合で意識することを1つ決めよう。</div>';
  html+='<h3 style="margin-top:14px">テーマ別・試合での変化</h3>'+renderNextMatchGoalProgress();
+ html+='<h3 style="margin-top:14px">目標の自己評価と試合映像の照合</h3>'+renderNextMatchGoalVideoEvidence();
  if(history.length)html+='<div style="margin-top:10px"><b class="tiny">過去の目標と振り返り（最新5件）</b>'+history.slice(-5).reverse().map(x=>'<div class="tiny muted" style="margin-top:7px"><b>'+esc(x.focus||'')+'｜'+esc(x.result||'未評価')+'</b><div>'+esc(x.matchDate||x.reviewDate||x.date||'')+(x.matchTitle?'｜'+esc(x.matchTitle):'｜試合記録未連携')+'</div><div>'+esc(x.note||'')+(x.reflection?'／振り返り：'+esc(x.reflection):'')+'</div></div>').join('')+'</div>';
  html+='<div class="tiny muted" style="margin-top:8px">試合ごとに評価を蓄積します。過去の評価は新しい目標を設定しても残ります。達成回数だけで能力の伸びを断定せず、映像や具体的なプレーと合わせて確認します。</div></div>';
  return html;
