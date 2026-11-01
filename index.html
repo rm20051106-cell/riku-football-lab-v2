@@ -259,7 +259,7 @@ async function createCrossMatchHighlight(){
  const clips=[...unique.values()];
  if(!clips.length){alert('ベストプレー集に入れる場面をチェックしてください。');return}
  if(clips.length>12){alert('一度にまとめられるのは最大12場面です。');return}
- const base=(apiBaseUrl.value||state.settings.apiBaseUrl||'').trim().replace(/\\/$/,'');
+ const base=(apiBaseUrl.value||state.settings.apiBaseUrl||'').trim().replace(/\/$/,'');
  if(!base){alert('設定画面でAIサーバーURLを登録してください。');return}
  const out=document.getElementById('crossMatchHighlightResult');if(out)out.textContent='複数試合の切り抜きを確認して連結しています…';
  try{
