@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -7,6 +8,7 @@ from typing import Optional
 import cv2
 import mediapipe as mp
 import numpy as np
+import pytesseract
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -98,6 +100,53 @@ def analyze_frame(frame, pose):
     }
 
 
+def read_jersey_number(frame, landmarks, target_numbers):
+    """Read likely shirt-number text from the detected pose torso crop.
+    OCR is a candidate signal, never proof of player identity.
+    """
+    try:
+        required = ("left_shoulder", "right_shoulder", "left_hip", "right_hip")
+        if not all(name in landmarks for name in required):
+            return []
+        h, w = frame.shape[:2]
+        ls, rs = landmarks["left_shoulder"], landmarks["right_shoulder"]
+        lh, rh = landmarks["left_hip"], landmarks["right_hip"]
+        if min(ls[2], rs[2], lh[2], rh[2]) < 0.45:
+            return []
+        shoulder_width = abs(ls[0] - rs[0]) * w
+        if shoulder_width < 12:
+            return []
+        center_x = (ls[0] + rs[0] + lh[0] + rh[0]) * w / 4
+        top = int(max(0, min(ls[1], rs[1]) * h - shoulder_width * 0.12))
+        bottom = int(min(h, max(lh[1], rh[1]) * h))
+        half_width = int(shoulder_width * 0.95)
+        left = max(0, int(center_x - half_width))
+        right = min(w, int(center_x + half_width))
+        if bottom - top < 12 or right - left < 12:
+            return []
+        crop = frame[top:bottom, left:right]
+        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+        enlarged = cv2.resize(gray, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
+        enlarged = cv2.GaussianBlur(enlarged, (3, 3), 0)
+        _, binary = cv2.threshold(enlarged, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        config = "--psm 6 -c tessedit_char_whitelist=0123456789"
+        data = pytesseract.image_to_data(binary, config=config, output_type=pytesseract.Output.DICT)
+        found = []
+        targets = {str(x).strip() for x in target_numbers if str(x).strip()}
+        for raw, confidence in zip(data.get("text", []), data.get("conf", [])):
+            digits = re.findall(r"(?<!\d)\d{1,2}(?!\d)", str(raw))
+            try:
+                conf = float(confidence)
+            except (TypeError, ValueError):
+                continue
+            for number in digits:
+                if number in targets and conf >= 35:
+                    found.append({"number": number, "confidence": round(conf, 1)})
+        return found
+    except Exception:
+        return []
+
+
 def camera_angle_guidance(camera_angle: str):
     guidance = {
         "斜め後ろから": [
@@ -121,7 +170,7 @@ def camera_angle_guidance(camera_angle: str):
         "撮影角度が未指定です。全身とボールが映る動画で、同じ角度・距離から撮影すると比較しやすくなります。"
     ])
 
-def process_video(path: str, mode: str, camera_angle: str = "未選択", progress_callback=None):
+def process_video(path: str, mode: str, camera_angle: str = "未選択", progress_callback=None, jersey_numbers=None):
     cap = cv2.VideoCapture(path)
     if not cap.isOpened():
         raise HTTPException(status_code=400, detail="動画を開けませんでした。MP4など一般的な形式でお試しください。")
@@ -139,6 +188,7 @@ def process_video(path: str, mode: str, camera_angle: str = "未選択", progres
     max_samples = MATCH_MAX_SAMPLES if mode == "match" else 60
     frames = []
     frame_idx = 0
+    target_jerseys = [x.strip() for x in (jersey_numbers or "10,74").replace("；", ",").split(",") if x.strip()]
     with mp_pose.Pose(static_image_mode=(mode == "match"), model_complexity=1,
                       enable_segmentation=False, min_detection_confidence=0.5,
                       min_tracking_confidence=0.5) as pose:
@@ -161,6 +211,8 @@ def process_video(path: str, mode: str, camera_angle: str = "未選択", progres
                     frame = cv2.resize(frame, (960, new_h), interpolation=cv2.INTER_AREA)
                 metrics = analyze_frame(frame, pose)
                 if metrics:
+                    if mode == "match":
+                        metrics["jersey_ocr_candidates"] = read_jersey_number(frame, metrics.get("landmarks", {}), target_jerseys)
                     frames.append({"time_seconds": round(current_frame_idx / fps, 2) if fps > 0 else current_frame_idx,
                                    **metrics})
                 if progress_callback and duration > 0:
@@ -194,6 +246,17 @@ def process_video(path: str, mode: str, camera_angle: str = "未選択", progres
         "sampling_rate_fps": round(1 / actual_interval, 2) if actual_interval > 0 else None,
         "frames": frames,
     }
+    if mode == "match":
+        jersey_counts = {}
+        for frame_data in frames:
+            for item in frame_data.get("jersey_ocr_candidates", []):
+                number = item.get("number")
+                if number:
+                    jersey_counts[number] = jersey_counts.get(number, 0) + 1
+        summary["jersey_ocr_summary"] = {
+            "candidate_frame_counts": jersey_counts,
+            "note": "姿勢検出できた1人分の胴体領域に対するOCR候補です。複数選手の検出・追跡や本人確認ではありません。"
+        }
     if mode == "form":
         tips = []
         if summary["average_left_right_knee_angle_deg"] is not None:
@@ -369,7 +432,7 @@ def run_match_job(job_id: str, source_path: str, jersey_numbers: str):
         _set_match_job(job_id, progress=15, stage="動画全体をスキャン中")
         def progress(value):
             _set_match_job(job_id, progress=value, stage="動画全体をスキャン中")
-        result = process_video(converted_path, "match", progress_callback=progress)
+        result = process_video(converted_path, "match", progress_callback=progress, jersey_numbers=jersey_numbers)
         summary = result.get("summary", {})
         candidates = build_movement_candidates(summary)
         _set_match_job(job_id, progress=92, stage="動きの候補場面を短い動画に切り出し中")
