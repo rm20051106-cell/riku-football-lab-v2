@@ -577,6 +577,13 @@ function renderMatchToMatchComparison(analyses){
  const typeRows=types.map(type=>{const a=current.confirmedEvents.filter(e=>e.actionType===type).length,b=previous.confirmedEvents.filter(e=>e.actionType===type).length;return {type,a,b};}).filter(x=>x.a||x.b);
  return '<h3 style="margin-top:16px">試合ごとの成長比較</h3><div class="card"><div class="tiny muted">今回：'+esc(current.date||'日付不明')+'｜'+esc(current.title||'試合動画')+'</div><div class="tiny muted">前回：'+esc(previous.date||'日付不明')+'｜'+esc(previous.title||'試合動画')+'</div>'+row('陸玖本人として確認した場面',current.confirmedEvents.length,previous.confirmedEvents.length)+row('良かった',current.good,previous.good)+row('改善したい',current.improve,previous.improve)+'<h4 style="margin:12px 0 6px">プレー内容の内訳</h4>'+(typeRows.length?typeRows.map(x=>'<div class="tiny" style="padding:4px 0">'+esc(x.type)+'：前回 '+x.b+' → 今回 '+x.a+'（'+delta(x.a,x.b)+'）</div>').join(''):'<div class="tiny muted">分類済みの場面はありません。</div>')+'<div class="tiny muted" style="margin-top:10px">比較は手動で陸玖本人と確認した場面・評価だけを対象にしています。確認数の増減だけで上達・調子を断定できません。出場時間、相手、ポジション、撮影角度、候補の見つかり方が違うため、同じ条件で記録した試合同士を目安として比べてください。</div></div>';
 }
+function renderRikuSkillProfile(events){
+ const types=['ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール','その他'];
+ const rows=types.map(type=>{const list=(events||[]).filter(e=>e.actionType===type&&(e.assessment==='良かった'||e.assessment==='改善したい'));const good=list.filter(e=>e.assessment==='良かった').length,improve=list.filter(e=>e.assessment==='改善したい').length,total=good+improve;return {type,good,improve,total,rate:total?Math.round(good/total*100):0};}).filter(x=>x.total>0).sort((a,b)=>b.total-a.total);
+ if(!rows.length)return '<h3 style="margin-top:14px">得意・改善ポイントマップ</h3><div class="empty">プレーの分類と「良かった」「改善したい」の評価が保存されると、プレー別の傾向を表示します。</div>';
+ const cards=rows.map(x=>{const tag=x.good>=2&&x.good>x.improve?'良かった記録が多い':x.improve>=2&&x.improve>x.good?'改善したい記録が多い':'まだ傾向は保留';return '<div class="listitem" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><b>'+esc(x.type)+'</b><span class="tiny muted">'+tag+'</span></div><div class="tiny muted">良かった '+x.good+' ／ 改善したい '+x.improve+'（評価 '+x.total+'場面）</div><div style="height:8px;background:var(--line,#ddd);border-radius:8px;overflow:hidden;margin-top:6px"><div style="height:100%;width:'+x.rate+'%;background:var(--accent,#8bc34a);border-radius:8px"></div></div><div class="tiny muted">良かったの割合 '+x.rate+'%</div></div>';}).join('');
+ return '<h3 style="margin-top:14px">得意・改善ポイントマップ</h3><div class="tiny muted">陸玖本人として確認し、評価まで入力した場面だけを集計しています。</div>'+cards+'<div class="tiny muted" style="margin-top:6px">「記録が多い」は現時点の振り返り傾向です。2場面未満の評価では得意・改善を決めつけず、試合数や出場時間が違う場合も参考値として見てください。</div>';
+}
 function renderRikuCoachReport(){
  const el=document.getElementById('rikuCoachReport');if(!el)return;
  const analyses=(state.matchAnalyses||[]).slice();
@@ -603,6 +610,7 @@ function renderRikuCoachReport(){
   html+='<div class="grid"><div class="card"><div class="tiny muted">本人確認した場面</div><div class="stat">'+confirmed+'<small>場面</small></div></div><div class="card"><div class="tiny muted">良かった</div><div class="stat">'+good+'<small>場面</small></div></div><div class="card"><div class="tiny muted">改善したい</div><div class="stat">'+improve+'<small>場面</small></div></div></div>';
   html+='<div class="tiny muted">評価保留・未入力：'+pending+'場面</div><h3 style="margin-top:14px">プレー内容の記録</h3>';
   html+=typeCounts.length?typeCounts.map(x=>'<div class="listitem"><div class="grow"><b>'+esc(x.type)+'</b><div class="tiny muted">確認 '+x.count+'場面 ・ 良かった '+x.good+' ・ 改善したい '+x.improve+'</div></div></div>').join(''):'<div class="tiny muted">プレー内容の分類はまだありません。</div>';
+  html+=renderRikuSkillProfile(events);
   html+='<h3 style="margin-top:14px">次の練習テーマ</h3>';
   html+=focus?'<div class="note"><b>'+esc(focus.type)+'を重点確認</b><div class="tiny">本人確認済みの記録のうち「改善したい」が'+focus.improve+'場面ありました。</div><div style="margin-top:6px">'+esc(focusDrills[focus.type]||focusDrills['その他'])+'</div></div>':'<div class="note">今は改善テーマを決めるだけの評価データがありません。次の試合でも「良かった」「改善したい」を記録していこう。</div>';
  }
