@@ -414,6 +414,28 @@ function shiftMonth(n){calDate=new Date(calDate.getFullYear(),calDate.getMonth()
 function renderCalendar(){let y=calDate.getFullYear(),m=calDate.getMonth();monthTitle.textContent=`${y}年 ${m+1}月`;let first=new Date(y,m,1).getDay(),days=new Date(y,m+1,0).getDate(),stamps=new Set(state.trainings.map(x=>x.date));let out=['日','月','火','水','木','金','土'].map(x=>`<div class="dayhead">${x}</div>`).join('');for(let i=0;i<first;i++)out+='<div class="day blank"></div>';for(let d=1;d<=days;d++){let dt=`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;out+=`<button class="day ${stamps.has(dt)?'stamped':''} ${dt===today()?'today':''}" onclick="selectCalendarDate('${dt}')" style="color:inherit">${d}${stamps.has(dt)?'<br>⚽':''}</button>`}calendarGrid.innerHTML=out;renderSelectedDate()}
 function selectCalendarDate(dt){selectedDate=dt;renderSelectedDate()}
 function renderSelectedDate(){selectedDateTitle.textContent=selectedDate+' の記録';let a=state.trainings.filter(x=>x.date===selectedDate);selectedDateRecords.innerHTML=a.length?a.map(x=>`<div class="listitem"><div class="grow"><b>${esc(x.menu)}</b><div class="tiny muted">${x.minutes}分・${esc(x.effort)} ${esc(x.note)}</div></div></div>`).join(''):'<div class="empty">この日の練習記録はありません</div>'}
+function getCoachTrainingPlan(){
+ const events=(state.matchAnalyses||[]).flatMap(match=>(match.candidateEvents||[]).filter(ev=>ev.reviewLabel==='陸玖'));
+ const improvements=events.filter(ev=>ev.assessment==='改善したい'&&ev.actionType&&ev.actionType!=='未選択');
+ const counts={};improvements.forEach(ev=>counts[ev.actionType]=(counts[ev.actionType]||0)+1);
+ const top=Object.entries(counts).sort((a,b)=>b[1]-a[1])[0]?.[0]||'';
+ const plans={
+ 'ドリブル':{title:'加速ドリブル＋切り返し',minutes:15,category:'突破・ドリブル',note:'最初のタッチで前へ運び、相手の逆を取る。抜いた後の2〜3歩も加速。左右の切り返しを交互に行う。',why:'試合の振り返りでドリブルの改善テーマが多かったため'},
+ 'パス':{title:'受ける前の首振り＋パス',minutes:12,category:'受ける動き',note:'受ける前に左右を確認し、前を向ける位置へファーストタッチ。左右両足でパス。',why:'試合の振り返りでパスの改善テーマが多かったため'},
+ 'シュート':{title:'シュートの軸足・ミート確認',minutes:12,category:'シュート',note:'近い距離から軸足の位置とボールのミートを確認。強さより正確さを優先。',why:'試合の振り返りでシュートの改善テーマが多かったため'},
+ 'ボールを受ける':{title:'首振り→前向きファーストタッチ',minutes:12,category:'受ける動き',note:'パスが来る前に周囲を確認。半身で受けて、前へ運ぶタッチを練習。',why:'試合の振り返りで受ける動きの改善テーマが多かったため'},
+ '守備・プレス':{title:'1対1の守備・コース限定',minutes:10,category:'アジリティ',note:'相手に飛び込まず、体の向きで進行方向を限定。無理のない距離で行う。',why:'試合の振り返りで守備の改善テーマが多かったため'},
+ 'オフザボール':{title:'パス前の動き出し',minutes:10,category:'受ける動き',note:'相手の背中側や見えにくい角度へ動き、受ける場所を作る。',why:'試合の振り返りでボールを持たない時の改善テーマが多かったため'}
+ };
+ if(top&&plans[top])return plans[top];
+ return {title:'加速ドリブル＋切り返し',minutes:15,category:'突破・ドリブル',note:'マーカーを使って左右に切り返し、前へ運ぶタッチから2〜3歩加速。最後に親子1対1で相手を見て突破方向を選ぶ。',why:'試合の改善データがまだ少ないため、今の育成テーマに合わせた基本メニュー'};
+}
+function applyCoachTrainingPlan(){
+ const plan=getCoachTrainingPlan();
+ let option=Array.from(trainMenu.options).find(o=>o.value===plan.title);
+ if(!option){state.menus.unshift({name:plan.title,category:plan.category,minutes:plan.minutes});persist();renderAll();}
+ trainMenu.value=plan.title;trainDate.value=today();trainMinutes.value=plan.minutes;trainNote.value=plan.note;showView('training');
+}
 function renderRikuCoachReport(){
  const el=document.getElementById('rikuCoachReport');if(!el)return;
  const analyses=(state.matchAnalyses||[]).slice();
@@ -446,7 +468,7 @@ function renderRikuCoachReport(){
  el.innerHTML=html;
 }
 function renderAll(){
- state.aiFormAnalyses=state.aiFormAnalyses||[];state.matchAnalyses=state.matchAnalyses||[];let date=today(),month=date.slice(0,7),days=new Set(state.trainings.filter(x=>x.date.startsWith(month)).map(x=>x.date)).size;homeDays.innerHTML=`${days} <small>日</small>`;monthProgress.style.width=Math.min(100,days/12*100)+'%';homeVideos.innerHTML=`${state.clips.length+state.forms.length} <small>件</small>`;let sprint=state.measures.find(x=>x.type==='30m走');homeSprint.innerHTML=sprint?`${esc(sprint.value)} <small>${esc(sprint.unit)}</small>`:'—';homeNumbers.textContent=`${state.settings.jersey1} / ${state.settings.jersey2}`;dailyPlan.innerHTML=`<div class="listitem"><span class="tag good">おすすめ</span><div class="grow"><b>加速ドリブル＋受ける前の首振り</b><div class="tiny muted">10〜15分。最初のタッチを前へ置き、相手を見てからスピードに乗る。</div></div></div>`;
+ state.aiFormAnalyses=state.aiFormAnalyses||[];state.matchAnalyses=state.matchAnalyses||[];let date=today(),month=date.slice(0,7),days=new Set(state.trainings.filter(x=>x.date.startsWith(month)).map(x=>x.date)).size;homeDays.innerHTML=`${days} <small>日</small>`;monthProgress.style.width=Math.min(100,days/12*100)+'%';homeVideos.innerHTML=`${state.clips.length+state.forms.length} <small>件</small>`;let sprint=state.measures.find(x=>x.type==='30m走');homeSprint.innerHTML=sprint?`${esc(sprint.value)} <small>${esc(sprint.unit)}</small>`:'—';homeNumbers.textContent=`${state.settings.jersey1} / ${state.settings.jersey2}`;const coachPlan=getCoachTrainingPlan();dailyPlan.innerHTML='<div class="listitem"><span class="tag good">AIコーチ提案</span><div class="grow"><b>'+esc(coachPlan.title)+'</b><div class="tiny muted">'+coachPlan.minutes+'分・'+esc(coachPlan.why)+'</div><div class="tiny">'+esc(coachPlan.note)+'</div><button class="secondary small" onclick="applyCoachTrainingPlan()">このメニューで練習を始める</button></div></div>';
 trainDate.value=trainDate.value||date;measureDate.value=measureDate.value||date;
 trainMenu.innerHTML=state.menus.map((m,i)=>`<option value="${esc(m.name)}">${esc(m.category)}｜${esc(m.name)}</option>`).join('');
 menuList.innerHTML=state.menus.map((m,i)=>`<div class="listitem"><div class="grow"><b>${esc(m.name)}</b><div class="tiny muted">${esc(m.category)}・目安${m.minutes||10}分</div></div><button class="danger small" onclick="removeMenu(${i})">削除</button></div>`).join('');
