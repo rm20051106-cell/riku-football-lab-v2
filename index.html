@@ -1234,24 +1234,47 @@ function renderNextMatchGrowthBrief(priorities,events){
  html+='<div class="tiny muted">練習時間やチェック数は取り組み状況の記録であり、上達を証明する数値ではありません。試合映像の評価も、陸玖本人として確認した入力内容を表示しています。</div>';
  return html;
 }
+function getNextMatchGoalHistory(){
+ state.settings=state.settings||{};
+ if(!Array.isArray(state.settings.nextMatchGoalHistory))state.settings.nextMatchGoalHistory=[];
+ return state.settings.nextMatchGoalHistory;
+}
+function archiveNextMatchGoal(goal){
+ if(!goal||!goal.result)return;
+ const history=getNextMatchGoalHistory();
+ const goalId=goal.id||[goal.date,goal.focus,goal.note,goal.reviewDate].join('|');
+ if(history.some(x=>x.id===goalId))return;
+ history.push({id:goalId,date:goal.date||'',focus:goal.focus||'',note:goal.note||'',result:goal.result,reviewDate:goal.reviewDate||'',reflection:goal.reflection||'',matchId:goal.matchId??'',matchTitle:goal.matchTitle||'',matchDate:goal.matchDate||''});
+ state.settings.nextMatchGoalHistory=history.slice(-100);
+}
+function renderNextMatchGoalProgress(){
+ const history=getNextMatchGoalHistory().filter(x=>x.result);
+ if(!history.length)return '<div class="empty">試合後の評価がたまると、テーマ別の変化をここに表示します。</div>';
+ const focuses=['ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール'];
+ const rows=focuses.map(focus=>{const items=history.filter(x=>x.focus===focus);return {focus,total:items.length,done:items.filter(x=>x.result==='できた').length,partial:items.filter(x=>x.result==='少しできた').length,notYet:items.filter(x=>x.result==='まだ').length,last:items.slice(-3)};}).filter(x=>x.total>0);
+ return '<div class="card"><div class="tiny muted">本人・保護者が入力した試合後評価の累計。自動判定や能力スコアではありません。</div>'+rows.map(x=>'<div class="listitem" style="display:block"><b>'+esc(x.focus)+'</b><div class="tiny muted">記録 '+x.total+'試合｜できた '+x.done+'・少しできた '+x.partial+'・まだ '+x.notYet+'</div><div style="display:flex;height:9px;border-radius:8px;overflow:hidden;background:var(--line,#ddd);margin-top:6px"><span style="width:'+(x.done/x.total*100)+'%;background:var(--accent,#8bc34a)"></span><span style="width:'+(x.partial/x.total*100)+'%;background:#d6b45c"></span><span style="width:'+(x.notYet/x.total*100)+'%;background:#b9c0ca"></span></div><div class="tiny muted" style="margin-top:5px">直近：'+x.last.map(v=>esc(v.result)+'（'+esc(v.matchDate||v.reviewDate||v.date||'日付なし')+'）').join(' → ')+'</div></div>').join('')+'<div class="tiny muted">回数は取り組みの記録です。試合状況や出場時間なども異なるため、割合だけで上達を断定しません。</div></div>';
+}
 function renderNextMatchGoalPanel(){
  const goal=state.settings?.nextMatchGoal||null;
- const history=Array.isArray(state.settings?.nextMatchGoalHistory)?state.settings.nextMatchGoalHistory:[];
+ const history=getNextMatchGoalHistory();
+ const matches=(state.matchAnalyses||[]).slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+ let html='<h3 style="margin-top:14px">次の試合の目標設定・試合後チェック</h3><div class="card"><div class="tiny muted">試合前に1つだけ意識するテーマを決め、試合後に該当する試合記録と達成度を保存します。AIの自動判定ではなく、本人・保護者の振り返りです。</div>';
  const options=['ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール'];
- let html='<h3 style="margin-top:14px">次の試合の目標設定・試合後チェック</h3><div class="card"><div class="tiny muted">試合前に1つだけ意識するテーマを決め、試合後に達成度を記録します。AIの自動判定ではなく、本人・保護者の振り返りです。</div>';
  html+='<label class="tiny" for="nextMatchGoalFocus">試合で意識するプレー</label><select id="nextMatchGoalFocus" class="input" style="width:100%;margin:4px 0 8px">'+options.map(x=>'<option value="'+x+'" '+(goal?.focus===x?'selected':'')+'>'+x+'</option>').join('')+'</select>';
  html+='<label class="tiny" for="nextMatchGoalNote">具体的な目標（例：受ける前に首を振って前を向く）</label><textarea id="nextMatchGoalNote" class="input" rows="2" style="width:100%;margin:4px 0 8px" placeholder="試合でやってみたいこと">'+esc(goal?.note||'')+'</textarea><button class="primary small" onclick="saveNextMatchGoal()">試合前の目標を保存</button>';
  if(goal){
   html+='<div class="listitem" style="display:block;margin-top:10px"><b>現在の目標：'+esc(goal.focus)+'</b><div class="tiny muted">設定日：'+esc(goal.date||'日付なし')+'</div><div class="tiny">'+esc(goal.note||'具体的な目標は未入力')+'</div>';
   if(goal.result){
-   html+='<div class="tiny" style="margin-top:6px">試合後の評価：<b>'+esc(goal.result)+'</b>（'+esc(goal.reviewDate||'日付なし')+'）</div><div class="tiny muted">'+esc(goal.reflection||'振り返りメモなし')+'</div>';
+   const linked=goal.matchTitle?esc(goal.matchDate||'')+'｜'+esc(goal.matchTitle):'試合記録未連携';
+   html+='<div class="tiny" style="margin-top:6px">試合後の評価：<b>'+esc(goal.result)+'</b>（'+esc(goal.reviewDate||'日付なし')+'）</div><div class="tiny muted">'+linked+'</div><div class="tiny muted">'+esc(goal.reflection||'振り返りメモなし')+'</div>';
   }else{
-   html+='<div class="tiny" style="margin-top:8px"><b>試合後の達成度を記録</b></div><div class="btnrow"><button class="secondary small" onclick="reviewNextMatchGoal(\'できた\')">できた</button><button class="secondary small" onclick="reviewNextMatchGoal(\'少しできた\')">少しできた</button><button class="secondary small" onclick="reviewNextMatchGoal(\'まだ\')">まだ</button></div>';
+   html+='<label class="tiny" for="nextMatchGoalMatch" style="display:block;margin-top:10px">振り返る試合記録（任意）</label><select id="nextMatchGoalMatch" class="input" style="width:100%;margin:4px 0 8px"><option value="">試合記録と連携しない</option>'+matches.map(m=>'<option value="'+esc(String(m.id))+'">'+esc((m.date||'日付なし')+'｜'+(m.title||'試合'))+'</option>').join('')+'</select><div class="tiny" style="margin-top:8px"><b>試合後の達成度を記録</b></div><div class="btnrow"><button class="secondary small" onclick="reviewNextMatchGoal(\'できた\')">できた</button><button class="secondary small" onclick="reviewNextMatchGoal(\'少しできた\')">少しできた</button><button class="secondary small" onclick="reviewNextMatchGoal(\'まだ\')">まだ</button></div>';
   }
   html+='</div>';
  }else html+='<div class="empty" style="margin-top:8px">まずは次の試合で意識することを1つ決めよう。</div>';
- if(history.length)html+='<div style="margin-top:10px"><b class="tiny">過去の目標と振り返り</b>'+history.slice(-5).reverse().map(x=>'<div class="tiny muted" style="margin-top:5px">'+esc(x.date||'')+'｜'+esc(x.focus||'')+'｜'+esc(x.result||'未評価')+'：'+esc(x.note||'')+'</div>').join('')+'</div>';
- html+='<div class="tiny muted" style="margin-top:8px">達成度は試合での自己評価です。目標を達成した回数だけで能力の伸びを断定せず、映像や次回の行動と合わせて振り返ります。</div></div>';
+ html+='<h3 style="margin-top:14px">テーマ別・試合での変化</h3>'+renderNextMatchGoalProgress();
+ if(history.length)html+='<div style="margin-top:10px"><b class="tiny">過去の目標と振り返り（最新5件）</b>'+history.slice(-5).reverse().map(x=>'<div class="tiny muted" style="margin-top:7px"><b>'+esc(x.focus||'')+'｜'+esc(x.result||'未評価')+'</b><div>'+esc(x.matchDate||x.reviewDate||x.date||'')+(x.matchTitle?'｜'+esc(x.matchTitle):'｜試合記録未連携')+'</div><div>'+esc(x.note||'')+(x.reflection?'／振り返り：'+esc(x.reflection):'')+'</div></div>').join('')+'</div>';
+ html+='<div class="tiny muted" style="margin-top:8px">試合ごとに評価を蓄積します。過去の評価は新しい目標を設定しても残ります。達成回数だけで能力の伸びを断定せず、映像や具体的なプレーと合わせて確認します。</div></div>';
  return html;
 }
 function saveNextMatchGoal(){
@@ -1259,19 +1282,21 @@ function saveNextMatchGoal(){
  const note=(document.getElementById('nextMatchGoalNote')?.value||'').trim();
  state.settings=state.settings||{};
  const previous=state.settings.nextMatchGoal;
- if(previous){
-  state.settings.nextMatchGoalHistory=Array.isArray(state.settings.nextMatchGoalHistory)?state.settings.nextMatchGoalHistory:[];
-  if(previous.result)state.settings.nextMatchGoalHistory.push({date:previous.date,focus:previous.focus,note:previous.note,result:previous.result,reviewDate:previous.reviewDate,reflection:previous.reflection});
- }
- state.settings.nextMatchGoal={focus,note,date:today(),result:'',reviewDate:'',reflection:''};
+ if(previous?.result)archiveNextMatchGoal(previous);
+ state.settings.nextMatchGoal={id:'goal-'+Date.now(),focus,note,date:today(),result:'',reviewDate:'',reflection:'',matchId:'',matchTitle:'',matchDate:''};
  persist();
 }
 function reviewNextMatchGoal(result){
  const goal=state.settings?.nextMatchGoal;
- if(!goal)return;
+ if(!goal||goal.result)return;
+ const matchId=document.getElementById('nextMatchGoalMatch')?.value||'';
+ const match=(state.matchAnalyses||[]).find(x=>String(x.id)===String(matchId));
  const reflection=prompt('試合での様子や、次に試したいことをメモできます（任意）',goal.reflection||'');
  if(reflection===null)return;
  goal.result=result;goal.reviewDate=today();goal.reflection=reflection.trim();
+ goal.matchId=match?match.id:'';goal.matchTitle=match?(match.title||'試合'):'';
+ goal.matchDate=match?(match.date||''):'';
+ archiveNextMatchGoal(goal);
  persist();
 }
 function renderRikuCoachReport(){
