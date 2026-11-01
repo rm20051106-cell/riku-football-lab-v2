@@ -9,6 +9,8 @@ import cv2
 import mediapipe as mp
 import numpy as np
 import pytesseract
+from mediapipe.tasks import python as mp_python
+from mediapipe.tasks.python import vision as mp_vision
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,6 +22,7 @@ MAX_MATCH_SECONDS = int(os.getenv("MAX_MATCH_VIDEO_SECONDS", "1200"))
 MAX_MATCH_UPLOAD_MB = int(os.getenv("MAX_MATCH_UPLOAD_MB", "500"))
 MATCH_SAMPLE_RATE = float(os.getenv("MATCH_SAMPLE_RATE", "0.25"))
 MATCH_MAX_SAMPLES = int(os.getenv("MATCH_MAX_SAMPLES", "360"))
+POSE_LANDMARKER_MODEL = os.getenv("POSE_LANDMARKER_MODEL", "/app/models/pose_landmarker_lite.task")
 match_jobs = {}
 
 app = FastAPI(title=APP_NAME, version="0.1.0")
@@ -170,7 +173,166 @@ def camera_angle_guidance(camera_angle: str):
         "撮影角度が未指定です。全身とボールが映る動画で、同じ角度・距離から撮影すると比較しやすくなります。"
     ])
 
+def analyze_task_pose(lm):
+    def p(name):
+        item = lm[mp_pose.PoseLandmark[name].value]
+        visibility = float(getattr(item, "visibility", 1.0))
+        return [float(item.x), float(item.y), visibility]
+    visible = sum(1 for item in lm if float(getattr(item, "visibility", 1.0)) >= 0.5)
+    left_knee = angle(p("LEFT_HIP")[:2], p("LEFT_KNEE")[:2], p("LEFT_ANKLE")[:2])
+    right_knee = angle(p("RIGHT_HIP")[:2], p("RIGHT_KNEE")[:2], p("RIGHT_ANKLE")[:2])
+    left_hip = angle(p("LEFT_SHOULDER")[:2], p("LEFT_HIP")[:2], p("LEFT_KNEE")[:2])
+    right_hip = angle(p("RIGHT_SHOULDER")[:2], p("RIGHT_HIP")[:2], p("RIGHT_KNEE")[:2])
+    shoulder_mid = [(p("LEFT_SHOULDER")[0] + p("RIGHT_SHOULDER")[0]) / 2,
+                    (p("LEFT_SHOULDER")[1] + p("RIGHT_SHOULDER")[1]) / 2]
+    hip_mid = [(p("LEFT_HIP")[0] + p("RIGHT_HIP")[0]) / 2,
+               (p("LEFT_HIP")[1] + p("RIGHT_HIP")[1]) / 2]
+    trunk_angle = round(float(np.degrees(np.arctan2(abs(shoulder_mid[0] - hip_mid[0]),
+                                                     max(1e-6, abs(shoulder_mid[1] - hip_mid[1]))))), 1)
+    names = ["LEFT_SHOULDER", "RIGHT_SHOULDER", "LEFT_HIP", "RIGHT_HIP",
+             "LEFT_KNEE", "RIGHT_KNEE", "LEFT_ANKLE", "RIGHT_ANKLE",
+             "LEFT_HEEL", "RIGHT_HEEL", "LEFT_FOOT_INDEX", "RIGHT_FOOT_INDEX"]
+    landmarks = {name.lower(): [round(p(name)[0], 5), round(p(name)[1], 5), round(p(name)[2], 4)]
+                 for name in names}
+    xs = [float(item.x) for item in lm if 0 <= float(item.x) <= 1]
+    ys = [float(item.y) for item in lm if 0 <= float(item.y) <= 1]
+    bbox = [round(min(xs), 4), round(min(ys), 4), round(max(xs), 4), round(max(ys), 4)] if xs and ys else None
+    return {
+        "visible_landmarks": visible,
+        "left_knee_angle_deg": left_knee,
+        "right_knee_angle_deg": right_knee,
+        "left_hip_angle_deg": left_hip,
+        "right_hip_angle_deg": right_hip,
+        "trunk_lean_image_angle_deg": trunk_angle,
+        "landmarks": landmarks,
+        "bbox": bbox,
+    }
+
+
+def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
+    cap = cv2.VideoCapture(path)
+    if not cap.isOpened():
+        raise HTTPException(status_code=400, detail="動画を開けませんでした。MP4など一般的な形式でお試しください。")
+    fps = cap.get(cv2.CAP_PROP_FPS) or 0
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    duration = total_frames / fps if fps > 0 else 0
+    if duration > MAX_MATCH_SECONDS:
+        cap.release()
+        raise HTTPException(status_code=413, detail=f"試合動画は{MAX_MATCH_SECONDS}秒以内にしてください。")
+    if not os.path.exists(POSE_LANDMARKER_MODEL):
+        cap.release()
+        raise HTTPException(status_code=503, detail="複数選手検出モデルが見つかりません。サーバーの再デプロイが必要です。")
+    target_rate = max(0.1, MATCH_SAMPLE_RATE)
+    interval = max(1, int(round(fps / target_rate))) if fps > 0 else max(1, int(round(1 / target_rate)))
+    actual_interval = interval / fps if fps > 0 else 1 / target_rate
+    targets = [x.strip() for x in (jersey_numbers or "10,74").replace("；", ",").split(",") if x.strip()]
+    frames, people_per_frame, jersey_counts = [], [], {}
+    frame_idx, sample_index = 0, 0
+    options = mp_vision.PoseLandmarkerOptions(
+        base_options=mp_python.BaseOptions(model_asset_path=POSE_LANDMARKER_MODEL),
+        running_mode=mp_vision.RunningMode.VIDEO,
+        num_poses=8,
+        min_pose_detection_confidence=0.35,
+        min_pose_presence_confidence=0.35,
+        min_tracking_confidence=0.35,
+    )
+    try:
+        with mp_vision.PoseLandmarker.create_from_options(options) as landmarker:
+            while sample_index < MATCH_MAX_SAMPLES:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+                ok, frame = cap.read()
+                if not ok:
+                    break
+                current_frame_idx = frame_idx
+                frame_idx += interval
+                sample_index += 1
+                h, w = frame.shape[:2]
+                if w > 960:
+                    frame = cv2.resize(frame, (960, max(1, int(round(h * 960 / w)))), interpolation=cv2.INTER_AREA)
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+                timestamp_ms = int((current_frame_idx / fps if fps > 0 else sample_index * actual_interval) * 1000)
+                detected = landmarker.detect_for_video(mp_image, timestamp_ms)
+                people = []
+                for person_index, pose_lm in enumerate(detected.pose_landmarks or []):
+                    metrics = analyze_task_pose(pose_lm)
+                    ocr = read_jersey_number(frame, metrics["landmarks"], targets)
+                    for item in ocr:
+                        jersey_counts[item["number"]] = jersey_counts.get(item["number"], 0) + 1
+                    people.append({
+                        "person_index": person_index,
+                        "visible_landmarks": metrics["visible_landmarks"],
+                        "bbox": metrics["bbox"],
+                        "jersey_ocr_candidates": ocr,
+                    })
+                    metrics["jersey_ocr_candidates"] = ocr
+                    metrics["person_index"] = person_index
+                    metrics["time_seconds"] = round(current_frame_idx / fps, 2) if fps > 0 else round(sample_index * actual_interval, 2)
+                    metrics["detected_people_in_frame"] = len(detected.pose_landmarks or [])
+                    if person_index == 0:
+                        primary = metrics
+                people_per_frame.append(len(people))
+                if people:
+                    primary = max((x for x in [analyze_task_pose(pose_lm) for pose_lm in detected.pose_landmarks]),
+                                  key=lambda x: x["visible_landmarks"])
+                    primary["time_seconds"] = round(current_frame_idx / fps, 2) if fps > 0 else round(sample_index * actual_interval, 2)
+                    primary["detected_people_in_frame"] = len(people)
+                    primary["jersey_ocr_candidates"] = []
+                    for person in detected.pose_landmarks:
+                        m = analyze_task_pose(person)
+                        if m["visible_landmarks"] == primary["visible_landmarks"]:
+                            primary["jersey_ocr_candidates"] = read_jersey_number(frame, m["landmarks"], targets)
+                            break
+                    frames.append(primary)
+                if progress_callback and duration > 0:
+                    progress_callback(min(90, 15 + int(75 * min(1.0, (current_frame_idx / fps if fps > 0 else 0) / duration))))
+    finally:
+        cap.release()
+    if not frames:
+        raise HTTPException(status_code=422, detail="複数選手の姿勢を検出できませんでした。人物全身が見える明るい動画で再試行してください。")
+    # Motion candidates are calculated only when a single person was detected in adjacent samples;
+    # this avoids pretending that different players are one continuous track.
+    for i, current in enumerate(frames):
+        for side in ("left", "right"):
+            key = side + "_foot_index"
+            prev = frames[i - 1] if i > 0 else None
+            a = current.get("landmarks", {}).get(key)
+            b = prev.get("landmarks", {}).get(key) if prev else None
+            dt = current.get("time_seconds", 0) - prev.get("time_seconds", 0) if prev else 0
+            unique_person = current.get("detected_people_in_frame") == 1 and prev and prev.get("detected_people_in_frame") == 1
+            if unique_person and a and b and dt > 0 and a[2] >= 0.5 and b[2] >= 0.5:
+                current[side + "_foot_image_motion_per_sec"] = round(float(np.linalg.norm(np.array(a[:2]) - np.array(b[:2])) / dt), 4)
+            else:
+                current[side + "_foot_image_motion_per_sec"] = None
+    knees = [x[k] for x in frames for k in ("left_knee_angle_deg", "right_knee_angle_deg") if x.get(k) is not None]
+    hips = [x[k] for x in frames for k in ("left_hip_angle_deg", "right_hip_angle_deg") if x.get(k) is not None]
+    trunks = [x["trunk_lean_image_angle_deg"] for x in frames]
+    summary = {
+        "sampled_pose_frames": len(frames),
+        "duration_seconds": round(duration, 2),
+        "average_left_right_knee_angle_deg": round(float(np.mean(knees)), 1) if knees else None,
+        "average_trunk_lean_image_angle_deg": round(float(np.mean(trunks)), 1) if trunks else None,
+        "average_left_right_hip_angle_deg": round(float(np.mean(hips)), 1) if hips else None,
+        "sampling_interval_seconds": round(actual_interval, 3),
+        "sampling_rate_fps": round(1 / actual_interval, 2) if actual_interval > 0 else None,
+        "frames": frames,
+        "person_detection_summary": {
+            "frames_with_people": sum(1 for n in people_per_frame if n > 0),
+            "average_people_per_sample": round(float(np.mean(people_per_frame)), 2) if people_per_frame else 0,
+            "max_people_in_one_frame": max(people_per_frame) if people_per_frame else 0,
+            "note": "MediaPipe Pose Landmarkerの複数姿勢検出結果です。人物IDの継続追跡や陸玖本人の特定を保証しません。"
+        },
+        "jersey_ocr_summary": {
+            "candidate_frame_counts": jersey_counts,
+            "note": "検出された各人物の胴体領域から読み取った背番号候補です。読み間違いがあり、本人確認ではありません。"
+        },
+    }
+    return {"ok": True, "mode": "match", "engine": "MediaPipe Pose Landmarker multi-pose + Tesseract OCR", "summary": summary}
+
+
 def process_video(path: str, mode: str, camera_angle: str = "未選択", progress_callback=None, jersey_numbers=None):
+    if mode == "match":
+        return process_match_video(path, progress_callback=progress_callback, jersey_numbers=jersey_numbers)
     cap = cv2.VideoCapture(path)
     if not cap.isOpened():
         raise HTTPException(status_code=400, detail="動画を開けませんでした。MP4など一般的な形式でお試しください。")
