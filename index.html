@@ -802,13 +802,14 @@ function getTrainingMatchProgress(){const skills=['ドリブル','パス','シ�
   const rows=all.filter(x=>x.type===type&&Number.isFinite(Number(x.value))).sort((a,b)=>String(a.date).localeCompare(String(b.date))).slice(-8);
   if(!rows.length)return '';
   const values=rows.map(x=>Number(x.value)),min=Math.min(...values),max=Math.max(...values),span=max-min||1;
-  const pts=values.map((v,i)=>{const x=20+(rows.length===1?0:i*280/(rows.length-1));const normalized=(v-min)/span;const betterHigh=type==='30m走'||type==='100m走'||type==='アジリティ';const y=18+(betterHigh?1-normalized:normalized)*66;return {x,y,v,record:rows[i]};});
+  const lowerIsBetter=['30m走','100m走','アジリティ'].includes(type);
+  const pts=values.map((v,i)=>{const x=20+(rows.length===1?0:i*280/(rows.length-1));const normalized=(v-min)/span;const y=18+(lowerIsBetter?normalized:1-normalized)*66;return {x,y,v,record:rows[i]};});
   const line=pts.map(p=>p.x.toFixed(1)+','+p.y.toFixed(1)).join(' ');
   const dots=pts.map(p=>'<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="3.5" fill="currentColor"><title>'+esc(p.record.date)+'：'+esc(p.v)+' '+esc(p.record.unit||'')+'</title></circle>').join('');
   const labels=pts.map(p=>'<text x="'+p.x.toFixed(1)+'" y="108" text-anchor="middle" font-size="9" fill="currentColor">'+esc(String(p.record.date||'').slice(5))+'</text>').join('');
   const latest=rows[rows.length-1],first=rows[0],delta=Number(latest.value)-Number(first.value),unit=latest.unit||'';
-  const change=rows.length>1?(delta===0?'初回と同じ':(delta>0?'+':'')+delta.toFixed(2)+' '+unit+'（初回比）'):'記録1件';
-  return '<div class="card" style="margin:8px 0"><div class="brand"><b>'+esc(type)+'</b><span class="tiny muted">'+rows.length+'回記録</span></div><svg viewBox="0 0 320 116" role="img" aria-label="'+esc(type)+'の測定推移" style="width:100%;height:auto;overflow:visible"><line x1="12" y1="88" x2="308" y2="88" stroke="currentColor" opacity=".22"/><polyline points="'+line+'" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>'+dots+labels+'</svg><div class="tiny muted">最新：'+esc(latest.value)+' '+esc(unit)+'（'+esc(latest.date)+'）・'+esc(change)+'</div>'+(type==='30m走'||type==='100m走'?'<div class="tiny muted">上方向ほどタイムが短い表示</div>':'')+'</div>';
+  const change=rows.length>1?(delta===0?'初回と同じ':(delta>0?'+':'')+delta.toFixed(2)+' '+unit+'（初回比・'+(lowerIsBetter?(delta<0?'改善方向':'数値は反対方向'):(delta>0?'改善方向':'数値は反対方向'))+'）'):'記録1件';
+  return '<div class="card" style="margin:8px 0"><div class="brand"><b>'+esc(type)+'</b><span class="tiny muted">'+rows.length+'回記録</span></div><svg viewBox="0 0 320 116" role="img" aria-label="'+esc(type)+'の測定推移" style="width:100%;height:auto;overflow:visible"><line x1="12" y1="88" x2="308" y2="88" stroke="currentColor" opacity=".22"/><polyline points="'+line+'" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>'+dots+labels+'</svg><div class="tiny muted">最新：'+esc(latest.value)+' '+esc(unit)+'（'+esc(latest.date)+'）・'+esc(change)+'</div>'+'<div class="tiny muted">'+(lowerIsBetter?'上方向ほどタイム・アジリティの数値が小さい表示':'上方向ほど跳躍距離などの数値が大きい表示')+'</div></div>';
  }).join('');
  host.innerHTML=cards||'<div class="empty">測定記録を保存すると、ここに成長グラフが表示されます。</div>';
 }
