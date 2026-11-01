@@ -387,7 +387,7 @@ async function createRikuHighlight(){
  const selected=(result.summary?.candidate_events||[]).filter(ev=>ev.review_label==='陸玖'&&ev.selected_track_id&&ev.clip_available).map(ev=>String(ev.id));
  if(!selected.length){alert('先に候補場面のトラックを選び、「陸玖として確認」してください。');return}
  if(!result.job_id){alert('解析ジョブ情報がありません。試合動画を再解析してください。');return}
- const base=(apiBaseUrl.value||state.settings.apiBaseUrl||'').trim().replace(/\\/$/,'');
+ const base=(apiBaseUrl.value||state.settings.apiBaseUrl||'').trim().replace(/\/$/,'');
  if(!base){alert('設定画面でAIサーバーURLを登録してください');return}
  const out=document.getElementById('rikuHighlightResult');if(out)out.textContent='確認済みの場面をつないでいます…';
  try{
