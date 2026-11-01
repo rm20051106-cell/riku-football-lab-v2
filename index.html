@@ -1208,6 +1208,32 @@ function renderMeasurementMatchTimeline(){
  };
  return '<h3 style="margin-top:14px">測定と試合記録を並べて見る（直近6か月）</h3><div class="tiny muted">同じ月の測定値・練習日数・本人確認済みの試合場面を並べます。測定値の変化と試合での活躍に因果関係があると判定するものではありません。</div>'+rows.map((row,index)=>'<div class="listitem" style="display:block"><b>'+esc(row.key.replace('-','年')+'月')+'</b><div class="tiny muted">練習 '+row.trainingDays+'日 ・ 陸玖と確認した試合場面 '+row.scenes.length+'場面</div>'+(row.monthMeasures.length?row.monthMeasures.map(item=>'<div class="tiny">'+esc(item.type)+'：<b>'+esc(item.value)+' '+esc(item.unit)+'</b>（'+esc(compare(row,index,item))+'）</div>').join(''):'<div class="tiny muted">この月の測定記録なし</div>')+(row.scenes.length?'<div class="tiny muted">試合場面の評価：良かった '+row.scenes.filter(e=>e.assessment==='良かった').length+' ・ 改善したい '+row.scenes.filter(e=>e.assessment==='改善したい').length+' ・ 未評価 '+row.scenes.filter(e=>!e.assessment||e.assessment==='判断保留'||e.assessment==='未選択').length+'</div>':'')+'</div>').join('')+'<div class="tiny muted">タイム・アジリティは数値が小さい方向、立ち幅跳びは大きい方向を改善方向として表示。測定条件（場所・靴・計測方法）が違う場合は単純比較に注意してください。試合場面は保護者・本人が陸玖と確認した記録のみです。</div>';
 }
+function renderNextMatchGrowthBrief(priorities,events){
+ const cue={'ドリブル':'相手の重心を見て逆を取り、抜いた後の2〜3歩を加速','パス':'受ける前に首を振り、半身で前を向ける場所へファーストタッチ','シュート':'軸足をボールの横に置き、狙うコースを決めてから蹴る','ボールを受ける':'ボールが来る前に周囲を確認し、前向きのタッチを選ぶ','守備・プレス':'飛び込まず、体の向きで相手の進行方向を限定する','オフザボール':'味方が顔を上げる前に動き出し、受ける角度を作る','その他':'次の試合ではプレー後に一度周囲を確認する'};
+ const rows=(priorities||[]).filter(p=>p&&p.focus).slice(0,2);
+ if(!rows.length)return '<h3 style="margin-top:14px">次の試合に向けた成長プラン</h3><div class="empty">試合の本人確認評価や練習の振り返りが増えると、記録に基づいた試合テーマを提案します。まずは練習記録と試合場面の確認を残していこう。</div>';
+ let html='<h3 style="margin-top:14px">次の試合に向けた成長プラン</h3><div class="tiny muted">本人確認済みの試合評価と、入力された練習記録から作成。記録が少ない場合は参考テーマとして表示します。</div>';
+ html+=rows.map((p,index)=>{
+  const focus=p.focus;
+  const related=(events||[]).filter(e=>e.reviewLabel==='陸玖'&&e.actionType===focus).sort((a,b)=>String(b.matchDate||'').localeCompare(String(a.matchDate||''))||Number(b.time||0)-Number(a.time||0));
+  const sessions=(state.trainings||[]).filter(t=>(t.focus||inferTrainingFocus(t.menu,t.category))===focus).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))).slice(0,5);
+  const recent30=sessions.filter(t=>{const d=Date.parse(String(t.date||'')+'T00:00:00');return Number.isFinite(d)&&d<=Date.now()&&Date.now()-d<30*86400000;});
+  const minutes=recent30.reduce((n,t)=>n+(Number(t.minutes)||0),0);
+  const steps=recent30.reduce((n,t)=>n+(Array.isArray(t.steps)?t.steps.length:getTrainingSteps(focus).length),0);
+  const done=recent30.reduce((n,t)=>n+(Array.isArray(t.stepsDone)?t.stepsDone.length:0),0);
+  const latestReview=sessions.find(t=>t.reviewStatus||t.matchTransferStatus);
+  const reviewText=latestReview?('直近の振り返り：'+(latestReview.reviewStatus||'未入力')+'／試合での再現：'+(latestReview.matchTransferStatus||'未入力')):'練習後の振り返りは未入力';
+  const scenes=related.slice(0,3);
+  const evidence=scenes.length?scenes.map(e=>{
+   const arg=encodeURIComponent(String(e.id));
+   return '<div class="tiny muted" style="margin-top:5px">試合 '+esc(e.matchDate||'日付不明')+'・'+formatMatchTime(e.time)+'・'+esc(e.assessment||'未評価')+' <button class="secondary small" onclick="openMatchEventInHistory('+Number(e.matchId)+',decodeURIComponent(\''+arg+'\'))">映像場面を見る</button></div>';
+  }).join(''):'<div class="tiny muted">このテーマの本人確認済み試合場面はまだありません。</div>';
+  const dataNote=Number(p.scenes||0)<2?'試合評価が少ないため、課題と断定せず参考テーマとして扱います。':('本人確認 '+p.scenes+'場面（改善 '+p.improve+'／良かった '+p.good+'）。');
+  return '<div class="card" style="margin-top:8px"><div class="tiny muted">優先テーマ '+(index+1)+'</div><b>'+esc(focus)+'</b><div class="tiny" style="margin-top:5px">'+esc(cue[focus]||cue['その他'])+'</div><div class="listitem"><div class="grow"><b>練習の積み上げ（直近30日）</b><div class="tiny muted">'+recent30.length+'回・合計 '+minutes+'分・チェック '+done+'/'+steps+'項目</div><div class="tiny muted">'+esc(reviewText)+'</div></div></div><div class="tiny muted">'+esc(dataNote)+'</div><div style="margin-top:6px"><b class="tiny">確認できる試合場面</b>'+evidence+'</div><button class="secondary small" onclick="applyCoachFocusPriority(\''+focus+'\')">このテーマで練習メニューを作る</button></div>';
+ }).join('');
+ html+='<div class="tiny muted">練習時間やチェック数は取り組み状況の記録であり、上達を証明する数値ではありません。試合映像の評価も、陸玖本人として確認した入力内容を表示しています。</div>';
+ return html;
+}
 function renderRikuCoachReport(){
  const el=document.getElementById('rikuCoachReport');if(!el)return;
  const analyses=(state.matchAnalyses||[]).slice();
@@ -1249,7 +1275,7 @@ function renderRikuCoachReport(){
  const priorities=getCoachPrioritySummary();
  html+='<h3 style="margin-top:14px">練習記録と試合評価から選ぶ、次の重点テーマ</h3>';
  html+=priorities.length?'<div class="card">'+priorities.map((p,i)=>'<div class="listitem"><div class="grow"><b>'+(i+1)+'. '+esc(p.focus)+'</b><div class="tiny muted">試合確認 '+p.scenes+'場面（改善 '+p.improve+'／良かった '+p.good+'）・練習 '+p.sessions+'回</div><div class="tiny muted">練習後「難しかった」 '+p.reviewHard+'回・試合で「まだ」 '+p.transferNotYet+'回／「少しできた」 '+p.transferPartial+'回／「できた」 '+p.transferDone+'回</div><div class="tiny muted">'+esc(p.sampleNote)+(p.lastMatchDate?'・直近試合 '+esc(p.lastMatchDate):'')+(p.lastTrainingDate?'・直近練習 '+esc(p.lastTrainingDate):'')+'</div><button class="secondary small" onclick="applyCoachFocusPriority(\''+p.focus+'\')">このテーマで練習メニューを作る</button></div></div>').join('')+'<div class="tiny muted">本人確認済みの試合場面と、保護者・選手が入力した練習後の振り返りを組み合わせた優先候補です。回数は能力の点数や自動判定ではありません。記録が少ないテーマは表示されない場合があります。</div></div>':'<div class="empty">練習記録や本人確認済みの試合評価が増えると、次の重点テーマを提案します。</div>';
- html+='<h3 style="margin-top:14px">次の試合で確認すること</h3>';
+ html+=renderNextMatchGrowthBrief(priorities,events);\n html+='<h3 style="margin-top:14px">次の試合で確認すること</h3>';
  html+=checkpoints.length?checkpoints.map(t=>'<div class="listitem"><div class="grow"><b>'+esc(t.focus)+'｜'+esc(t.menu)+'</b><div class="tiny muted">練習日 '+esc(t.date)+' ・ '+(t.minutes||0)+'分</div><div class="tiny">'+esc(t.matchCheckPrompt||'練習テーマを試合で試せたか確認')+'</div><div class="tiny muted">'+(t.later.length?'その後の本人確認場面 '+t.later.length+'件：'+t.later.slice(0,2).map(e=>esc(e.date)+' '+esc(e.assessment)).join('／'):'まだ該当する試合場面の記録なし')+'</div></div></div>').join(''):'<div class="empty">練習を保存すると、次の試合で確認するポイントがここに残ります。</div>';
  html+='<div class="tiny muted">試合場面は陸玖本人として手動確認され、練習テーマと一致したものだけを表示します。自動でプレーを判定する機能ではありません。</div>';
  const evidenceLinks=getTrainingEvidenceLinkSummary();
