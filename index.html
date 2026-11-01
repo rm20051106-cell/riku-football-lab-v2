@@ -858,14 +858,30 @@ function getTrainingMatchCheckpoints(){
  });
 }
 function renderMatchToMatchComparison(analyses){
- const matches=(analyses||[]).map(m=>{const events=(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖');return {...m,confirmedEvents:events,good:events.filter(e=>e.assessment==='良かった').length,improve:events.filter(e=>e.assessment==='改善したい').length};}).filter(m=>m.confirmedEvents.length).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
- if(matches.length<2)return '<h3 style="margin-top:16px">試合ごとの成長比較</h3><div class="empty">陸玖本人として確認した試合が2試合以上になると、前回との比較を表示します。各試合で本人確認と評価を保存してください。</div>';
+ const matches=(analyses||[]).map(m=>{
+  const events=(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖');
+  const good=events.filter(e=>e.assessment==='良かった').length;
+  const improve=events.filter(e=>e.assessment==='改善したい').length;
+  const rated=good+improve;
+  return {...m,confirmedEvents:events,good,improve,rated,goodRate:rated?Math.round(good/rated*100):null};
+ }).filter(m=>m.confirmedEvents.length).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))).slice(0,5);
+ if(matches.length<2)return '<h3 style="margin-top:16px">複数試合の成長推移</h3><div class="empty">陸玖本人として確認した試合が2試合以上になると、前回との比較と最大5試合の推移を表示します。各試合で本人確認・プレー分類・評価を保存してください。</div>';
  const current=matches[0],previous=matches[1];
  const delta=(a,b)=>{const d=a-b;return (d>0?'+':'')+d;};
  const row=(label,a,b)=>'<div class="listitem"><div class="grow"><b>'+label+'</b><div class="tiny muted">前回 '+b+' → 今回 '+a+'（'+delta(a,b)+'）</div></div></div>';
  const types=['ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール','その他'];
  const typeRows=types.map(type=>{const a=current.confirmedEvents.filter(e=>e.actionType===type).length,b=previous.confirmedEvents.filter(e=>e.actionType===type).length;return {type,a,b};}).filter(x=>x.a||x.b);
- return '<h3 style="margin-top:16px">試合ごとの成長比較</h3><div class="card"><div class="tiny muted">今回：'+esc(current.date||'日付不明')+'｜'+esc(current.title||'試合動画')+'</div><div class="tiny muted">前回：'+esc(previous.date||'日付不明')+'｜'+esc(previous.title||'試合動画')+'</div>'+row('陸玖本人として確認した場面',current.confirmedEvents.length,previous.confirmedEvents.length)+row('良かった',current.good,previous.good)+row('改善したい',current.improve,previous.improve)+'<h4 style="margin:12px 0 6px">プレー内容の内訳</h4>'+(typeRows.length?typeRows.map(x=>'<div class="tiny" style="padding:4px 0">'+esc(x.type)+'：前回 '+x.b+' → 今回 '+x.a+'（'+delta(x.a,x.b)+'）</div>').join(''):'<div class="tiny muted">分類済みの場面はありません。</div>')+'<div class="tiny muted" style="margin-top:10px">比較は手動で陸玖本人と確認した場面・評価だけを対象にしています。確認数の増減だけで上達・調子を断定できません。出場時間、相手、ポジション、撮影角度、候補の見つかり方が違うため、同じ条件で記録した試合同士を目安として比べてください。</div></div>';
+ const trendRows=matches.slice().reverse().map(m=>{
+  const rate=m.goodRate===null?'評価なし':m.goodRate+'%';
+  return '<tr><td>'+esc(m.date||'日付不明')+'</td><td>'+esc(m.title||'試合動画')+'</td><td style="text-align:center">'+m.confirmedEvents.length+'</td><td style="text-align:center">'+m.good+'</td><td style="text-align:center">'+m.improve+'</td><td style="text-align:center">'+rate+'</td></tr>';
+ }).join('');
+ const categoryTrend=types.map(type=>{
+  const counts=matches.slice().reverse().map(m=>m.confirmedEvents.filter(e=>e.actionType===type).length);
+  if(!counts.some(Boolean))return '';
+  return '<tr><td>'+esc(type)+'</td>'+counts.map(n=>'<td style="text-align:center">'+n+'</td>').join('')+'</tr>';
+ }).join('');
+ const dateLabels=matches.slice().reverse().map(m=>esc((m.date||'').slice(5)||'—'));
+ return '<h3 style="margin-top:16px">複数試合の成長推移</h3><div class="card"><div class="tiny muted">今回：'+esc(current.date||'日付不明')+'｜'+esc(current.title||'試合動画')+'</div><div class="tiny muted">前回：'+esc(previous.date||'日付不明')+'｜'+esc(previous.title||'試合動画')+'</div>'+row('陸玖本人として確認した場面',current.confirmedEvents.length,previous.confirmedEvents.length)+row('良かった',current.good,previous.good)+row('改善したい',current.improve,previous.improve)+(current.goodRate!==null&&previous.goodRate!==null?row('評価した場面の「良かった」割合',current.goodRate+'%',previous.goodRate+'%'):'')+'<h4 style="margin:14px 0 6px">直近最大5試合の推移</h4><div style="overflow-x:auto"><table class="table"><thead><tr><th>日付</th><th>試合</th><th>本人確認</th><th>良かった</th><th>改善したい</th><th>良かった割合</th></tr></thead><tbody>'+trendRows+'</tbody></table></div><h4 style="margin:14px 0 6px">プレー内容の推移</h4><div class="tiny muted">試合の古い順。各数字は本人確認済みの場面数です。</div><div style="overflow-x:auto"><table class="table"><thead><tr><th>プレー</th>'+dateLabels.map(d=>'<th>'+d+'</th>').join('')+'</tr></thead><tbody>'+(categoryTrend||'<tr><td colspan="6">分類済みの場面はありません。</td></tr>')+'</tbody></table></div><div class="tiny muted" style="margin-top:10px">対象は映像を見て手動で「陸玖」と本人確認した場面のみです。割合は評価を付けた場面内の比率で、プレー成功率や能力の点数ではありません。確認数や割合だけで上達・調子を断定できません。出場時間、相手、ポジション、撮影角度、候補の見つかり方が違うため、同じ条件で記録した試合同士を目安として比べてください。</div></div>';
 }
 function renderRikuSkillProfile(events){
  const types=['ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール','その他'];
