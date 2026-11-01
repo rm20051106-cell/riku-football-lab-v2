@@ -436,7 +436,25 @@ function applyCoachTrainingPlan(){
  if(!option){state.menus.unshift({name:plan.title,category:plan.category,minutes:plan.minutes});persist();renderAll();}
  trainMenu.value=plan.title;trainDate.value=today();trainMinutes.value=plan.minutes;trainNote.value=plan.note;showView('training');
 }
-function getTrainingMatchProgress(){const skills=['ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール','その他'];const trainings=(state.trainings||[]).map(t=>({...t,focus:t.focus||inferTrainingFocus(t.menu,t.category)}));const matches=(state.matchAnalyses||[]).map(m=>({date:m.date,events:(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖'&&e.actionType&&e.actionType!=='未選択')}));return skills.map(skill=>{const sessions=trainings.filter(t=>t.focus===skill&&t.date);const latest=sessions.map(t=>t.date).sort().slice(-1)[0]||'';const later=matches.flatMap(m=>m.date&&latest&&m.date>=latest?m.events.filter(e=>e.actionType===skill||((skill==='ボールを受ける')&&e.actionType==='パス')).map(e=>({...e,matchDate:m.date})):[]);return {skill,sessions:sessions.length,latest,later:later.length,good:later.filter(e=>e.assessment==='良かった').length,improve:later.filter(e=>e.assessment==='改善したい').length}}).filter(x=>x.sessions||x.later).sort((a,b)=>b.sessions-a.sessions)}function renderRikuCoachReport(){
+function getTrainingMatchProgress(){const skills=['ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール','その他'];const trainings=(state.trainings||[]).map(t=>({...t,focus:t.focus||inferTrainingFocus(t.menu,t.category)}));const matches=(state.matchAnalyses||[]).map(m=>({date:m.date,events:(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖'&&e.actionType&&e.actionType!=='未選択')}));return skills.map(skill=>{const sessions=trainings.filter(t=>t.focus===skill&&t.date);const latest=sessions.map(t=>t.date).sort().slice(-1)[0]||'';const later=matches.flatMap(m=>m.date&&latest&&m.date>=latest?m.events.filter(e=>e.actionType===skill||((skill==='ボールを受ける')&&e.actionType==='パス')).map(e=>({...e,matchDate:m.date})):[]);return {skill,sessions:sessions.length,latest,later:later.length,good:later.filter(e=>e.assessment==='良かった').length,improve:later.filter(e=>e.assessment==='改善したい').length}}).filter(x=>x.sessions||x.later).sort((a,b)=>b.sessions-a.sessions)}function renderGrowthCharts(){
+ const host=document.getElementById('rikuGrowthCharts');if(!host)return;
+ const types=['30m走','アジリティ','立ち幅跳び','100m走'];
+ const all=state.measures||[];
+ const cards=types.map(type=>{
+  const rows=all.filter(x=>x.type===type&&Number.isFinite(Number(x.value))).sort((a,b)=>String(a.date).localeCompare(String(b.date))).slice(-8);
+  if(!rows.length)return '';
+  const values=rows.map(x=>Number(x.value)),min=Math.min(...values),max=Math.max(...values),span=max-min||1;
+  const pts=values.map((v,i)=>{const x=20+(rows.length===1?0:i*280/(rows.length-1));const normalized=(v-min)/span;const betterHigh=type==='30m走'||type==='100m走'||type==='アジリティ';const y=18+(betterHigh?1-normalized:normalized)*66;return {x,y,v,record:rows[i]};});
+  const line=pts.map(p=>p.x.toFixed(1)+','+p.y.toFixed(1)).join(' ');
+  const dots=pts.map(p=>'<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="3.5" fill="currentColor"><title>'+esc(p.record.date)+'：'+esc(p.v)+' '+esc(p.record.unit||'')+'</title></circle>').join('');
+  const labels=pts.map(p=>'<text x="'+p.x.toFixed(1)+'" y="108" text-anchor="middle" font-size="9" fill="currentColor">'+esc(String(p.record.date||'').slice(5))+'</text>').join('');
+  const latest=rows[rows.length-1],first=rows[0],delta=Number(latest.value)-Number(first.value),unit=latest.unit||'';
+  const change=rows.length>1?(delta===0?'初回と同じ':(delta>0?'+':'')+delta.toFixed(2)+' '+unit+'（初回比）'):'記録1件';
+  return '<div class="card" style="margin:8px 0"><div class="brand"><b>'+esc(type)+'</b><span class="tiny muted">'+rows.length+'回記録</span></div><svg viewBox="0 0 320 116" role="img" aria-label="'+esc(type)+'の測定推移" style="width:100%;height:auto;overflow:visible"><line x1="12" y1="88" x2="308" y2="88" stroke="currentColor" opacity=".22"/><polyline points="'+line+'" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>'+dots+labels+'</svg><div class="tiny muted">最新：'+esc(latest.value)+' '+esc(unit)+'（'+esc(latest.date)+'）・'+esc(change)+'</div>'+(type==='30m走'||type==='100m走'?'<div class="tiny muted">上方向ほどタイムが短い表示</div>':'')+'</div>';
+ }).join('');
+ host.innerHTML=cards||'<div class="empty">測定記録を保存すると、ここに成長グラフが表示されます。</div>';
+}
+function renderRikuCoachReport(){
  const el=document.getElementById('rikuCoachReport');if(!el)return;
  const analyses=(state.matchAnalyses||[]).slice();
  const events=analyses.flatMap(match=>(match.candidateEvents||[]).filter(ev=>ev.reviewLabel==='陸玖').map(ev=>({...ev,matchDate:match.date,matchTitle:match.title})));
@@ -451,7 +469,7 @@ function getTrainingMatchProgress(){const skills=['ドリブル','パス','シ�
  const sprintLatest=measures[measures.length-1],sprintPrev=measures.length>1?measures[measures.length-2]:null;
  const focus=typeCounts.filter(x=>x.improve>0).sort((a,b)=>b.improve-a.improve)[0];
  const focusDrills={'ドリブル':'加速ドリブルの1対1。相手の逆を取って、抜いた後の2〜3歩を速くする。','パス':'受ける前の首振り→ファーストタッチ→パス。左右両方で繰り返す。','シュート':'軸足の位置を確認し、近い距離から正確に蹴る反復。','ボールを受ける':'受ける前に周囲を確認し、前を向ける位置へファーストタッチ。','守備・プレス':'相手に飛び込まず、進行方向を限定して追い込む1対1。','オフザボール':'パスが出る前に相手の背中側へ動き、受ける角度を作る。','その他':'場面をもう少し具体的に分類して、次回の振り返りにつなげる。'};
- let html='';
+ let html='<h3>陸玖の成長グラフ</h3><div id="rikuGrowthCharts"></div>';
  if(!confirmed){html='<div class="empty">陸玖本人として確認した場面がまだありません。試合スキャンの候補から、映っているトラックを確認するとレポートに反映されます。</div>';}
  else{
   html+='<div class="grid"><div class="card"><div class="tiny muted">本人確認した場面</div><div class="stat">'+confirmed+'<small>場面</small></div></div><div class="card"><div class="tiny muted">良かった</div><div class="stat">'+good+'<small>場面</small></div></div><div class="card"><div class="tiny muted">改善したい</div><div class="stat">'+improve+'<small>場面</small></div></div></div>';
@@ -470,6 +488,7 @@ function getTrainingMatchProgress(){const skills=['ドリブル','パス','シ�
  if(recent.length){html+='<h3 style="margin-top:14px">試合ごとの振り返り</h3>'+recent.map(x=>{const g=x.events.filter(ev=>ev.assessment==='良かった').length,im=x.events.filter(ev=>ev.assessment==='改善したい').length;return '<div class="listitem"><div class="grow"><b>'+esc(x.title||'試合動画')+'</b><div class="tiny muted">'+esc(x.date)+'・本人確認 '+x.events.length+'場面／良かった '+g+'／改善したい '+im+'</div></div></div>'}).join('');}
  html+='<div class="tiny muted" style="margin-top:10px">このレポートは保存された手動確認・評価・練習・測定記録の集計です。映像から自動でプレーの良し悪しを判定したものではありません。記録が少ない場合は傾向を断定しません。</div>';
  el.innerHTML=html;
+ renderGrowthCharts();
 }
 function renderAll(){
  state.aiFormAnalyses=state.aiFormAnalyses||[];state.matchAnalyses=state.matchAnalyses||[];let date=today(),month=date.slice(0,7),days=new Set(state.trainings.filter(x=>x.date.startsWith(month)).map(x=>x.date)).size;homeDays.innerHTML=`${days} <small>日</small>`;monthProgress.style.width=Math.min(100,days/12*100)+'%';homeVideos.innerHTML=`${state.clips.length+state.forms.length} <small>件</small>`;let sprint=state.measures.find(x=>x.type==='30m走');homeSprint.innerHTML=sprint?`${esc(sprint.value)} <small>${esc(sprint.unit)}</small>`:'—';homeNumbers.textContent=`${state.settings.jersey1} / ${state.settings.jersey2}`;const coachPlan=getCoachTrainingPlan();dailyPlan.innerHTML='<div class="listitem"><span class="tag good">AIコーチ提案</span><div class="grow"><b>'+esc(coachPlan.title)+'</b><div class="tiny muted">'+coachPlan.minutes+'分・'+esc(coachPlan.why)+'</div><div class="tiny">'+esc(coachPlan.note)+'</div><button class="secondary small" onclick="applyCoachTrainingPlan()">このメニューで練習を始める</button></div></div>';
