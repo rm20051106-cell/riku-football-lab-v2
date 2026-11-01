@@ -524,6 +524,14 @@ function renderMonthlyGrowthReport(monthKey){
  if(measureComparisons.length){html+='<h4 style="margin-top:12px">測定値の前月比較</h4>'+measureComparisons.map(x=>{const d=Number(x.a.value)-Number(x.b.value),lowerBetter=/30m走|100m走|アジリティ/.test(x.type),better=lowerBetter?d<0:d>0;const msg=d===0?'変化なし':(better?'改善方向':'数値は反対方向')+' '+(d>0?'+':'')+d.toFixed(2)+' '+(x.a.unit||'');return '<div class="listitem"><div class="grow"><b>'+esc(x.type)+'</b><div class="tiny muted">前月 '+esc(x.b.value)+' '+esc(x.b.unit||'')+' → 今月 '+esc(x.a.value)+' '+esc(x.a.unit||'')+'</div><div class="tiny">'+esc(msg)+'</div></div></div>'}).join('')+'<div class="tiny muted">タイム・アジリティは数値が小さい方向、跳躍距離などは数値が大きい方向を改善の目安として表示。測定条件が違う場合は単純比較しないでね。</div>'}
  else{html+='<div class="tiny muted">前月と今月の両方に同じ種目の測定があると、測定値も比較できます。</div>'}
  html+='<div class="tiny muted" style="margin-top:8px">前月比較は保存件数の差です。記録数の増減だけで、実力の向上・低下を断定するものではありません。</div>';
+ const reflectionDone=reflectionRows.filter(x=>x.value==='できた').length;
+ const reflectionNotYet=reflectionRows.length-reflectionDone;
+ const nextTheme=weakness?.skill||(reflectionImprove?.[0]||strength?.skill||'ボールを受ける');
+ const nextDrill=drill[nextTheme]||'受ける前に周囲を確認し、前を向けるファーストタッチを練習する。';
+ const encouragement=trainings.length?'今月は練習記録を'+trainings.length+'回残せました。続けて記録できたこと自体が、成長を振り返る大切な土台です。':'今月の練習記録はまだありません。まずは短い練習でも、できた日に記録を残すところから始めましょう。';
+ const playSummary=events.length?'陸玖本人として確認した試合場面は'+events.length+'件。そのうち「良かった」は'+good+'件、「改善したい」は'+improve+'件でした。':'今月は陸玖本人として確認した試合場面の記録がありません。映像で本人の場面を確認できたら、少しずつ記録していきましょう。';
+ const reflectionSummaryText=reflectionRows.length?'試合後の振り返りは'+reflectionRows.length+'件で、「できた」は'+reflectionDone+'件。「もう少し・試せなかった」は'+reflectionNotYet+'件です。':'試合後の振り返りはまだ入力されていません。次の試合後に一つだけでも振り返ってみましょう。';
+ html+='<section class="coach-letter" style="margin-top:18px;border:2px solid var(--line,#ccd3dc);border-radius:14px;padding:16px"><div class="tiny muted">RIKU FOOTBALL LAB｜保護者向け月間まとめ</div><h3 style="margin:4px 0 10px">'+key.replace('-','年')+'月 陸玖の月間コーチ通信</h3><h4>今月のがんばり</h4><p>'+esc(encouragement)+'</p><p>'+esc(playSummary)+'</p><p>'+esc(reflectionSummaryText)+'</p><h4>今月見えてきた強み</h4><p>'+esc(strength?'本人確認・評価した記録では「'+strength.skill+'」に良かった場面が見られました。次の試合でも同じプレーを再現できるか見ていきましょう。':'まだ強みを判断できる記録は十分ではありません。焦らず、良いプレーを見つけたら記録していきましょう。')+'</p><h4>来月の重点テーマ</h4><p><b>'+esc(nextTheme)+'</b></p><p>'+esc(nextDrill)+'</p><h4>保護者の声かけヒント</h4><p>結果だけでなく「今日、意識して挑戦できたことは何？」と聞いてみましょう。うまくいかなかった時も、挑戦したことを認めて次の一歩につなげます。</p><div class="tiny muted">この通信は保存された練習記録、本人確認済みの試合場面、本人の振り返りから文章を組み立てています。記録が少ない項目は判断せず、映像からプレーを自動評価したものではありません。</div></section>';
  host.innerHTML=html;
 }
 function getTrainingMatchCheckpoints(){
