@@ -1221,7 +1221,18 @@ function renderAiFormCompare(){
  const older=all.slice(1).find(sameSetup);
  if(!older){el.innerHTML='<div class="empty">同じ撮影角度・キック種別・利き足の過去解析がありません。条件をそろえて撮影すると、より公平に比較できます。</div>';return}
  const metrics=[['膝角度',newer.knee,older.knee],['股関節角度',newer.hip,older.hip],['体幹傾き',newer.trunk,older.trunk]];
- el.innerHTML='<div class="tiny muted">比較条件：'+esc(newer.cameraAngle||'未選択')+'・'+esc(newer.kind||'シュート')+'・'+esc(newer.foot||'右足')+'（3条件が同じ記録のみ）</div><div class="tiny muted">新しい記録：'+esc(newer.date)+'　／　前回：'+esc(older.date)+'</div><div class="tiny muted">角度の差を示すだけで、改善・悪化の判定ではありません。撮影位置・距離・動作中のタイミングもそろえてください。</div>'+metrics.map(m=>{if(!Number.isFinite(m[1])||!Number.isFinite(m[2]))return '<div class="listitem"><b>'+m[0]+'</b><span class="tiny muted">比較データ不足</span></div>';let d=m[1]-m[2],sign=d>0?'+':'';return '<div class="listitem"><div class="grow"><b>'+m[0]+'</b><div class="tiny">今回 '+m[1]+'°　前回 '+m[2]+'°</div></div><b>'+sign+d.toFixed(1)+'°</b></div>'}).join('')+'<div class="tiny muted">※全動画の平均値同士の比較です。蹴る瞬間だけを切り出した比較ではありません。</div>';
+ const summaryHtml=metrics.map(m=>{if(!Number.isFinite(m[1])||!Number.isFinite(m[2]))return '<div class="listitem"><b>'+m[0]+'</b><span class="tiny muted">比較データ不足</span></div>';let d=m[1]-m[2],sign=d>0?'+':'';return '<div class="listitem"><div class="grow"><b>'+m[0]+'</b><div class="tiny">今回 '+m[1]+'°　前回 '+m[2]+'°</div></div><b>'+sign+d.toFixed(1)+'°</b></div>'}).join('');
+ const newerTimeline=Array.isArray(newer.timeline)?newer.timeline:[],olderTimeline=Array.isArray(older.timeline)?older.timeline:[];
+ const avg=(a,b)=>{const v=[a,b].filter(x=>Number.isFinite(Number(x))).map(Number);return v.length?v.reduce((s,x)=>s+x,0)/v.length:null};
+ const phases=Math.min(5,Math.max(0,Math.min(newerTimeline.length,olderTimeline.length)));
+ const phaseRows=Array.from({length:phases},(_,i)=>{
+  const ni=Math.round(i*(newerTimeline.length-1)/Math.max(1,phases-1)),oi=Math.round(i*(olderTimeline.length-1)/Math.max(1,phases-1));
+  const n=newerTimeline[ni],o=olderTimeline[oi];
+  return {label:phases===1?'全体':'約'+Math.round(i*100/(phases-1))+'%',nK:avg(n.leftKnee,n.rightKnee),oK:avg(o.leftKnee,o.rightKnee),nH:avg(n.leftHip,n.rightHip),oH:avg(o.leftHip,o.rightHip),nT:n.trunk,oT:o.trunk};
+ });
+ const phaseHtml=phaseRows.length>1?'<h4 style="margin-top:14px">動画内の動作推移を相対位置で比較</h4><div class="tiny muted">各動画のサンプルを開始〜終了の位置に合わせた参考比較。実際の蹴り出し・インパクトの瞬間を同期したものではありません。</div><div style="overflow-x:auto"><table class="table"><thead><tr><th>位置</th><th>膝 今回/前回</th><th>股関節 今回/前回</th><th>体幹 今回/前回</th></tr></thead><tbody>'+phaseRows.map(r=>'<tr><td>'+r.label+'</td><td>'+fmtPair(r.nK,r.oK)+'</td><td>'+fmtPair(r.nH,r.oH)+'</td><td>'+fmtPair(r.nT,r.oT)+'</td></tr>').join('')+'</tbody></table></div>':'<div class="tiny muted">時間推移の比較には、両方の動画で2地点以上の姿勢データが必要です。</div>';
+ function fmtPair(a,b){return (a==null?'—':a.toFixed(1)+'°')+' / '+(b==null?'—':b.toFixed(1)+'°')}
+ el.innerHTML='<div class="tiny muted">比較条件：'+esc(newer.cameraAngle||'未選択')+'・'+esc(newer.kind||'シュート')+'・'+esc(newer.foot||'右足')+'（3条件が同じ記録のみ）</div><div class="tiny muted">新しい記録：'+esc(newer.date)+'　／　前回：'+esc(older.date)+'</div><div class="tiny muted">角度の差を示すだけで、改善・悪化の判定ではありません。撮影位置・距離・動作中のタイミングもそろえてください。</div>'+summaryHtml+phaseHtml+'<div class="tiny muted">※全動画の平均値と、動画全体の相対位置を合わせたサンプル値です。蹴る瞬間だけを切り出した比較ではありません。</div>';
 }
 function deleteAiFormAnalysis(id){if(!confirm('このAI解析履歴を削除しますか？'))return;state.aiFormAnalyses=(state.aiFormAnalyses||[]).filter(x=>x.id!==id);persist()}
 function deleteMeasure(d,t,v){if(!confirm('この測定記録を削除しますか？'))return;let idx=state.measures.findIndex(x=>x.date===d&&x.type===t&&x.value===v);if(idx>=0)state.measures.splice(idx,1);persist()}
