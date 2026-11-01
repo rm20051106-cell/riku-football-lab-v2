@@ -648,6 +648,29 @@ function renderGrowthEffortScore(){
  const total=Math.round(parts.reduce((sum,p)=>sum+p.score,0)/parts.length);
  return '<h3 style="margin-top:14px">成長の取り組みスコア（直近30日）</h3><div class="card"><div class="scoreline"><div class="scorebig">'+total+'</div><div class="grow"><b>／100・記録がある項目の平均</b><div class="progress"><span style="width:'+total+'%"></span></div><div class="tiny muted">集計できた項目 '+parts.length+'／4</div></div></div>'+parts.map(p=>'<div class="listitem"><div class="grow"><b>'+esc(p.name)+'</b><div class="tiny muted">'+esc(p.detail)+'</div><div class="progress"><span style="width:'+p.score+'%"></span></div></div><b>'+p.score+'</b></div>').join('')+'<div class="tiny muted">これは練習・振り返りの記録状況を見える化した目安です。サッカーの技術・身体能力・選手としての価値を採点するものではありません。入力がない項目は平均から除外しています。継続の目安は30日で8日、振り返りは各6件です。</div></div>';
 }
+function renderMeasurementMatchTimeline(){
+ const measures=(state.measures||[]).filter(m=>m.date&&Number.isFinite(Number(m.value))).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+ const confirmed=(state.matchAnalyses||[]).flatMap(m=>(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖').map(e=>({date:m.date,action:e.actionType,assessment:e.assessment}))).filter(e=>e.date);
+ const months=Array.from({length:6},(_,i)=>{const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-(5-i));return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');});
+ const types=['30m走','アジリティ','立ち幅跳び'];
+ const rows=months.map(key=>{
+  const monthMeasures=types.map(type=>{const item=measures.filter(m=>m.type===type&&String(m.date).startsWith(key)).slice(-1)[0];return item?{type,value:Number(item.value),unit:item.unit||''}:null;}).filter(Boolean);
+  const scenes=confirmed.filter(e=>String(e.date).startsWith(key));
+  const trainingDays=new Set((state.trainings||[]).filter(t=>String(t.date||'').startsWith(key)).map(t=>t.date)).size;
+  return {key,monthMeasures,scenes,trainingDays};
+ });
+ const hasAny=rows.some(r=>r.monthMeasures.length||r.scenes.length||r.trainingDays);
+ if(!hasAny)return '<h3 style="margin-top:14px">測定と試合記録を並べて見る</h3><div class="empty">測定・練習・本人確認済みの試合記録が保存されると、月ごとの変化を並べて表示します。</div>';
+ const compare=(row,index,item)=>{
+  const previous=rows.slice(0,index).reverse().flatMap(r=>r.monthMeasures.filter(m=>m.type===item.type)).slice(0,1)[0];
+  if(!previous)return '比較できる前回記録なし';
+  const diff=item.value-previous.value;
+  const lowerBetter=['30m走','アジリティ'].includes(item.type);
+  const result=diff===0?'前回と同じ':((lowerBetter?(diff<0):(diff>0))?'改善方向 ':'変化 ')+(diff>0?'+':'')+diff.toFixed(2)+' '+item.unit;
+  return '前回 '+previous.value+' '+previous.unit+' → '+result;
+ };
+ return '<h3 style="margin-top:14px">測定と試合記録を並べて見る（直近6か月）</h3><div class="tiny muted">同じ月の測定値・練習日数・本人確認済みの試合場面を並べます。測定値の変化と試合での活躍に因果関係があると判定するものではありません。</div>'+rows.map((row,index)=>'<div class="listitem" style="display:block"><b>'+esc(row.key.replace('-','年')+'月')+'</b><div class="tiny muted">練習 '+row.trainingDays+'日 ・ 陸玖と確認した試合場面 '+row.scenes.length+'場面</div>'+(row.monthMeasures.length?row.monthMeasures.map(item=>'<div class="tiny">'+esc(item.type)+'：<b>'+esc(item.value)+' '+esc(item.unit)+'</b>（'+esc(compare(row,index,item))+'）</div>').join(''):'<div class="tiny muted">この月の測定記録なし</div>')+(row.scenes.length?'<div class="tiny muted">試合場面の評価：良かった '+row.scenes.filter(e=>e.assessment==='良かった').length+' ・ 改善したい '+row.scenes.filter(e=>e.assessment==='改善したい').length+' ・ 未評価 '+row.scenes.filter(e=>!e.assessment||e.assessment==='判断保留'||e.assessment==='未選択').length+'</div>':'')+'</div>').join('')+'<div class="tiny muted">タイム・アジリティは数値が小さい方向、立ち幅跳びは大きい方向を改善方向として表示。測定条件（場所・靴・計測方法）が違う場合は単純比較に注意してください。試合場面は保護者・本人が陸玖と確認した記録のみです。</div>';
+}
 function renderRikuCoachReport(){
  const el=document.getElementById('rikuCoachReport');if(!el)return;
  const analyses=(state.matchAnalyses||[]).slice();
@@ -670,6 +693,7 @@ function renderRikuCoachReport(){
  html+='<h3 style="margin-top:14px">月ごとの活動推移（直近6か月）</h3><div class="tiny muted">練習回数と、本人確認済みの試合場面数。棒の長さは月ごとの最大値を基準にしています。</div>';
  html+=monthRows.map(m=>'<div class="listitem" style="display:block"><b>'+m.label+'</b><div class="tiny muted">練習 '+m.sessions+'回</div><div style="height:7px;background:var(--line,#ddd);border-radius:8px;overflow:hidden;margin:3px 0 7px"><div style="height:100%;width:'+(m.sessions/maxActivity*100)+'%;background:var(--accent,#8bc34a);border-radius:8px"></div></div><div class="tiny muted">試合場面 '+m.scenes+'場面（良かった '+m.goodScenes+'）</div><div style="height:7px;background:var(--line,#ddd);border-radius:8px;overflow:hidden;margin:3px 0"><div style="height:100%;width:'+(m.scenes/maxActivity*100)+'%;background:var(--accent,#8bc34a);opacity:.65;border-radius:8px"></div></div></div>').join('');
  html+='<h3 style="margin-top:14px">陸玖の成長グラフ</h3><div id="rikuGrowthCharts"></div>';
+ html+=renderMeasurementMatchTimeline();
  if(!confirmed){html+='<div class="empty">陸玖本人として確認した試合場面はまだありません。試合スキャンの候補から本人のトラックを確認すると反映されます。</div>';}
  else{
   html+='<div class="grid"><div class="card"><div class="tiny muted">本人確認した場面</div><div class="stat">'+confirmed+'<small>場面</small></div></div><div class="card"><div class="tiny muted">良かった</div><div class="stat">'+good+'<small>場面</small></div></div><div class="card"><div class="tiny muted">改善したい</div><div class="stat">'+improve+'<small>場面</small></div></div></div>';
