@@ -276,6 +276,7 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
                 people_per_frame.append(detected_count)
                 if person_metrics:
                     primary = max(person_metrics, key=lambda x: x["visible_landmarks"])
+                    primary["detected_people"] = people
                     frames.append(primary)
                 if progress_callback and duration > 0:
                     progress_callback(min(90, 15 + int(75 * min(1.0, (current_frame_idx / fps if fps > 0 else 0) / duration))))
