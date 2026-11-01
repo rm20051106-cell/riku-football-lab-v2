@@ -326,9 +326,19 @@ function renderMatchPeriodSummary(match){
  const timed=events.filter(ev=>Number.isFinite(Number(ev.time))&&Number(ev.time)>=0&&Number(ev.time)<=duration);
  if(!timed.length)return '<div class="card"><h3>試合時間帯ごとの振り返り</h3><div class="tiny muted">時間情報のある候補がありません。</div></div>';
  const labels=['第1区間','第2区間','第3区間','第4区間'];
- const groups=labels.map((label,i)=>{const start=duration*i/4,end=duration*(i+1)/4,items=timed.filter(ev=>{const t=Number(ev.time);return t>=start&&(i===3?t<=end:t<end)});return {label,start,end,items,riku:items.filter(ev=>ev.reviewLabel==='陸玖').length,good:items.filter(ev=>ev.assessment==='良かった').length,improve:items.filter(ev=>ev.assessment==='改善したい').length}});
- const max=Math.max(1,...groups.map(g=>g.items.length));
- return '<div class="card"><h3>試合時間帯ごとの振り返り</h3><div class="tiny muted">動画全体を4等分した集計です。候補数は画像上の動きの変化で、プレー数や運動量そのものではありません。</div>'+groups.map(g=>'<div class="listitem" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><b>'+g.label+'（'+formatMatchTime(g.start)+'–'+formatMatchTime(g.end)+'）</b><b>'+g.items.length+'候補</b></div><div class="progress"><span style="width:'+(g.items.length/max*100)+'%"></span></div><div class="tiny muted">陸玖確認 '+g.riku+'場面　／　良かった '+g.good+'　／　改善したい '+g.improve+'</div></div>').join('')+'<div class="tiny muted">時間情報あり '+timed.length+'/'+events.length+'候補を集計。未確認の候補も含みます。</div></div>';
+ const groups=labels.map((label,i)=>{
+  const start=duration*i/4,end=duration*(i+1)/4;
+  const items=timed.filter(ev=>{const t=Number(ev.time);return t>=start&&(i===3?t<=end:t<end)});
+  const confirmed=items.filter(ev=>ev.reviewLabel==='陸玖');
+  const assessed=confirmed.filter(ev=>['良かった','改善したい'].includes(ev.assessment));
+  const types=[...new Set(confirmed.map(ev=>ev.actionType).filter(x=>x&&x!=='未選択'))];
+  return {label,start,end,items,confirmed,good:assessed.filter(ev=>ev.assessment==='良かった').length,improve:assessed.filter(ev=>ev.assessment==='改善したい').length,types};
+ });
+ const max=Math.max(1,...groups.map(g=>g.confirmed.length));
+ return '<div class="card"><h3>試合時間帯ごとの振り返り</h3><div class="tiny muted">動画全体を4等分し、陸玖本人として確認した場面だけを集計します。候補数は画像上の動きの変化で、プレー数や運動量そのものではありません。</div>'+groups.map(g=>{
+  const typeText=g.types.length?'分類：'+g.types.map(esc).join('・'):'分類記録なし';
+  return '<div class="listitem" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><b>'+g.label+'（'+formatMatchTime(g.start)+'–'+formatMatchTime(g.end)+'）</b><b>陸玖 '+g.confirmed.length+'場面</b></div><div class="progress"><span style="width:'+(g.confirmed.length/max*100)+'%"></span></div><div class="tiny muted">本人確認済み候補 '+g.confirmed.length+'／全候補 '+g.items.length+'　｜　良かった '+g.good+'　／　改善したい '+g.improve+'</div><div class="tiny muted">'+typeText+'</div></div>';
+ }).join('')+'<div class="tiny muted">時間情報あり '+timed.length+'/'+events.length+'候補を集計。評価数は本人確認済み場面のうち評価を選んだものだけです。未確認の候補は陸玖の集計に含めていません。</div></div>';
 }
 function toggleMatchScanDetail(id){const el=document.getElementById('match-scan-detail-'+id);if(el)el.hidden=!el.hidden}
 function deleteMatchScan(id){if(!confirm('このAI試合スキャン履歴を削除しますか？'))return;state.matchAnalyses=(state.matchAnalyses||[]).filter(x=>x.id!==id);persist()}
