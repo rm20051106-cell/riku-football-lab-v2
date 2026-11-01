@@ -114,7 +114,7 @@ function persist(){localStorage.setItem(KEY,JSON.stringify(state));renderAll()}
 function today(){return new Date().toLocaleDateString('sv-SE')}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function showView(id){document.querySelectorAll('.view').forEach(x=>x.classList.toggle('active',x.id===id));document.querySelectorAll('.nav button').forEach(x=>x.classList.toggle('active',x.dataset.view===id));if(id==='settings'){playerName.value=state.settings.name;jersey1.value=state.settings.jersey1;jersey2.value=state.settings.jersey2;apiBaseUrl.value=state.settings.apiBaseUrl||'';apiStatus.textContent=state.settings.apiBaseUrl?'保存済み：'+state.settings.apiBaseUrl:'未設定';loadPlayerProfileFields()}window.scrollTo({top:0,behavior:'smooth'});renderAll()}
-function inferTrainingFocus(menu,category){const source=(String(menu||'')+' '+String(category||'')).toLowerCase();if(/ドリブル|突破|切り返し|ボールタッチ|1対1/.test(source))return 'ドリブル';if(/シュート|キック|フリーキック/.test(source))return 'シュート';if(/パス|受ける|首振り|ファーストタッチ/.test(source))return 'ボールを受ける';if(/守備|プレス/.test(source))return '守備・プレス';if(/オフザボール|動き出し|ポジショニング/.test(source))return 'オフザボール';return 'その他'}function saveTraining(){let menu=trainMenu.value;if(!menu)return;const menuData=state.menus.find(x=>x.name===menu);const chosen=trainFocus.value==='自動'?inferTrainingFocus(menu,menuData?.category):trainFocus.value;state.trainings.unshift({id:Date.now(),date:trainDate.value||today(),menu,minutes:+trainMinutes.value||0,effort:trainEffort.value,focus:chosen,note:trainNote.value.trim()});trainNote.value='';trainFocus.value='自動';persist();alert('練習記録を保存しました')}
+function inferTrainingFocus(menu,category){const source=(String(menu||'')+' '+String(category||'')).toLowerCase();if(/ドリブル|突破|切り返し|ボールタッチ|1対1/.test(source))return 'ドリブル';if(/シュート|キック|フリーキック/.test(source))return 'シュート';if(/パス|受ける|首振り|ファーストタッチ/.test(source))return 'ボールを受ける';if(/守備|プレス/.test(source))return '守備・プレス';if(/オフザボール|動き出し|ポジショニング/.test(source))return 'オフザボール';return 'その他'}function saveTraining(){let menu=trainMenu.value;if(!menu)return;const menuData=state.menus.find(x=>x.name===menu);const chosen=trainFocus.value==='自動'?inferTrainingFocus(menu,menuData?.category):trainFocus.value;const checkPrompts={'ドリブル':'試合で相手を抜くための運び出し・切り返しを使えたか','パス':'受ける前に周囲を見て、味方へ正確につなげたか','シュート':'軸足とミートを意識して、狙ったコースへ打てたか','ボールを受ける':'受ける前に首を振り、前を向くタッチができたか','守備・プレス':'飛び込まずに相手の進行方向を限定できたか','オフザボール':'パスが出る前に動き出して、受ける場所を作れたか','その他':'練習で意識したポイントを試合で一度でも試せたか'};state.trainings.unshift({id:Date.now(),date:trainDate.value||today(),menu,minutes:+trainMinutes.value||0,effort:trainEffort.value,focus:chosen,note:trainNote.value.trim(),matchCheckPrompt:checkPrompts[chosen]||checkPrompts['その他'],matchCheckStatus:'次の試合で確認'});trainNote.value='';trainFocus.value='自動';persist();alert('練習記録を保存しました。次の試合で「'+(checkPrompts[chosen]||checkPrompts['その他'])+'」を確認できます。')}
 function addMenu(){let name=newMenuName.value.trim();if(!name){alert('メニュー名を入力してください');return}state.menus.push({name,category:newMenuCategory.value,minutes:10});newMenuName.value='';persist()}
 function removeMenu(i){if(!confirm('このメニューを削除しますか？'))return;state.menus.splice(i,1);persist()}
 function saveMeasure(){let v=Number(measureValue.value);if(!measureValue.value||!Number.isFinite(v)){alert('数値を入力してください');return}state.measures.unshift({date:measureDate.value||today(),type:measureType.value,value:v,unit:measureUnit.value,note:measureNote.value.trim()});measureValue.value='';measureNote.value='';persist();alert('測定値を保存しました')}
@@ -518,6 +518,15 @@ function renderMonthlyGrowthReport(monthKey){
  html+='<div class="tiny muted" style="margin-top:8px">前月比較は保存件数の差です。記録数の増減だけで、実力の向上・低下を断定するものではありません。</div>';
  host.innerHTML=html;
 }
+function getTrainingMatchCheckpoints(){
+ const trainings=(state.trainings||[]).slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))).slice(0,8);
+ const matches=(state.matchAnalyses||[]).slice();
+ return trainings.map(t=>{
+  const focus=t.focus||inferTrainingFocus(t.menu,t.category);
+  const later=matches.filter(m=>m.date&&t.date&&m.date>=t.date).flatMap(m=>(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖'&&(e.actionType===focus||(focus==='ボールを受ける'&&e.actionType==='パス'))).map(e=>({date:m.date,title:m.title,assessment:e.assessment||'未評価'})));
+  return {...t,focus,later};
+ });
+}
 function renderRikuCoachReport(){
  const el=document.getElementById('rikuCoachReport');if(!el)return;
  const analyses=(state.matchAnalyses||[]).slice();
@@ -547,6 +556,10 @@ function renderRikuCoachReport(){
   html+='<h3 style="margin-top:14px">次の練習テーマ</h3>';
   html+=focus?'<div class="note"><b>'+esc(focus.type)+'を重点確認</b><div class="tiny">本人確認済みの記録のうち「改善したい」が'+focus.improve+'場面ありました。</div><div style="margin-top:6px">'+esc(focusDrills[focus.type]||focusDrills['その他'])+'</div></div>':'<div class="note">今は改善テーマを決めるだけの評価データがありません。次の試合でも「良かった」「改善したい」を記録していこう。</div>';
  }
+ const checkpoints=getTrainingMatchCheckpoints();
+ html+='<h3 style="margin-top:14px">次の試合で確認すること</h3>';
+ html+=checkpoints.length?checkpoints.map(t=>'<div class="listitem"><div class="grow"><b>'+esc(t.focus)+'｜'+esc(t.menu)+'</b><div class="tiny muted">練習日 '+esc(t.date)+' ・ '+(t.minutes||0)+'分</div><div class="tiny">'+esc(t.matchCheckPrompt||'練習テーマを試合で試せたか確認')+'</div><div class="tiny muted">'+(t.later.length?'その後の本人確認場面 '+t.later.length+'件：'+t.later.slice(0,2).map(e=>esc(e.date)+' '+esc(e.assessment)).join('／'):'まだ該当する試合場面の記録なし')+'</div></div></div>').join(''):'<div class="empty">練習を保存すると、次の試合で確認するポイントがここに残ります。</div>';
+ html+='<div class="tiny muted">試合場面は陸玖本人として手動確認され、練習テーマと一致したものだけを表示します。自動でプレーを判定する機能ではありません。</div>';
  const progress=getTrainingMatchProgress();
  html+='<h3 style="margin-top:14px">練習したことは試合で出せた？</h3>';
  html+=progress.length?progress.map(p=>'<div class="listitem"><div class="grow"><b>'+esc(p.skill)+'</b><div class="tiny muted">練習 '+p.sessions+'回'+(p.latest?'・直近 '+esc(p.latest):'')+' ／ その後の本人確認場面 '+p.later+'場面</div><div class="tiny">良かった '+p.good+' ・ 改善したい '+p.improve+'</div></div></div>').join(''):'<div class="empty">練習記録と本人確認済みの試合場面が集まると、テーマごとに並べて確認できます。</div>';
