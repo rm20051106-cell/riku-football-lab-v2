@@ -1234,6 +1234,46 @@ function renderNextMatchGrowthBrief(priorities,events){
  html+='<div class="tiny muted">練習時間やチェック数は取り組み状況の記録であり、上達を証明する数値ではありません。試合映像の評価も、陸玖本人として確認した入力内容を表示しています。</div>';
  return html;
 }
+function renderNextMatchGoalPanel(){
+ const goal=state.settings?.nextMatchGoal||null;
+ const history=Array.isArray(state.settings?.nextMatchGoalHistory)?state.settings.nextMatchGoalHistory:[];
+ const options=['ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール'];
+ let html='<h3 style="margin-top:14px">次の試合の目標設定・試合後チェック</h3><div class="card"><div class="tiny muted">試合前に1つだけ意識するテーマを決め、試合後に達成度を記録します。AIの自動判定ではなく、本人・保護者の振り返りです。</div>';
+ html+='<label class="tiny" for="nextMatchGoalFocus">試合で意識するプレー</label><select id="nextMatchGoalFocus" class="input" style="width:100%;margin:4px 0 8px">'+options.map(x=>'<option value="'+x+'" '+(goal?.focus===x?'selected':'')+'>'+x+'</option>').join('')+'</select>';
+ html+='<label class="tiny" for="nextMatchGoalNote">具体的な目標（例：受ける前に首を振って前を向く）</label><textarea id="nextMatchGoalNote" class="input" rows="2" style="width:100%;margin:4px 0 8px" placeholder="試合でやってみたいこと">'+esc(goal?.note||'')+'</textarea><button class="primary small" onclick="saveNextMatchGoal()">試合前の目標を保存</button>';
+ if(goal){
+  html+='<div class="listitem" style="display:block;margin-top:10px"><b>現在の目標：'+esc(goal.focus)+'</b><div class="tiny muted">設定日：'+esc(goal.date||'日付なし')+'</div><div class="tiny">'+esc(goal.note||'具体的な目標は未入力')+'</div>';
+  if(goal.result){
+   html+='<div class="tiny" style="margin-top:6px">試合後の評価：<b>'+esc(goal.result)+'</b>（'+esc(goal.reviewDate||'日付なし')+'）</div><div class="tiny muted">'+esc(goal.reflection||'振り返りメモなし')+'</div>';
+  }else{
+   html+='<div class="tiny" style="margin-top:8px"><b>試合後の達成度を記録</b></div><div class="btnrow"><button class="secondary small" onclick="reviewNextMatchGoal(\'できた\')">できた</button><button class="secondary small" onclick="reviewNextMatchGoal(\'少しできた\')">少しできた</button><button class="secondary small" onclick="reviewNextMatchGoal(\'まだ\')">まだ</button></div>';
+  }
+  html+='</div>';
+ }else html+='<div class="empty" style="margin-top:8px">まずは次の試合で意識することを1つ決めよう。</div>';
+ if(history.length)html+='<div style="margin-top:10px"><b class="tiny">過去の目標と振り返り</b>'+history.slice(-5).reverse().map(x=>'<div class="tiny muted" style="margin-top:5px">'+esc(x.date||'')+'｜'+esc(x.focus||'')+'｜'+esc(x.result||'未評価')+'：'+esc(x.note||'')+'</div>').join('')+'</div>';
+ html+='<div class="tiny muted" style="margin-top:8px">達成度は試合での自己評価です。目標を達成した回数だけで能力の伸びを断定せず、映像や次回の行動と合わせて振り返ります。</div></div>';
+ return html;
+}
+function saveNextMatchGoal(){
+ const focus=document.getElementById('nextMatchGoalFocus')?.value||'ドリブル';
+ const note=(document.getElementById('nextMatchGoalNote')?.value||'').trim();
+ state.settings=state.settings||{};
+ const previous=state.settings.nextMatchGoal;
+ if(previous){
+  state.settings.nextMatchGoalHistory=Array.isArray(state.settings.nextMatchGoalHistory)?state.settings.nextMatchGoalHistory:[];
+  if(previous.result)state.settings.nextMatchGoalHistory.push({date:previous.date,focus:previous.focus,note:previous.note,result:previous.result,reviewDate:previous.reviewDate,reflection:previous.reflection});
+ }
+ state.settings.nextMatchGoal={focus,note,date:today(),result:'',reviewDate:'',reflection:''};
+ persist();
+}
+function reviewNextMatchGoal(result){
+ const goal=state.settings?.nextMatchGoal;
+ if(!goal)return;
+ const reflection=prompt('試合での様子や、次に試したいことをメモできます（任意）',goal.reflection||'');
+ if(reflection===null)return;
+ goal.result=result;goal.reviewDate=today();goal.reflection=reflection.trim();
+ persist();
+}
 function renderRikuCoachReport(){
  const el=document.getElementById('rikuCoachReport');if(!el)return;
  const analyses=(state.matchAnalyses||[]).slice();
@@ -1276,6 +1316,7 @@ function renderRikuCoachReport(){
  html+='<h3 style="margin-top:14px">練習記録と試合評価から選ぶ、次の重点テーマ</h3>';
  html+=priorities.length?'<div class="card">'+priorities.map((p,i)=>'<div class="listitem"><div class="grow"><b>'+(i+1)+'. '+esc(p.focus)+'</b><div class="tiny muted">試合確認 '+p.scenes+'場面（改善 '+p.improve+'／良かった '+p.good+'）・練習 '+p.sessions+'回</div><div class="tiny muted">練習後「難しかった」 '+p.reviewHard+'回・試合で「まだ」 '+p.transferNotYet+'回／「少しできた」 '+p.transferPartial+'回／「できた」 '+p.transferDone+'回</div><div class="tiny muted">'+esc(p.sampleNote)+(p.lastMatchDate?'・直近試合 '+esc(p.lastMatchDate):'')+(p.lastTrainingDate?'・直近練習 '+esc(p.lastTrainingDate):'')+'</div><button class="secondary small" onclick="applyCoachFocusPriority(\''+p.focus+'\')">このテーマで練習メニューを作る</button></div></div>').join('')+'<div class="tiny muted">本人確認済みの試合場面と、保護者・選手が入力した練習後の振り返りを組み合わせた優先候補です。回数は能力の点数や自動判定ではありません。記録が少ないテーマは表示されない場合があります。</div></div>':'<div class="empty">練習記録や本人確認済みの試合評価が増えると、次の重点テーマを提案します。</div>';
  html+=renderNextMatchGrowthBrief(priorities,events);
+ html+=renderNextMatchGoalPanel();
  html+='<h3 style="margin-top:14px">次の試合で確認すること</h3>';
  html+=checkpoints.length?checkpoints.map(t=>'<div class="listitem"><div class="grow"><b>'+esc(t.focus)+'｜'+esc(t.menu)+'</b><div class="tiny muted">練習日 '+esc(t.date)+' ・ '+(t.minutes||0)+'分</div><div class="tiny">'+esc(t.matchCheckPrompt||'練習テーマを試合で試せたか確認')+'</div><div class="tiny muted">'+(t.later.length?'その後の本人確認場面 '+t.later.length+'件：'+t.later.slice(0,2).map(e=>esc(e.date)+' '+esc(e.assessment)).join('／'):'まだ該当する試合場面の記録なし')+'</div></div></div>').join(''):'<div class="empty">練習を保存すると、次の試合で確認するポイントがここに残ります。</div>';
  html+='<div class="tiny muted">試合場面は陸玖本人として手動確認され、練習テーマと一致したものだけを表示します。自動でプレーを判定する機能ではありません。</div>';
