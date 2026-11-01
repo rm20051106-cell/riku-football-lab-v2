@@ -428,7 +428,8 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
         "sampling_interval_seconds": round(actual_interval, 3),
         "sampling_rate_fps": round(1 / actual_interval, 2) if actual_interval > 0 else None,
         "frames": frames,
-        "person_track_summary": track_summary,\n        "person_detection_summary": {
+        "person_track_summary": track_summary,
+        "person_detection_summary": {
             "frames_with_people": sum(1 for n in people_per_frame if n > 0),
             "average_people_per_sample": round(float(np.mean(people_per_frame)), 2) if people_per_frame else 0,
             "max_people_in_one_frame": max(people_per_frame) if people_per_frame else 0,
