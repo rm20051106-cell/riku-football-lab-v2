@@ -603,6 +603,17 @@ function getCoachOverallAssessment(){
  let focus=needs[0]||priority[0]||null;
  return {rows,supported,strength,focus,allReviews,totalTraining,confidence};
 }
+function renderRecentMatchCoachInsight(){
+ const matches=(state.matchAnalyses||[]).map(m=>({...m,reviewed:(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖'&&['良かった','改善したい'].includes(e.assessment)&&e.actionType&&e.actionType!=='未選択')})).filter(m=>m.reviewed.length).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))).slice(0,3);
+ if(matches.length<2)return '<h4 style="margin:12px 0 6px">直近試合からのコーチ提案</h4><div class="empty">本人確認と評価を付けた試合が2試合以上になると、直近の記録から次の練習テーマを提案します。</div>';
+ const recent=matches.flatMap(m=>m.reviewed.map(e=>({...e,sourceDate:m.date,sourceTitle:m.title||'試合動画'})));
+ const skills=['ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール'];
+ const rows=skills.map(skill=>{const list=recent.filter(e=>e.actionType===skill||(skill==='ボールを受ける'&&e.actionType==='パス'));return {skill,good:list.filter(e=>e.assessment==='良かった').length,improve:list.filter(e=>e.assessment==='改善したい').length,total:list.length};}).filter(x=>x.total).sort((a,b)=>(b.improve-a.improve)||(a.good-b.good)||b.total-a.total);
+ const top=rows.find(x=>x.improve>0);
+ const drill={'ドリブル':'親子1対1で相手の重心を見て逆を取り、抜いた後の2〜3歩まで加速','パス':'受ける前に首を振り、半身で受けて前向きのファーストタッチ','シュート':'軸足の位置とミートを確認し、近距離からコースを狙う','ボールを受ける':'左右を確認して半身で受け、前へ運べる場所へファーストタッチ','守備・プレス':'飛び込まずに相手の進路を限定する短い1対1','オフザボール':'パスが出る前に相手の背中側へ動いて受ける角度を作る'};
+ const summary=top?'<b>次に試すテーマ：'+esc(top.skill)+'</b><div class="tiny muted">直近'+matches.length+'試合の評価 '+top.total+'場面中、改善したい '+top.improve+'・良かった '+top.good+'</div><div class="tiny" style="margin-top:6px">練習案：'+esc(drill[top.skill]||'試合場面を見直して一つだけ意識する')+'</div>':'<b>直近の記録では、優先して改善する項目はまだ絞れません。</b><div class="tiny muted">良かったプレーを再現できるか、同じ場面で続けて確認しよう。</div>';
+ return '<h4 style="margin:12px 0 6px">直近試合からのコーチ提案</h4><div class="listitem" style="display:block">'+summary+'<div class="tiny muted" style="margin-top:8px">対象：'+matches.map(m=>esc(m.date||'日付不明')+' '+esc(m.title||'試合動画')).join(' ／ ')+'</div></div><div class="tiny muted">直近最大3試合の手動評価をもとにした練習候補です。映像AIがプレーの良否を自動判定したものではなく、出場時間や相手などの条件差もあるため、実際の映像と合わせて判断してください。</div>';
+}
 function renderCoachOverallAssessment(){
  const a=getCoachOverallAssessment();
  const strength=a.strength,focus=a.focus;
@@ -612,7 +623,7 @@ function renderCoachOverallAssessment(){
  const drills={'ドリブル':'加速ドリブル1対1。相手の重心を見て逆を取り、抜いた後の2〜3歩まで加速する。','パス':'受ける前に首を振り、半身で受けて前向きのファーストタッチからパス。','シュート':'近距離から軸足をボール横に置き、狙ったコースへ蹴る。','ボールを受ける':'左右を確認して半身で受け、前へ運べる場所にファーストタッチ。','守備・プレス':'飛び込まず相手の進路を限定する親子1対1。','オフザボール':'パスが出る前に動き、味方から見える角度を作る。','その他':'試合映像を見ながらプレー分類を増やす。'};
  const top=a.rows.filter(x=>x.total).sort((x,y)=>y.total-x.total);
  const detail=top.length?top.map(x=>'<div class="listitem"><div class="grow"><b>'+esc(x.skill)+'</b><div class="tiny muted">評価 '+x.total+'場面・良 '+x.good+'・改善 '+x.improve+(x.rate===null?'':'・良かった割合 '+x.rate+'%')+' ／ 練習 '+x.sessions+'回'+(x.transfer?'・試合で試せた '+x.transferDone+'/'+x.transfer+'回':'')+'</div></div></div>').join(''):'<div class="empty">試合で陸玖として確認し、評価を入力するとプレー別に分析します。</div>';
- return '<section class="note" style="margin-top:14px"><h3 style="margin-top:0">専属AIコーチ｜総合評価</h3><div class="tiny muted">根拠：本人確認済み試合場面 '+a.allReviews+'件・練習記録 '+a.totalTraining+'件</div><div class="listitem"><div class="grow"><b>今の強み候補</b><div class="tiny">'+esc(strengthText)+'</div></div></div><div class="listitem"><div class="grow"><b>次に伸ばすテーマ</b><div class="tiny">'+esc(focusText)+'</div><div class="tiny muted">'+esc(focusReason)+'</div></div></div><div class="tiny muted">コーチの練習提案：'+esc(drills[focus?.skill]||'基本技術をバランスよく練習し、試合後に一つ振り返る')+'</div><h4>プレー別の評価</h4>'+detail+'<div class="tiny muted">評価の確かさ：'+esc(a.confidence)+'。3場面未満の項目は強み・課題として断定しません。試合数、出場時間、相手、ポジションの違いも影響します。これは映像AIによる自動判定ではなく、入力された記録の整理です。</div></section>';
+ return '<section class="note" style="margin-top:14px"><h3 style="margin-top:0">専属AIコーチ｜総合評価</h3>'+renderRecentMatchCoachInsight()+'<div class="tiny muted">根拠：本人確認済み試合場面 '+a.allReviews+'件・練習記録 '+a.totalTraining+'件</div><div class="listitem"><div class="grow"><b>今の強み候補</b><div class="tiny">'+esc(strengthText)+'</div></div></div><div class="listitem"><div class="grow"><b>次に伸ばすテーマ</b><div class="tiny">'+esc(focusText)+'</div><div class="tiny muted">'+esc(focusReason)+'</div></div></div><div class="tiny muted">コーチの練習提案：'+esc(drills[focus?.skill]||'基本技術をバランスよく練習し、試合後に一つ振り返る')+'</div><h4>プレー別の評価</h4>'+detail+'<div class="tiny muted">評価の確かさ：'+esc(a.confidence)+'。3場面未満の項目は強み・課題として断定しません。試合数、出場時間、相手、ポジションの違いも影響します。これは映像AIによる自動判定ではなく、入力された記録の整理です。</div></section>';
 }
 function getCoachPrioritySummary(){
  const skills=['ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール','その他'];
