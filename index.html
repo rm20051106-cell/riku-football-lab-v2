@@ -467,6 +467,21 @@ function printMonthlyGrowthReport(){
  win.document.write('<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+title+'</title>'+style+'</head><body><h1>'+title+'</h1><p class="tiny">RIKU FOOTBALL LAB｜保存された練習・試合・測定記録から作成</p>'+host.innerHTML+'<script>window.onload=function(){setTimeout(function(){window.print()},300)};<\/script></body></html>');
  win.document.close();
 }
+function applyMonthlyTrainingFocus(skill){
+ const plans={
+ 'ドリブル':{title:'加速ドリブル＋切り返し',category:'突破・ドリブル',minutes:15,note:'最初のタッチで前へ運び、相手の逆を取る。抜いた後の2〜3歩も加速。左右の切り返しを交互に行う。'},
+ 'パス':{title:'受ける前の首振り＋パス',category:'受ける動き',minutes:12,note:'受ける前に左右を確認し、前を向ける位置へファーストタッチ。左右両足でパス。'},
+ 'シュート':{title:'シュートの軸足・ミート確認',category:'シュート',minutes:12,note:'近い距離から軸足の位置とボールのミートを確認。強さより正確さを優先。'},
+ 'ボールを受ける':{title:'首振り→前向きファーストタッチ',category:'受ける動き',minutes:12,note:'パスが来る前に周囲を確認。半身で受けて、前へ運ぶタッチを練習。'},
+ '守備・プレス':{title:'1対1の守備・コース限定',category:'アジリティ',minutes:10,note:'相手に飛び込まず、体の向きで進行方向を限定。無理のない距離で行う。'},
+ 'オフザボール':{title:'パス前の動き出し',category:'受ける動き',minutes:10,note:'相手の背中側や見えにくい角度へ動き、受ける場所を作る。'},
+ 'その他':{title:'試合の課題を確認する練習',category:'その他',minutes:10,note:'試合で気になった場面を1つ選び、ゆっくり正確に反復する。'}
+ };
+ const plan=plans[skill]||plans['その他'];
+ let option=Array.from(trainMenu.options).find(o=>o.value===plan.title);
+ if(!option){state.menus.unshift({name:plan.title,category:plan.category,minutes:plan.minutes});persist();renderAll();}
+ trainMenu.value=plan.title;trainDate.value=today();trainMinutes.value=plan.minutes;trainFocus.value=skill;trainNote.value=plan.note;showView('training');
+}
 function renderMonthlyGrowthReport(monthKey){
  const host=document.getElementById('monthlyGrowthReport');if(!host)return;
  const key=monthKey||today().slice(0,7);
@@ -483,8 +498,8 @@ function renderMonthlyGrowthReport(monthKey){
  const measureSummary=measures.length?measures.map(m=>'<div class="tiny">'+esc(m.type)+'：'+esc(m.value)+' '+esc(m.unit||'')+'（'+esc(m.date)+'）</div>').join(''):'<div class="tiny muted">この月の測定記録はありません。</div>';
  let html='<div class="grid"><div class="card"><div class="tiny muted">練習記録</div><div class="stat">'+trainings.length+'<small>回</small></div></div><div class="card"><div class="tiny muted">本人確認した試合場面</div><div class="stat">'+events.length+'<small>場面</small></div></div><div class="card"><div class="tiny muted">良かった／改善したい</div><div class="stat">'+good.length+' / '+improve.length+'</div></div></div>';
  html+='<h4>今月の強み候補</h4>'+ (strength?'<div class="note"><b>'+esc(strength.skill)+'</b>：良かった '+strength.good+'場面を記録。試合で出せたプレーとして、次の試合でも続けて確認しよう。</div>':'<div class="empty">良かったと評価した本人確認済みの場面がまだありません。場面を確認・評価すると強み候補が表示されます。</div>');
- html+='<h4 style="margin-top:12px">今月の重点改善候補</h4>'+ (weakness?'<div class="note"><b>'+esc(weakness.skill)+'</b>：改善したい '+weakness.improve+'場面。<div style="margin-top:5px">'+esc(drill[weakness.skill]||drill['その他'])+'</div></div>':'<div class="empty">改善したいと評価した場面はまだありません。無理に課題を決めず、記録を増やしていこう。</div>');
- html+='<h4 style="margin-top:12px">練習テーマ別の記録</h4>'+(skillRows.length?skillRows.map(x=>'<div class="listitem"><div class="grow"><b>'+esc(x.skill)+'</b><div class="tiny muted">練習 '+x.training+'回 ／ 試合確認 '+x.seen+'場面（良かった '+x.good+'・改善 '+x.improve+'）</div></div></div>').join(''):'<div class="empty">この月の練習・試合記録はありません。</div>');
+ html+='<h4 style="margin-top:12px">今月の重点改善候補</h4>'+ (weakness?'<div class="note"><b>'+esc(weakness.skill)+'</b>：改善したい '+weakness.improve+'場面。<div style="margin-top:5px">'+esc(drill[weakness.skill]||drill['その他'])+'</div><button class="primary small" style="margin-top:8px" onclick="applyMonthlyTrainingFocus(\''+esc(weakness.skill)+'\')">この課題の練習を始める</button></div>':'<div class="empty">改善したいと評価した場面はまだありません。無理に課題を決めず、記録を増やしていこう。</div>');
+ html+='<h4 style="margin-top:12px">練習テーマ別の記録</h4>'+(skillRows.length?skillRows.map(x=>'<div class="listitem"><div class="grow"><b>'+esc(x.skill)+'</b><div class="tiny muted">練習 '+x.training+'回 ／ 試合確認 '+x.seen+'場面（良かった '+x.good+'・改善 '+x.improve+'）</div></div>'+(x.improve?'<button class="secondary small" onclick="applyMonthlyTrainingFocus(\''+esc(x.skill)+'\')">このテーマで練習</button>':'')+'</div>').join(''):'<div class="empty">この月の練習・試合記録はありません。</div>');
  html+='<h4 style="margin-top:12px">今月の測定</h4>'+measureSummary;
  html+='<div class="tiny muted" style="margin-top:8px">この月の保存記録だけを集計しています。「強み」「改善候補」は手動で本人確認・評価した場面に基づく目安です。練習回数だけで上達を断定しません。</div>';
  const parts=key.split('-').map(Number),prevDate=new Date(parts[0],parts[1]-2,1),prevKey=prevDate.getFullYear()+'-'+String(prevDate.getMonth()+1).padStart(2,'0');
