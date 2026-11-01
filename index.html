@@ -454,6 +454,28 @@ function getTrainingMatchProgress(){const skills=['ドリブル','パス','シ�
  }).join('');
  host.innerHTML=cards||'<div class="empty">測定記録を保存すると、ここに成長グラフが表示されます。</div>';
 }
+function renderMonthlyGrowthReport(monthKey){
+ const host=document.getElementById('monthlyGrowthReport');if(!host)return;
+ const key=monthKey||today().slice(0,7);
+ const trainings=(state.trainings||[]).filter(t=>String(t.date||'').startsWith(key));
+ const monthMatches=(state.matchAnalyses||[]).filter(m=>String(m.date||'').startsWith(key));
+ const events=monthMatches.flatMap(m=>(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖').map(e=>({...e,matchDate:m.date})));
+ const good=events.filter(e=>e.assessment==='良かった'),improve=events.filter(e=>e.assessment==='改善したい');
+ const skillNames=['ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール','その他'];
+ const skillRows=skillNames.map(skill=>({skill,training:trainings.filter(t=>(t.focus||inferTrainingFocus(t.menu,t.category))===skill).length,good:good.filter(e=>e.actionType===skill).length,improve:improve.filter(e=>e.actionType===skill).length,seen:events.filter(e=>e.actionType===skill).length})).filter(x=>x.training||x.seen);
+ const strength=skillRows.filter(x=>x.good>0).sort((a,b)=>b.good-a.good||b.seen-a.seen)[0];
+ const weakness=skillRows.filter(x=>x.improve>0).sort((a,b)=>b.improve-a.improve||b.seen-a.seen)[0];
+ const drill={'ドリブル':'加速ドリブル1対1：相手の逆を取り、抜いた後の2〜3歩まで加速する。','パス':'首振り→前向きのファーストタッチ→パスを左右で反復する。','シュート':'軸足をボール横に置き、近距離から狙ったコースへ蹴る。','ボールを受ける':'受ける前に周囲を見て、前を向ける場所へファーストタッチする。','守備・プレス':'相手の進行方向を限定し、飛び込まずに奪う1対1。','オフザボール':'パスが出る前に相手の背中側へ動き、受ける角度を作る。','その他':'試合の場面をもう少し具体的に分類して、次回の練習につなげる。'};
+ const measures=(state.measures||[]).filter(m=>String(m.date||'').startsWith(key));
+ const measureSummary=measures.length?measures.map(m=>'<div class="tiny">'+esc(m.type)+'：'+esc(m.value)+' '+esc(m.unit||'')+'（'+esc(m.date)+'）</div>').join(''):'<div class="tiny muted">この月の測定記録はありません。</div>';
+ let html='<div class="grid"><div class="card"><div class="tiny muted">練習記録</div><div class="stat">'+trainings.length+'<small>回</small></div></div><div class="card"><div class="tiny muted">本人確認した試合場面</div><div class="stat">'+events.length+'<small>場面</small></div></div><div class="card"><div class="tiny muted">良かった／改善したい</div><div class="stat">'+good.length+' / '+improve.length+'</div></div></div>';
+ html+='<h4>今月の強み候補</h4>'+ (strength?'<div class="note"><b>'+esc(strength.skill)+'</b>：良かった '+strength.good+'場面を記録。試合で出せたプレーとして、次の試合でも続けて確認しよう。</div>':'<div class="empty">良かったと評価した本人確認済みの場面がまだありません。場面を確認・評価すると強み候補が表示されます。</div>');
+ html+='<h4 style="margin-top:12px">今月の重点改善候補</h4>'+ (weakness?'<div class="note"><b>'+esc(weakness.skill)+'</b>：改善したい '+weakness.improve+'場面。<div style="margin-top:5px">'+esc(drill[weakness.skill]||drill['その他'])+'</div></div>':'<div class="empty">改善したいと評価した場面はまだありません。無理に課題を決めず、記録を増やしていこう。</div>');
+ html+='<h4 style="margin-top:12px">練習テーマ別の記録</h4>'+(skillRows.length?skillRows.map(x=>'<div class="listitem"><div class="grow"><b>'+esc(x.skill)+'</b><div class="tiny muted">練習 '+x.training+'回 ／ 試合確認 '+x.seen+'場面（良かった '+x.good+'・改善 '+x.improve+'）</div></div></div>').join(''):'<div class="empty">この月の練習・試合記録はありません。</div>');
+ html+='<h4 style="margin-top:12px">今月の測定</h4>'+measureSummary;
+ html+='<div class="tiny muted" style="margin-top:8px">この月の保存記録だけを集計しています。「強み」「改善候補」は手動で本人確認・評価した場面に基づく目安です。練習回数だけで上達を断定しません。</div>';
+ host.innerHTML=html;
+}
 function renderRikuCoachReport(){
  const el=document.getElementById('rikuCoachReport');if(!el)return;
  const analyses=(state.matchAnalyses||[]).slice();
@@ -491,9 +513,11 @@ function renderRikuCoachReport(){
  html+='<div class="listitem"><div class="grow"><b>30m走</b><div class="tiny muted">'+(sprintLatest?(esc(sprintLatest.value)+' '+esc(sprintLatest.unit)+'（'+esc(sprintLatest.date)+'）'):'測定記録なし')+(sprintPrev?' ／ 前回 '+esc(sprintPrev.value)+' '+esc(sprintPrev.unit):'')+'</div></div></div>';
  const recent=analyses.map(match=>({date:match.date,title:match.title,events:(match.candidateEvents||[]).filter(ev=>ev.reviewLabel==='陸玖')})).filter(x=>x.events.length).sort((a,b)=>String(b.date).localeCompare(String(a.date))).slice(0,5);
  if(recent.length){html+='<h3 style="margin-top:14px">試合ごとの振り返り</h3>'+recent.map(x=>{const g=x.events.filter(ev=>ev.assessment==='良かった').length,im=x.events.filter(ev=>ev.assessment==='改善したい').length;return '<div class="listitem"><div class="grow"><b>'+esc(x.title||'試合動画')+'</b><div class="tiny muted">'+esc(x.date)+'・本人確認 '+x.events.length+'場面／良かった '+g+'／改善したい '+im+'</div></div></div>'}).join('');}
+ html+='<h3 style="margin-top:18px">月間成長レポート</h3><label class="label" for="monthlyGrowthMonth">対象月</label><select id="monthlyGrowthMonth" onchange="renderMonthlyGrowthReport(this.value)">'+Array.from({length:12},(_,i)=>{const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-i);const k=d.getFullYear()+\'-\'+String(d.getMonth()+1).padStart(2,\'0\');return \'<option value="\'+k+\'"\'+(i===0?\' selected\':\'\')+\'>\'+d.getFullYear()+\'年\'+(d.getMonth()+1)+\'月</option>\'}).join(\'\')+'</select><div id="monthlyGrowthReport"></div>';
  html+='<div class="tiny muted" style="margin-top:10px">このレポートは保存された手動確認・評価・練習・測定記録の集計です。映像から自動でプレーの良し悪しを判定したものではありません。記録が少ない場合は傾向を断定しません。</div>';
  el.innerHTML=html;
  renderGrowthCharts();
+ renderMonthlyGrowthReport(today().slice(0,7));
 }
 function renderAll(){
  state.aiFormAnalyses=state.aiFormAnalyses||[];state.matchAnalyses=state.matchAnalyses||[];let date=today(),month=date.slice(0,7),days=new Set(state.trainings.filter(x=>x.date.startsWith(month)).map(x=>x.date)).size;homeDays.innerHTML=`${days} <small>日</small>`;monthProgress.style.width=Math.min(100,days/12*100)+'%';homeVideos.innerHTML=`${state.clips.length+state.forms.length} <small>件</small>`;let sprint=state.measures.find(x=>x.type==='30m走');homeSprint.innerHTML=sprint?`${esc(sprint.value)} <small>${esc(sprint.unit)}</small>`:'—';homeNumbers.textContent=`${state.settings.jersey1} / ${state.settings.jersey2}`;const coachPlan=getCoachTrainingPlan();dailyPlan.innerHTML='<div class="listitem"><span class="tag good">AIコーチ提案</span><div class="grow"><b>'+esc(coachPlan.title)+'</b><div class="tiny muted">'+coachPlan.minutes+'分・'+esc(coachPlan.why)+'</div><div class="tiny">'+esc(coachPlan.note)+'</div><button class="secondary small" onclick="applyCoachTrainingPlan()">このメニューで練習を始める</button></div></div>';
