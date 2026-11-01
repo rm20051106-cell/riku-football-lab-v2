@@ -728,6 +728,21 @@ function renderMonthlyGrowthReport(monthKey){
  const measureComparisons=measurementTypes.map(type=>{const a=(state.measures||[]).filter(m=>m.type===type&&String(m.date||'').startsWith(key)).sort((x,y)=>String(x.date).localeCompare(String(y.date))).slice(-1)[0];const b=(state.measures||[]).filter(m=>m.type===type&&String(m.date||'').startsWith(prevKey)).sort((x,y)=>String(x.date).localeCompare(String(y.date))).slice(-1)[0];return {type,a,b}}).filter(x=>x.a&&x.b);
  if(measureComparisons.length){html+='<h4 style="margin-top:12px">測定値の前月比較</h4>'+measureComparisons.map(x=>{const d=Number(x.a.value)-Number(x.b.value),lowerBetter=/30m走|100m走|アジリティ/.test(x.type),better=lowerBetter?d<0:d>0;const msg=d===0?'変化なし':(better?'改善方向':'数値は反対方向')+' '+(d>0?'+':'')+d.toFixed(2)+' '+(x.a.unit||'');return '<div class="listitem"><div class="grow"><b>'+esc(x.type)+'</b><div class="tiny muted">前月 '+esc(x.b.value)+' '+esc(x.b.unit||'')+' → 今月 '+esc(x.a.value)+' '+esc(x.a.unit||'')+'</div><div class="tiny">'+esc(msg)+'</div></div></div>'}).join('')+'<div class="tiny muted">タイム・アジリティは数値が小さい方向、跳躍距離などは数値が大きい方向を改善の目安として表示。測定条件が違う場合は単純比較しないでね。</div>'}
  else{html+='<div class="tiny muted">前月と今月の両方に同じ種目の測定があると、測定値も比較できます。</div>'}
+ const skillCompare=skillNames.map(skill=>{
+  const current=events.filter(e=>(e.actionType===skill||(skill==='ボールを受ける'&&e.actionType==='パス'))&&['良かった','改善したい'].includes(e.assessment));
+  const previous=prevEvents.filter(e=>(e.actionType===skill||(skill==='ボールを受ける'&&e.actionType==='パス'))&&['良かった','改善したい'].includes(e.assessment));
+  const currentGood=current.filter(e=>e.assessment==='良かった').length,previousGood=previous.filter(e=>e.assessment==='良かった').length;
+  return {skill,currentN:current.length,previousN:previous.length,currentRate:current.length?Math.round(currentGood/current.length*100):null,previousRate:previous.length?Math.round(previousGood/previous.length*100):null};
+ }).filter(x=>x.currentN||x.previousN);
+ html+='<h4 style="margin-top:14px">プレー別・評価傾向の前月比較</h4>';
+ html+=skillCompare.length?skillCompare.map(x=>{
+  if(x.currentRate===null||x.previousRate===null)return '<div class="listitem"><div class="grow"><b>'+esc(x.skill)+'</b><div class="tiny muted">前月 '+x.previousN+'件／今月 '+x.currentN+'件。両月の評価数がそろっていないため割合比較は保留。</div></div></div>';
+  const diff=x.currentRate-x.previousRate;
+  const trend=diff===0?'前月と同じ':(diff>0?'+':'')+diff+'ポイント';
+  const caution=Math.min(x.currentN,x.previousN)<3?'件数が少ないため参考値':'';
+  return '<div class="listitem"><div class="grow"><b>'+esc(x.skill)+'</b><div class="tiny muted">良かった割合：前月 '+x.previousRate+'%（'+x.previousN+'件）→ 今月 '+x.currentRate+'%（'+x.currentN+'件）</div><div class="tiny">'+trend+(caution?'｜'+caution:'')+'</div></div></div>';
+ }).join(''):'<div class="empty">両月の評価済み場面が集まると、プレー別の評価傾向を比較できます。</div>';
+ html+='<div class="tiny muted">良かった割合＝「良かった」÷（「良かった」＋「改善したい」）。未評価は除外。試合数・出場時間・相手・ポジションなどが違うため、割合の変化も上達を証明するものではありません。各月3件未満は特に慎重に見てください。</div>';
  html+='<div class="tiny muted" style="margin-top:8px">前月比較は保存件数の差です。記録数の増減だけで、実力の向上・低下を断定するものではありません。</div>';
  const reflectionDone=reflectionRows.filter(x=>x.value==='できた').length;
  const reflectionNotYet=reflectionRows.length-reflectionDone;
