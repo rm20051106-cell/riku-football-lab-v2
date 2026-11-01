@@ -653,7 +653,7 @@ function getCoachPrioritySummary(){
   const weighted=related.reduce((acc,e)=>{
    const stamp=Date.parse(String(e.matchDate||'')+'T00:00:00');
    const age=Number.isFinite(stamp)&&Number.isFinite(todayMs)?Math.max(0,(todayMs-stamp)/86400000):365;
-   const weight=age<=90?1:age<=180?.65:.35;
+   const weight=age<=90?1:age<=180?0.65:0.35;
    if(e.assessment==='改善したい')acc.improve+=weight;
    if(e.assessment==='良かった')acc.good+=weight;
    return acc;
@@ -1014,7 +1014,7 @@ function renderRikuCoachReport(){
  const checkpoints=getTrainingMatchCheckpoints();
  const priorities=getCoachPrioritySummary();
  html+='<h3 style="margin-top:14px">練習記録と試合評価から選ぶ、次の重点テーマ</h3>';
- html+=priorities.length?'<div class="card">'+priorities.map((p,i)=>'<div class="listitem"><div class="grow"><b>'+(i+1)+'. '+esc(p.focus)+'</b><div class="tiny muted">試合確認 '+p.scenes+'場面（改善 '+p.improve+'／良かった '+p.good+'）・練習 '+p.sessions+'回</div><div class="tiny muted">練習後「難しかった」 '+p.reviewHard+'回・試合で「まだ」 '+p.transferNotYet+'回／「少しできた」 '+p.transferPartial+'回／「できた」 '+p.transferDone+'回</div><button class="secondary small" onclick="applyCoachFocusPriority(\''+p.focus+'\')">このテーマで練習メニューを作る</button></div></div>').join('')+'<div class="tiny muted">本人確認済みの試合場面と、保護者・選手が入力した練習後の振り返りを組み合わせた優先候補です。回数は能力の点数や自動判定ではありません。記録が少ないテーマは表示されない場合があります。</div></div>':'<div class="empty">練習記録や本人確認済みの試合評価が増えると、次の重点テーマを提案します。</div>';
+ html+=priorities.length?'<div class="card">'+priorities.map((p,i)=>'<div class="listitem"><div class="grow"><b>'+(i+1)+'. '+esc(p.focus)+'</b><div class="tiny muted">試合確認 '+p.scenes+'場面（改善 '+p.improve+'／良かった '+p.good+'）・練習 '+p.sessions+'回</div><div class="tiny muted">練習後「難しかった」 '+p.reviewHard+'回・試合で「まだ」 '+p.transferNotYet+'回／「少しできた」 '+p.transferPartial+'回／「できた」 '+p.transferDone+'回</div><div class="tiny muted">'+esc(p.sampleNote)+(p.lastMatchDate?'・直近試合 '+esc(p.lastMatchDate):'')+(p.lastTrainingDate?'・直近練習 '+esc(p.lastTrainingDate):'')+'</div><button class="secondary small" onclick="applyCoachFocusPriority(\''+p.focus+'\')">このテーマで練習メニューを作る</button></div></div>').join('')+'<div class="tiny muted">本人確認済みの試合場面と、保護者・選手が入力した練習後の振り返りを組み合わせた優先候補です。回数は能力の点数や自動判定ではありません。記録が少ないテーマは表示されない場合があります。</div></div>':'<div class="empty">練習記録や本人確認済みの試合評価が増えると、次の重点テーマを提案します。</div>';
  html+='<h3 style="margin-top:14px">次の試合で確認すること</h3>';
  html+=checkpoints.length?checkpoints.map(t=>'<div class="listitem"><div class="grow"><b>'+esc(t.focus)+'｜'+esc(t.menu)+'</b><div class="tiny muted">練習日 '+esc(t.date)+' ・ '+(t.minutes||0)+'分</div><div class="tiny">'+esc(t.matchCheckPrompt||'練習テーマを試合で試せたか確認')+'</div><div class="tiny muted">'+(t.later.length?'その後の本人確認場面 '+t.later.length+'件：'+t.later.slice(0,2).map(e=>esc(e.date)+' '+esc(e.assessment)).join('／'):'まだ該当する試合場面の記録なし')+'</div></div></div>').join(''):'<div class="empty">練習を保存すると、次の試合で確認するポイントがここに残ります。</div>';
  html+='<div class="tiny muted">試合場面は陸玖本人として手動確認され、練習テーマと一致したものだけを表示します。自動でプレーを判定する機能ではありません。</div>';
