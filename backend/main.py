@@ -939,7 +939,7 @@ def create_cross_match_highlight(payload: dict = Body(...)):
             list_path = listing.name
             for clip in selected:
                 safe_path = clip["path"].replace("'", "'\\''")
-                listing.write("file '" + safe_path + "'\\n")
+                listing.write("file '" + safe_path + "'\n")
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as output:
             output_path = output.name
         command = ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", list_path,
