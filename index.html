@@ -1134,7 +1134,11 @@ function renderRecentSkillAssessmentTrend(events){
   const latest=row.perMatch.slice(0,3).map(x=>{
    const label=(x.match.date?esc(x.match.date):'日付不明')+'｜'+esc(x.match.title);
    const pct=x.total>=2?Math.round(x.good/x.total*100)+'%':'評価1場面・割合は参考外';
-   return '<div class="tiny muted" style="margin-top:4px">'+label+'：良かった '+x.good+'／改善 '+x.improve+'（'+pct+'）</div>';
+   const sceneLinks=x.match.events.filter(e=>e.actionType===row.type&&['良かった','改善したい'].includes(e.assessment)).slice(0,3).map(e=>{
+    const encoded=encodeURIComponent(String(e.id));
+    return '<button class="secondary small" style="margin:3px 4px 0 0" onclick="openMatchEventInHistory('+Number(e.matchId)+',decodeURIComponent(\''+encoded+'\'))">'+formatMatchTime(e.time)+' '+(e.assessment==='良かった'?'良':'改')+'</button>';
+   }).join('');
+   return '<div class="tiny muted" style="margin-top:4px">'+label+'：良かった '+x.good+'／改善 '+x.improve+'（'+pct+'）</div>'+(sceneLinks?'<div class="tiny">該当場面を見返す：</div>'+sceneLinks:'');
   }).join('');
   const recentTwo=row.perMatch.slice(0,2);
   let comparison='直近比較はまだ判断できません';
@@ -1146,7 +1150,7 @@ function renderRecentSkillAssessmentTrend(events){
   }
   return '<tr><td><b>'+esc(row.type)+'</b><div class="tiny muted">評価 '+row.total+'場面／'+row.perMatch.length+'試合</div>'+latest+'</td><td style="text-align:center">'+row.good+'</td><td style="text-align:center">'+row.improve+'</td><td><div class="tiny">'+comparison+'</div></td></tr>';
  }).join('');
- return '<h3 style="margin-top:14px">プレー別・直近試合の評価推移</h3><div class="tiny muted">陸玖本人として確認済みで、プレー分類と「良かった／改善したい」の両方を入力した場面のみ。直近最大5試合を対象にしています。</div><div style="overflow-x:auto"><table class="table"><thead><tr><th>プレー・直近の内訳</th><th>良かった</th><th>改善</th><th>試合間の参考比較</th></tr></thead><tbody>'+body+'</tbody></table></div><div class="tiny muted" style="margin-top:6px">「良かった」は入力された振り返り評価であり、AIが成功を判定した結果ではありません。割合比較は各試合2評価以上の場合だけ表示します。対戦相手・ポジション・出場時間・撮影条件が異なるため、上達の断定には使わず、映像と一緒に確認してください。</div>';
+ return '<h3 style="margin-top:14px">プレー別・直近試合の評価推移</h3><div class="tiny muted">陸玖本人として確認済みで、プレー分類と「良かった／改善したい」の両方を入力した場面のみ。直近最大5試合を対象にしています。各試合のボタンから、評価した元の動画場面へ移動できます。</div><div style="overflow-x:auto"><table class="table"><thead><tr><th>プレー・直近の内訳</th><th>良かった</th><th>改善</th><th>試合間の参考比較</th></tr></thead><tbody>'+body+'</tbody></table></div><div class="tiny muted" style="margin-top:6px">「良かった」は入力された振り返り評価であり、AIが成功を判定した結果ではありません。割合比較は各試合2評価以上の場合だけ表示します。対戦相手・ポジション・出場時間・撮影条件が異なるため、上達の断定には使わず、映像と一緒に確認してください。</div>';
 }
 function renderIndividualSkillPracticePlan(focus,events){
  const plans={
