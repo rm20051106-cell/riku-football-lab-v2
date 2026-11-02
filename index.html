@@ -622,19 +622,27 @@ function shiftMonth(n){calDate=new Date(calDate.getFullYear(),calDate.getMonth()
 function renderCalendar(){let y=calDate.getFullYear(),m=calDate.getMonth();monthTitle.textContent=`${y}年 ${m+1}月`;let first=new Date(y,m,1).getDay(),days=new Date(y,m+1,0).getDate(),stamps=new Set(state.trainings.map(x=>x.date));let out=['日','月','火','水','木','金','土'].map(x=>`<div class="dayhead">${x}</div>`).join('');for(let i=0;i<first;i++)out+='<div class="day blank"></div>';for(let d=1;d<=days;d++){let dt=`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;out+=`<button class="day ${stamps.has(dt)?'stamped':''} ${dt===today()?'today':''}" onclick="selectCalendarDate('${dt}')" style="color:inherit">${d}${stamps.has(dt)?'<br>⚽':''}</button>`}calendarGrid.innerHTML=out;renderSelectedDate()}
 function selectCalendarDate(dt){selectedDate=dt;renderSelectedDate()}
 function renderSelectedDate(){selectedDateTitle.textContent=selectedDate+' の記録';let a=state.trainings.filter(x=>x.date===selectedDate);selectedDateRecords.innerHTML=a.length?a.map(x=>`<div class="listitem"><div class="grow"><b>${esc(x.menu)}</b><div class="tiny muted">${x.minutes}分・${esc(x.effort)} ${esc(x.note)}</div></div></div>`).join(''):'<div class="empty">この日の練習記録はありません</div>'}
+function getActiveSeasonGoal(){
+ const goals=state.settings?.seasonGoals||{};
+ const entries=Object.entries(goals).filter(([year,g])=>g&&['ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール'].includes(g.focus)&&String(g.note||'').trim());
+ entries.sort((a,b)=>String(b[1].savedAt||'').localeCompare(String(a[1].savedAt||''))||String(b[0]).localeCompare(String(a[0])));
+ return entries.length?{...entries[0][1],year:String(entries[0][0])}:null;
+}
 function getCoachTrainingPlan(){
+ const seasonGoal=getActiveSeasonGoal();
  const priority=getCoachPrioritySummary();
  const top=priority[0]?.score>0?priority[0].focus:'';
  const plans={
- 'ドリブル':{title:'加速ドリブル＋切り返し',minutes:15,category:'突破・ドリブル',note:'最初のタッチで前へ運び、相手の逆を取る。抜いた後の2〜3歩も加速。左右の切り返しを交互に行う。',why:'試合の振り返りでドリブルの改善テーマが多かったため'},
- 'パス':{title:'受ける前の首振り＋パス',minutes:12,category:'受ける動き',note:'受ける前に左右を確認し、前を向ける位置へファーストタッチ。左右両足でパス。',why:'試合の振り返りでパスの改善テーマが多かったため'},
- 'シュート':{title:'シュートの軸足・ミート確認',minutes:12,category:'シュート',note:'近い距離から軸足の位置とボールのミートを確認。強さより正確さを優先。',why:'試合の振り返りでシュートの改善テーマが多かったため'},
- 'ボールを受ける':{title:'首振り→前向きファーストタッチ',minutes:12,category:'受ける動き',note:'パスが来る前に周囲を確認。半身で受けて、前へ運ぶタッチを練習。',why:'試合の振り返りで受ける動きの改善テーマが多かったため'},
- '守備・プレス':{title:'1対1の守備・コース限定',minutes:10,category:'アジリティ',note:'相手に飛び込まず、体の向きで進行方向を限定。無理のない距離で行う。',why:'試合の振り返りで守備の改善テーマが多かったため'},
- 'オフザボール':{title:'パス前の動き出し',minutes:10,category:'受ける動き',note:'相手の背中側や見えにくい角度へ動き、受ける場所を作る。',why:'試合の振り返りでボールを持たない時の改善テーマが多かったため'}
+ 'ドリブル':{focus:'ドリブル',title:'加速ドリブル＋切り返し',minutes:15,category:'突破・ドリブル',note:'最初のタッチで前へ運び、相手の逆を取る。抜いた後の2〜3歩も加速。左右の切り返しを交互に行う。',why:'試合の振り返りでドリブルの改善テーマが多かったため'},
+ 'パス':{focus:'パス',title:'受ける前の首振り＋パス',minutes:12,category:'受ける動き',note:'受ける前に左右を確認し、前を向ける位置へファーストタッチ。左右両足でパス。',why:'試合の振り返りでパスの改善テーマが多かったため'},
+ 'シュート':{focus:'シュート',title:'シュートの軸足・ミート確認',minutes:12,category:'シュート',note:'近い距離から軸足の位置とボールのミートを確認。強さより正確さを優先。',why:'試合の振り返りでシュートの改善テーマが多かったため'},
+ 'ボールを受ける':{focus:'ボールを受ける',title:'首振り→前向きファーストタッチ',minutes:12,category:'受ける動き',note:'パスが来る前に周囲を確認。半身で受けて、前へ運ぶタッチを練習。',why:'試合の振り返りで受ける動きの改善テーマが多かったため'},
+ '守備・プレス':{focus:'守備・プレス',title:'1対1の守備・コース限定',minutes:10,category:'アジリティ',note:'相手に飛び込まず、体の向きで進行方向を限定。無理のない距離で行う。',why:'試合の振り返りで守備の改善テーマが多かったため'},
+ 'オフザボール':{focus:'オフザボール',title:'パス前の動き出し',minutes:10,category:'受ける動き',note:'相手の背中側や見えにくい角度へ動き、受ける場所を作る。',why:'試合の振り返りでボールを持たない時の改善テーマが多かったため'}
  };
- if(top&&plans[top]){const p=priority[0];return {...plans[top],why:'直近の記録から「'+top+'」を優先。本人確認済み試合 '+p.scenes+'場面（改善 '+p.improve+'／良かった '+p.good+'）、直近の練習 '+p.sessions+'回。'+p.sampleNote+'。'};}
- return {title:'加速ドリブル＋切り返し',minutes:15,category:'突破・ドリブル',note:'マーカーを使って左右に切り返し、前へ運ぶタッチから2〜3歩加速。最後に親子1対1で相手を見て突破方向を選ぶ。',why:'試合の改善データがまだ少ないため、今の育成テーマに合わせた基本メニュー'};
+ if(seasonGoal&&plans[seasonGoal.focus]){const p=plans[seasonGoal.focus];return {...p,note:p.note+' 年間目標：'+seasonGoal.note,why:'保存した年間目標（'+seasonGoal.year+'年設定）を優先：'+seasonGoal.note};}
+ if(top&&plans[top]){const p=priority[0];return {...plans[top],focus:top,why:'直近の記録から「'+top+'」を優先。本人確認済み試合 '+p.scenes+'場面（改善 '+p.improve+'／良かった '+p.good+'）、直近の練習 '+p.sessions+'回。'+p.sampleNote+'。'};}
+ return {focus:'ドリブル',title:'加速ドリブル＋切り返し',minutes:15,category:'突破・ドリブル',note:'マーカーを使って左右に切り返し、前へ運ぶタッチから2〜3歩加速。最後に親子1対1で相手を見て突破方向を選ぶ。',why:'試合の改善データがまだ少ないため、今の育成テーマに合わせた基本メニュー'};
 }
 function getTrainingSessionGuide(focus){
  const guides={
@@ -846,7 +854,7 @@ function getWeeklyCoachPlan(){
  const start=new Date(today()+'T00:00:00');start.setDate(start.getDate()+mondayOffset+(weekday>=4||weekday===0?7:0));
  const dateAt=(offset)=>{const d=new Date(start);d.setDate(d.getDate()+offset);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
  const plans=[
-  {day:'月曜',date:dateAt(0),title:base.title,minutes:base.minutes,category:base.category,focus:base.title.includes('パス')?'ボールを受ける':base.title.includes('シュート')?'シュート':base.title.includes('守備')?'守備・プレス':base.title.includes('動き出し')?'オフザボール':base.title.includes('受ける')?'ボールを受ける':'ドリブル',note:base.note,why:'試合の改善テーマを優先'},
+  {day:'月曜',date:dateAt(0),title:base.title,minutes:base.minutes,category:base.category,focus:base.focus||'ドリブル',note:base.note,why:base.why||'年間目標・試合記録を反映'},
   {day:'火曜',date:dateAt(1),title:'加速ドリブル＋親子1対1',minutes:15,category:'突破・ドリブル',focus:'ドリブル',note:'マーカーを使って左右に切り返す。相手の重心を見て逆を取り、抜いた後の2〜3歩を加速。最後は親子1対1を短く行う。',why:'陸玖の突破力を武器として伸ばす'},
   {day:'水曜',date:dateAt(2),title:'首振り＋前向きファーストタッチ',minutes:12,category:'受ける動き',focus:'ボールを受ける',note:'パスが来る前に左右を確認。半身で受けて前へ運ぶ。最後に練習した動きを使うミニゲーム形式で確認。',why:'試合でボールを受ける準備を整える'}
  ];
@@ -1341,12 +1349,15 @@ function renderNextMatchGoalVideoEvidence(){
 }
 function renderNextMatchGoalPanel(){
  const goal=state.settings?.nextMatchGoal||null;
+ const seasonGoal=getActiveSeasonGoal();
+ const suggestedFocus=goal?.focus||seasonGoal?.focus||'ドリブル';
+ const suggestedNote=goal?.note||seasonGoal?.note||'';
  const history=getNextMatchGoalHistory();
  const matches=(state.matchAnalyses||[]).slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
  let html='<h3 style="margin-top:14px">次の試合の目標設定・試合後チェック</h3><div class="card"><div class="tiny muted">試合前に1つだけ意識するテーマを決め、試合後に該当する試合記録と達成度を保存します。AIの自動判定ではなく、本人・保護者の振り返りです。</div>';
  const options=['ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール'];
- html+='<label class="tiny" for="nextMatchGoalFocus">試合で意識するプレー</label><select id="nextMatchGoalFocus" class="input" style="width:100%;margin:4px 0 8px">'+options.map(x=>'<option value="'+x+'" '+(goal?.focus===x?'selected':'')+'>'+x+'</option>').join('')+'</select>';
- html+='<label class="tiny" for="nextMatchGoalNote">具体的な目標（例：受ける前に首を振って前を向く）</label><textarea id="nextMatchGoalNote" class="input" rows="2" style="width:100%;margin:4px 0 8px" placeholder="試合でやってみたいこと">'+esc(goal?.note||'')+'</textarea><button class="primary small" onclick="saveNextMatchGoal()">試合前の目標を保存</button>';
+ html+='<label class="tiny" for="nextMatchGoalFocus">試合で意識するプレー</label><select id="nextMatchGoalFocus" class="input" style="width:100%;margin:4px 0 8px">'+options.map(x=>'<option value="'+x+'" '+(suggestedFocus===x?'selected':'')+'>'+x+'</option>').join('')+'</select>';
+ html+='<label class="tiny" for="nextMatchGoalNote">具体的な目標（例：受ける前に首を振って前を向く）</label><textarea id="nextMatchGoalNote" class="input" rows="2" style="width:100%;margin:4px 0 8px" placeholder="試合でやってみたいこと">'+esc(suggestedNote)+'</textarea><button class="primary small" onclick="saveNextMatchGoal()">試合前の目標を保存</button>'+(seasonGoal&&!goal?'<div class="tiny muted" style="margin-top:6px">年間目標から「'+esc(seasonGoal.focus)+'」を反映しています。試合に合わせて変更して保存できます。</div>':'');
  if(goal){
   html+='<div class="listitem" style="display:block;margin-top:10px"><b>現在の目標：'+esc(goal.focus)+'</b><div class="tiny muted">設定日：'+esc(goal.date||'日付なし')+'</div><div class="tiny">'+esc(goal.note||'具体的な目標は未入力')+'</div>';
   if(goal.result){
@@ -1519,9 +1530,11 @@ function printAnnualGrowthReport(){
  win.document.open();win.document.write('<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+year+'年 陸玖 年間成長レポート</title>'+style+'</head><body><header class="masthead"><div class="brand">RIKU FOOTBALL LAB｜PLAYER DEVELOPMENT</div><h1>'+year+'年 陸玖の年間成長レポート</h1><div class="brand">PLAYER No. 10 / 74　｜　作成日 '+today()+'</div></header>'+host.innerHTML+'<p class="tiny">保存された記録の集計です。本人確認済みの試合場面も、保護者・本人が確認して入力した評価であり、自動判定ではありません。</p><script>window.onload=function(){setTimeout(function(){window.print()},450)};<\/script></body></html>');win.document.close();
 }
 function getMatchdayFocusItems(){
+ const seasonGoal=getActiveSeasonGoal();
  const prompts={'ドリブル':'ボールを前へ運び、相手を抜いた後の2〜3歩も加速する','パス':'受ける前に首を振り、味方と相手の位置を確認する','シュート':'慌てず軸足をボール横へ置き、狙いを決めて蹴る','ボールを受ける':'半身で準備し、前を向けるファーストタッチをする','守備・プレス':'飛び込まず、相手の進むコースを限定する','オフザボール':'パスが出る前に動き出し、受ける場所を作る','その他':'周りを見て、次のプレーを早めに決める'};
  const recent=(state.trainings||[]).slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))).slice(0,6);
  const items=[],seen=new Set();
+ if(seasonGoal){items.push({id:'season-goal-'+seasonGoal.year,title:'年間目標：'+seasonGoal.focus,detail:seasonGoal.note+'｜試合で一度試すことを意識'});seen.add(seasonGoal.focus);}
  for(const t of recent){const focus=t.focus||inferTrainingFocus(t.menu,t.category);if(!seen.has(focus)&&items.length<2){seen.add(focus);items.push({id:'training-'+focus,title:focus+'の練習を試合で試す',detail:t.matchCheckPrompt||prompts[focus]||prompts['その他']});}}
  if(!seen.has('ドリブル'))items.push({id:'strength-dribble',title:'陸玖の武器・加速ドリブル',detail:'ボールを運びながらスピードに乗り、相手を抜いた後も前へ進む'});
  if(items.length<3)items.push({id:'team-play',title:'味方を見てプレーを選ぶ',detail:'無理に一人で行かず、パスと突破を使い分ける'});
