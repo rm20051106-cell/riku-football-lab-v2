@@ -913,26 +913,48 @@ function renderGrowthBars(title,points,unit){
 }
 function getThemeImprovementStats(){
  const groups={};
+ const rateOf=events=>{
+  const assessed=(events||[]).filter(e=>['良かった','改善したい'].includes(e.assessment));
+  return assessed.length?{rate:Math.round(assessed.filter(e=>e.assessment==='良かった').length/assessed.length*100),good:assessed.filter(e=>e.assessment==='良かった').length,needs:assessed.filter(e=>e.assessment==='改善したい').length,total:assessed.length}:null;
+ };
  (state.trainings||[]).filter(t=>t.sourceMatch).forEach(training=>{
   const focus=training.sourceMatch.focus||training.focus||inferTrainingFocus(training.menu,training.category);
-  const g=groups[focus]||(groups[focus]={theme:focus,chains:0,improved:0,needsWork:0,pending:0,practiceDone:0,practiceTotal:0,practiceSessions:0});
+  const g=groups[focus]||(groups[focus]={theme:focus,chains:0,improved:0,needsWork:0,pending:0,practiceDone:0,practiceTotal:0,practiceSessions:0,preGood:0,preNeeds:0,preCount:0,postGood:0,postNeeds:0,postCount:0,paired:0,deltaTotal:0});
   g.chains++;
   const steps=Array.isArray(training.steps)&&training.steps.length?training.steps:getTrainingSteps(focus);
   g.practiceDone+=(training.stepsDone||[]).length;
   g.practiceTotal+=steps.length;
   if(steps.length)g.practiceSessions++;
   const follow=getImprovementFollowup(training);
-  if(follow?.status==='改善の兆しあり')g.improved++;
-  else if(follow?.status==='まだ改善課題あり')g.needsWork++;
+  if(follow?.status==='改善の兆しあり'||follow?.status==='改善傾向あり')g.improved++;
+  else if(follow?.status==='まだ改善課題あり'||follow?.status==='課題継続・練習再調整')g.needsWork++;
   else g.pending++;
+  const comparison=getTrainingDecisionComparison(training);
+  const pre=rateOf(comparison?.before?.events),post=rateOf(comparison?.after?.events);
+  if(pre){g.preGood+=pre.good;g.preNeeds+=pre.needs;g.preCount+=pre.total;}
+  if(post){g.postGood+=post.good;g.postNeeds+=post.needs;g.postCount+=post.total;}
+  if(pre&&post){g.paired++;g.deltaTotal+=post.rate-pre.rate;}
  });
- return Object.values(groups).map(g=>({...g,assessed:g.improved+g.needsWork,improvementRate:g.improved+g.needsWork?Math.round(g.improved/(g.improved+g.needsWork)*100):null,practiceRate:g.practiceTotal?Math.round(g.practiceDone/g.practiceTotal*100):null})).sort((a,b)=>b.chains-a.chains||a.theme.localeCompare(b.theme,'ja'));
+ return Object.values(groups).map(g=>({...g,
+  assessed:g.improved+g.needsWork,
+  improvementRate:g.postCount?Math.round(g.postGood/g.postCount*100):null,
+  preRate:g.preCount?Math.round(g.preGood/g.preCount*100):null,
+  postRate:g.postCount?Math.round(g.postGood/g.postCount*100):null,
+  averageDelta:g.paired?Math.round(g.deltaTotal/g.paired):null,
+  practiceRate:g.practiceTotal?Math.round(g.practiceDone/g.practiceTotal*100):null
+ })).sort((a,b)=>b.chains-a.chains||a.theme.localeCompare(b.theme,'ja'));
 }
 function renderThemeImprovementStats(){
  const host=document.getElementById('growthImprovementSummary');if(!host)return;
  const rows=getThemeImprovementStats();
  if(!rows.length){host.innerHTML='<div class="empty">まだ試合から作成した練習記録がありません。試合場面の「このメニューで練習を作成」から始めると、テーマ別の改善率を集計できます。</div>';return;}
- host.innerHTML=rows.map(g=>'<div class="listitem" style="display:block"><b>'+esc(g.theme)+'</b><div class="tiny muted">改善課題からの練習 '+g.chains+'件｜次の試合：改善 '+g.improved+'・課題継続 '+g.needsWork+'・評価待ち '+g.pending+'</div><div class="tiny" style="margin-top:6px">試合での改善率：<b>'+(g.improvementRate===null?'評価データ待ち':g.improvementRate+'%')+'</b>'+(g.assessed?'（'+g.improved+'/'+g.assessed+'件）':'')+'</div><div style="height:8px;background:var(--line,#ddd);border-radius:8px;overflow:hidden;margin:4px 0 8px"><div style="height:100%;width:'+(g.improvementRate??0)+'%;background:var(--accent,#7cba43);border-radius:8px"></div></div><div class="tiny">練習チェック達成率：<b>'+(g.practiceRate===null?'未記録':g.practiceRate+'%')+'</b>（'+g.practiceDone+'/'+g.practiceTotal+'項目）</div><div class="tiny muted">練習 '+g.practiceSessions+'回分のチェックを集計。次の試合で本人確認・評価された同じテーマの最初の場面を基準にしています。</div></div>').join('');
+ const chartRows=rows.filter(g=>g.postRate!==null).map(g=>({label:g.theme,value:g.postRate}));
+ const chart=chartRows.length?renderGrowthBars('テーマ別｜練習後の試合評価率',chartRows,'%'):'<div class="tiny muted">練習後の評価がそろうと、テーマ別グラフを表示します。</div>';
+ host.innerHTML=chart+rows.map(g=>{
+  const delta=g.averageDelta===null?'比較データ待ち':(g.averageDelta>0?'+':'')+g.averageDelta+'pt';
+  const beforeAfter=g.preRate===null||g.postRate===null?'練習前後の評価データ待ち':'練習前 '+g.preRate+'% → 練習後 '+g.postRate+'%（平均変化 '+delta+'／比較 '+g.paired+'件）';
+  return '<div class="listitem" style="display:block"><b>'+esc(g.theme)+'</b><div class="tiny muted">課題からの練習 '+g.chains+'件｜改善傾向 '+g.improved+'・課題継続 '+g.needsWork+'・評価待ち '+g.pending+'</div><div class="tiny" style="margin-top:6px">練習後の試合評価率：<b>'+(g.postRate===null?'評価データ待ち':g.postRate+'%')+'</b>'+(g.postCount?'（良かった '+g.postGood+'/'+g.postCount+'場面）':'')+'</div><div class="tiny">練習前後の比較：'+beforeAfter+'</div><div class="tiny">練習チェック達成率：<b>'+(g.practiceRate===null?'未記録':g.practiceRate+'%')+'</b>（'+g.practiceDone+'/'+g.practiceTotal+'項目）</div><div class="tiny muted">前後比較は同じテーマの本人確認済み試合場面を使用。練習の効果を断定するものではなく、評価件数が少ない場合は参考値です。</div></div>';
+ }).join('');
 }
 function getMonthlyGrowthReport(monthKey){
  const month=String(monthKey||today().slice(0,7)),parts=month.split('-'),yy=Number(parts[0]),mm=Number(parts[1]);
