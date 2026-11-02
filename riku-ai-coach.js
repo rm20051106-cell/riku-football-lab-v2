@@ -15,10 +15,12 @@ function data(){if(typeof state==='undefined')return null;state.rikuCoachReviews
 function dateNow(){return typeof today==='function'?today():new Date().toISOString().slice(0,10);}
 function valid(v){return v!=null&&String(v).trim()!==''&&String(v)!==UNKNOWN&&!String(v).includes('不明')&&!String(v).includes('未確認')&&!String(v).includes('判定できない');}
 function verifiedScenes(s){const out=[];(s.matchAnalyses||[]).forEach(m=>(m.candidateEvents||[]).forEach(e=>{if(e.reviewLabel==='陸玖'&&e.tacticalReview&&e.tacticalReview.reviewedAt&&e.tacticalReview.fields)out.push({match:m,event:e,fields:e.tacticalReview.fields,dribble:e.tacticalReview.dribbleBreakthrough?.fields||null});}));return out;}
-function setupKey(x){const q=x.setup||x;return [q.kind,q.foot,q.cameraAngle,q.distance,q.framing,q.shotType].join('|');}
-function sameSetupRows(rows,latest){const k=setupKey(latest);return rows.filter(x=>setupKey(x)===k);}
+function setupKey(x){const q=x.setup||x;return JSON.stringify(q,Object.keys(q||{}).sort());}
+function sameSetupRows(rows,latest){if(!latest||!latest.setup)return [];const k=setupKey(latest);return rows.filter(x=>x.setup&&setupKey(x)===k);}
 function makeEvidence(s){
  const scenes=verifiedScenes(s),out={};
+ const dribbleGroups={};
+ scenes.forEach(x=>{if(!x.dribble||!valid(x.dribble.attempt)||x.dribble.attempt==='1対1の突破場面ではない')return;const c=x.event.tacticalReview?.context||{};const key=[c.zone,c.pressure,c.defense,c.space,c.scoreState].join('|');if(key.replace(/\\|/g,'').trim())dribbleGroups[key]=(dribbleGroups[key]||0)+1;});
  function bucket(id){return out[id]||(out[id]={count:0,issues:{},strengths:{},sources:[],latest:''});}
  function add(id,value,source,date,kind){
   if(!valid(value))return;const b=bucket(id);b.count++;b.latest=date>b.latest?date:b.latest;
@@ -30,14 +32,18 @@ function makeEvidence(s){
  scenes.forEach(x=>{
   const f=x.fields||{},d=x.dribble||{};
   ['scan','orientation','position','support','movement','decision','outcome'].forEach(k=>{const v=f[k];const c=classify(v);add('decision',v,'試合 '+(x.match.date||'日付不明')+'｜'+k,x.match.date||'',c);});
-  if(d.attempt&&d.attempt!=='1対1の突破場面ではない')Object.keys(d).forEach(k=>{const v=d[k];const c=classify(v);add('dribble',v,'突破場面 '+(x.match.date||'日付不明')+'｜'+k,x.match.date||'',c);});
+  const context=x.event.tacticalReview?.context||{},contextKey=[context.zone,context.pressure,context.defense,context.space,context.scoreState].join('|');
+  if(d.attempt&&d.attempt!=='1対1の突破場面ではない'&&dribbleGroups[contextKey]>=3)Object.keys(d).forEach(k=>{const v=d[k];const c=classify(v);add('dribble',v,'同条件の突破場面 '+(x.match.date||'日付不明')+'｜'+k,x.match.date||'',c);});
  });
- const shot=s.shootingSpecialistRecords||[];
- shot.forEach(r=>{const b=bucket('shooting');b.count++;b.latest=r.date>b.latest?r.date:b.latest;const f=r.fields||{};Object.entries(f).forEach(([k,v])=>{const c=classify(v);if(c==='bad')b.issues[v]=(b.issues[v]||0)+1;if(c==='good')b.strengths[v]=(b.strengths[v]||0)+1;});if(b.sources.length<5)b.sources.push('フォーム '+(r.date||'日付不明')+'｜'+(r.kind||'キック'));});
- const ft=s.firstTouchRecords||[];
- ft.forEach(r=>{const b=bucket('firstTouch');b.count++;b.latest=r.date>b.latest?r.date:b.latest;Object.entries(r.fields||{}).forEach(([k,v])=>{const c=classify(v);if(c==='bad')b.issues[v]=(b.issues[v]||0)+1;if(c==='good')b.strengths[v]=(b.strengths[v]||0)+1;});if(b.sources.length<5)b.sources.push('ファーストタッチ '+(r.date||'日付不明'));});
- const tr=s.transitionAnalysisRecords||[];
- tr.forEach(r=>{const b=bucket('transition');b.count++;b.latest=r.date>b.latest?r.date:b.latest;Object.entries(r.fields||{}).forEach(([k,v])=>{const c=classify(v);if(c==='bad')b.issues[v]=(b.issues[v]||0)+1;if(c==='good')b.strengths[v]=(b.strengths[v]||0)+1;});if(b.sources.length<5)b.sources.push('切り替え '+(r.date||'日付不明'));});
+ const shotAll=(s.shootingSpecialistRecords||[]).slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+ const shot=shotAll.length?sameSetupRows(shotAll,shotAll[0]):[];
+ shot.forEach(r=>{const b=bucket('shooting');b.count++;b.latest=r.date>b.latest?r.date:b.latest;const f=r.fields||{};Object.entries(f).forEach(([k,v])=>{const c=classify(v);if(c==='bad')b.issues[v]=(b.issues[v]||0)+1;if(c==='good')b.strengths[v]=(b.strengths[v]||0)+1;});if(b.sources.length<5)b.sources.push('同条件フォーム '+(r.date||'日付不明')+'｜'+(r.kind||'キック'));});
+ const ftAll=(s.firstTouchRecords||[]).slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+ const ft=ftAll.length?sameSetupRows(ftAll,ftAll[0]):[];
+ ft.forEach(r=>{const b=bucket('firstTouch');b.count++;b.latest=r.date>b.latest?r.date:b.latest;Object.entries(r.fields||{}).forEach(([k,v])=>{const c=classify(v);if(c==='bad')b.issues[v]=(b.issues[v]||0)+1;if(c==='good')b.strengths[v]=(b.strengths[v]||0)+1;});if(b.sources.length<5)b.sources.push('同条件ファーストタッチ '+(r.date||'日付不明'));});
+ const trAll=(s.transitionAnalysisRecords||[]).slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+ const tr=trAll.length?sameSetupRows(trAll,trAll[0]):[];
+ tr.forEach(r=>{const b=bucket('transition');b.count++;b.latest=r.date>b.latest?r.date:b.latest;Object.entries(r.fields||{}).forEach(([k,v])=>{const c=classify(v);if(c==='bad')b.issues[v]=(b.issues[v]||0)+1;if(c==='good')b.strengths[v]=(b.strengths[v]||0)+1;});if(b.sources.length<5)b.sources.push('同条件切り替え '+(r.date||'日付不明'));});
  const measures=(s.measures||[]).filter(x=>['30m走','アジリティ','立ち幅跳び','100m走'].includes(x.type)&&Number.isFinite(Number(x.value)));
  const m=bucket('physical');m.count=measures.length;m.latest=measures.map(x=>x.date||'').sort().slice(-1)[0]||'';
  ['30m走','アジリティ','立ち幅跳び','100m走'].forEach(type=>{const rows=measures.filter(x=>x.type===type).sort((a,b)=>String(b.date).localeCompare(String(a.date)));if(rows.length>=2){const a=rows[0],b=rows[1],same=a.unit===b.unit&&JSON.stringify(a.physicalConditions||null)===JSON.stringify(b.physicalConditions||null);if(same){const d=Number(a.value)-Number(b.value),better=type==='立ち幅跳び'?d>0:d<0;if(d!==0)(better?m.strengths:m.issues)[type+'：'+(better?'改善方向の変化':'前回と異なる値')]=1;}}});
