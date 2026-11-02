@@ -86,7 +86,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         page.locator('.nav button[data-view="video"]').click()
         self.assertTrue(page.locator("#video").evaluate("(el) => el.classList.contains('active')"))
         self.assertEqual(page.locator("#videoMeta").get_attribute("aria-live"), "polite")
-        self.assertEqual(page.get_by_label("動画タイトル").count(), 1)
+        self.assertEqual(page.locator('label[for="videoTitle"]').count(), 1)
         titles = page.evaluate("""() => {
             state.matchAnalyses = [{
                 id: 8801, date: today(), title: 'E2E手動確認試合',
@@ -167,7 +167,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             """async ({clipId, formId}) => {
                 const clip = await getClipVideo(clipId);
                 const form = await getClipVideo('form-' + formId);
-                return !!clip && !!form && state.clips[0].hasVideo && state.forms[0].hasVideo;
+                return !!clip?.blob && clip.blob instanceof Blob && clip.blob.size > 0 && !!form?.blob && form.blob instanceof Blob && form.blob.size > 0 && state.clips[0].hasVideo && state.forms[0].hasVideo;
             }""",
             arg={"clipId": clip_id, "formId": form_id},
             timeout=10000,
@@ -205,19 +205,26 @@ class RikuBrowserE2ETests(unittest.TestCase):
         page = self.page
         page.locator('.nav button[data-view="video"]').click()
         page.locator("#videoTitle").fill("記録保存失敗テスト")
-        page.evaluate("""() => {
+        failed = page.evaluate("""() => {
             const original = Storage.prototype.setItem;
-            Storage.prototype.setItem = function(key, value) {
-                if (key === 'rikuFootballLab_v3') {
-                    throw new DOMException('simulated localStorage quota', 'QuotaExceededError');
+            Object.defineProperty(Storage.prototype, 'setItem', {
+                configurable: true,
+                writable: true,
+                value: function(key, value) {
+                    if (key === 'rikuFootballLab_v3') {
+                        throw new DOMException('simulated localStorage quota', 'QuotaExceededError');
+                    }
+                    return original.call(this, key, value);
                 }
-                return original.call(this, key, value);
-            };
+            });
+            return persist();
         }""")
+        self.assertFalse(failed)
+        self.assertFalse(page.locator("#recordSaveNotice").evaluate("(el) => el.classList.contains('hidden')"))
         page.once("dialog", lambda dialog: dialog.accept())
         page.get_by_role("button", name="プレー分析を保存").click()
         self.assertEqual(page.evaluate("state.clips.length"), 0)
-        self.assertTrue(page.locator("#recordSaveNotice").is_visible())
+        self.assertFalse(page.locator("#recordSaveNotice").evaluate("(el) => el.classList.contains('hidden')"))
 
     def test_corrupt_json_backup_is_rejected_without_replacing_current_data(self):
         page = self.page
@@ -257,8 +264,9 @@ class RikuBrowserE2ETests(unittest.TestCase):
         }""")
         bad_video = self.temp_path / "riku-video__restore-check-1__sample.webm"
         bad_video.write_bytes(self.video_path.read_bytes())
-        self.accept_dialogs()
+        page.once("dialog", lambda dialog: dialog.accept())
         page.locator("#videoImportFiles").set_input_files(str(bad_video))
+        page.wait_for_timeout(300)
         page.wait_for_function(
             "getClipVideo('restore-check-1').then(x => x === null)",
             timeout=10000,
