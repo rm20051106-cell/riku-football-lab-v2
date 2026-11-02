@@ -96,7 +96,8 @@ function render(){
   const linkedTrainingRecordId=document.getElementById('tacticalLinkedTraining')?.value||'';
   const linkedTraining=practiceRows.find(x=>String(x.id)===String(linkedTrainingRecordId));
   const reviewDate=typeof today==='function'?today():new Date().toISOString().slice(0,10);
-  if(linkedTraining&&String(linkedTraining.date)>String(reviewDate)){alert('試合場面より後の日付の練習記録は紐づけできません。');return;}
+  const matchDate=String(current.match.date||reviewDate).slice(0,10);
+  if(linkedTraining&&String(linkedTraining.date)>matchDate){alert('試合日より後の日付の練習記録は紐づけできません。');return;}
   current.ev.tacticalReview={version:3,reviewedAt:reviewDate,fields:values,context:{...previousContext,opponentTeam,linkedTrainingRecordId:linkedTraining?linkedTraining.id:''},note:document.getElementById('tacticalNote').value.trim().slice(0,600)};
   if(typeof persist==='function')persist();
   render();
@@ -639,7 +640,8 @@ function getTacticalPracticeTransferGroups(){
   const id=review.context?.linkedTrainingRecordId;
   if(!id)return;
   const training=trainingById.get(String(id));
-  if(!training||String(review.reviewedAt)<String(training.date||''))return;
+  const matchDate=String(match.date||review.reviewedAt||'').slice(0,10);
+  if(!training||!matchDate||matchDate<String(training.date||''))return;
   const f=review.fields;
   const context={pressure:training.pressure,zone:training.zone,scoreState:training.scoreState};
   if(!['強いプレスなし','前からプレス','横から寄せ','後ろから追われる','複数人に囲まれる'].includes(context.pressure)||
