@@ -775,8 +775,8 @@ function renderGrowthDashboard(){
  const trainings=state.trainings||[],matches=state.matchAnalyses||[],measures=state.measures||[];
  const trainingPoints=months.map(m=>({label:m.slice(5)+'月',value:trainings.filter(t=>String(t.date||'').slice(0,7)===m).length}));
  growthTrainingChart.innerHTML=renderGrowthBars('月ごとの練習記録数',trainingPoints,'回');
- const matchPoints=months.map(m=>{const events=matches.filter(x=>String(x.date||'').slice(0,7)===m).flatMap(x=>(x.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖'&&['良かった','改善したい'].includes(e.assessment)));return {label:m.slice(5)+'月',value:events.length?Math.round(events.filter(e=>e.assessment==='良かった').length/events.length*100):null,count:events.length};}).filter(p=>p.value!==null);
- growthMatchChart.innerHTML=matchPoints.length?renderGrowthLineChart('良かった評価の割合（%）',matchPoints.map(p=>({date:p.label+'・'+p.count+'場面',value:p.value})), '%',{decimals:0,empty:'評価済みの試合場面がまだありません。'}):'<div class="empty">評価済みの試合場面がまだありません。陸玖本人として確認し、良かった／改善したいを入力すると推移が表示されます。</div>';
+ const matchPoints=months.map(m=>{const events=matches.filter(x=>String(x.date||'').slice(0,7)===m).flatMap(x=>(x.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖'&&['良かった','改善したい'].includes(e.assessment)));return {month:m,label:m.slice(5)+'月',value:events.length?Math.round(events.filter(e=>e.assessment==='良かった').length/events.length*100):null,count:events.length};}).filter(p=>p.value!==null);
+ growthMatchChart.innerHTML=matchPoints.length?renderGrowthLineChart('良かった評価の割合（%）',matchPoints.map(p=>({date:p.month,value:p.value})), '%',{decimals:0,empty:'評価済みの試合場面がまだありません。'}):'<div class="empty">評価済みの試合場面がまだありません。陸玖本人として確認し、良かった／改善したいを入力すると推移が表示されます。</div>';
  const types=[{type:'30m走',unit:'秒',decimals:2},{type:'アジリティ',unit:'秒',decimals:2},{type:'立ち幅跳び',unit:'cm',decimals:1}];
  growthMeasureCharts.innerHTML=types.map(item=>renderGrowthLineChart(item.type,measures.filter(m=>m.type===item.type).map(m=>({date:m.date,value:Number(m.value)})),item.unit,{decimals:item.decimals})).join('');
 }
