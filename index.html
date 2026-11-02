@@ -494,7 +494,7 @@ function updateMatchPositioning(matchId,eventId,field,value){
  const allowed=['scanBeforeReceive','positioning','supportAngle','spaceMovement','decisionOptions'];
  if(!match||!ev||ev.reviewLabel!=='陸玖'){alert('陸玖本人として確認済みの場面だけを評価できます。');return}
  if(!allowed.includes(field)||!['良かった','改善したい','映像で確認できない'].includes(value))return;
- ev.positioningReview=ev.positioningReview||{};ev.positioningReview[field]=value;ev.positioningReviewedAt=today();persist();renderMatchLibrary();
+ ev.positioningReview=ev.positioningReview||{};ev.positioningReview[field]=value;ev.positioningReviewedAt=today();localStorage.setItem(KEY,JSON.stringify(state));
 }
 function getMatchPositioningAnalysis(){
  const fields=[
