@@ -1003,7 +1003,7 @@ function getPositionDecisionTrainingPlan(){
  };
  const issue=role.qRate!==null&&role.scanRate!==null?(role.qRate<=role.scanRate?'判断の選択肢を増やす':'周囲の確認を増やす'):role.qRate===null?'周囲の確認と選択肢を同時に練習':'記録された課題を反復する';
  const title=role.role+'の判断力｜'+(focus==='ボールを受ける'?'首振り・選択':focus+'の状況判断');
- const note='【試合データからの重点】'+role.role+'：'+issue+'。確認済み '+role.total+'場面、判断評価 '+role.qualityCount+'件、周囲確認 '+role.scanCount+'件。\\n【ポジション別の判断】'+roleTips[role.role]+'\\n【今回の練習】'+(focusTips[focus]||focusTips['オフザボール'])+'\\n【進め方】①ゆっくり確認 3分 ②親子で状況を変える 6分 ③判断を声に出して実戦形式 4分。正解を急がず、周囲を見て選べたかを評価する。\\n【成功基準】プレー前に周囲を確認し、状況に合う選択を自分で決められたら成功。';
+ const note='【試合データからの重点】'+role.role+'：'+issue+'。確認済み '+role.total+'場面、判断評価 '+role.qualityCount+'件、周囲確認 '+role.scanCount+'件。\n【ポジション別の判断】'+roleTips[role.role]+'\\n【今回の練習】'+(focusTips[focus]||focusTips['オフザボール'])+'\\n【進め方】①ゆっくり確認 3分 ②親子で状況を変える 6分 ③判断を声に出して実戦形式 4分。正解を急がず、周囲を見て選べたかを評価する。\\n【成功基準】プレー前に周囲を確認し、状況に合う選択を自分で決められたら成功。';
  return {role:role.role,focus,title,minutes:13,category:'判断力・ポジション別',note,why:role.role+'の本人確認済み試合場面を分析して作成'};
 }
 function applyPositionDecisionTraining(){
