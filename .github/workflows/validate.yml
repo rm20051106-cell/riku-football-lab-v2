@@ -52,7 +52,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ffmpeg
           python -m pip install --disable-pip-version-check playwright
-          python -m playwright install --with-deps chromium
+          python -m playwright install --with-deps chromium webkit
 
       - name: Run browser and frontend regression tests
         run: python -m unittest discover -s tests -v

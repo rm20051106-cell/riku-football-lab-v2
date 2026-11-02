@@ -312,3 +312,38 @@ class RikuBrowserE2ETests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+    def test_webkit_safari_compatibility_smoke(self):
+        browser = self.playwright.webkit.launch(headless=True)
+        try:
+            context = browser.new_context(viewport={"width": 390, "height": 844})
+            page = context.new_page()
+            page.goto(self.base_url, wait_until="load")
+            page.wait_for_function("typeof openVideoDB === 'function'")
+            result = page.evaluate("""async () => {
+                const db = await openVideoDB();
+                try {
+                    const blob = new Blob([new Uint8Array([7, 8, 9])], {type: 'video/mp4'});
+                    await new Promise((resolve, reject) => {
+                        const tx = db.transaction('videos', 'readwrite');
+                        tx.objectStore('videos').put({blob, name: 'webkit-smoke.mp4'}, 'webkit-smoke');
+                        tx.oncomplete = resolve; tx.onerror = () => reject(tx.error);
+                    });
+                    const saved = await getClipVideo('webkit-smoke');
+                    return {
+                        blobSupported: saved?.blob instanceof Blob,
+                        bytes: saved?.blob?.size || 0,
+                        quotaApi: !!navigator.storage?.estimate,
+                        progress: !!document.getElementById('videoSaveProgressBar'),
+                        importProgress: !!document.getElementById('videoImportProgressBar')
+                    };
+                } finally {
+                    db.close();
+                }
+            }""")
+            self.assertTrue(result["blobSupported"], result)
+            self.assertEqual(result["bytes"], 3, result)
+            self.assertTrue(result["progress"] and result["importProgress"], result)
+            context.close()
+        finally:
+            browser.close()
