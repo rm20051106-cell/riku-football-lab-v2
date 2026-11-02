@@ -750,7 +750,7 @@ function renderTacticalTransferGrowthHistory(){
  const videoView=document.getElementById('video');if(!videoView)return;
  let host=document.getElementById('tacticalTransferGrowthHistory');
  if(!host){host=document.createElement('section');host.id='tacticalTransferGrowthHistory';host.className='card';}
- const history=syncTacticalTransferHistory();
+ const history=syncTacticalTransferHistory().filter(x=>['トップ','サイド','中盤','その他'].includes(x.role));
  const latestByContext={};
  history.forEach(x=>{if(!latestByContext[x.contextKey]||x.date>latestByContext[x.contextKey].date)latestByContext[x.contextKey]=x;});
  const current=Object.values(latestByContext).sort((a,b)=>a.date.localeCompare(b.date));
@@ -803,7 +803,7 @@ function applyTacticalTransferGoalsToPlan(plans){
 
 function getTacticalTransferTrendSummary(history){
  const contexts={};
- (history||[]).forEach(row=>{const list=contexts[row.contextKey]||(contexts[row.contextKey]=[]);list.push(row);});
+ (history||[]).filter(row=>['トップ','サイド','中盤','その他'].includes(row.role)).forEach(row=>{const list=contexts[row.contextKey]||(contexts[row.contextKey]=[]);list.push(row);});
  return Object.keys(contexts).sort().map(key=>{
   const rows=contexts[key].slice().sort((a,b)=>a.date.localeCompare(b.date));
   const actions=['scan','movement','support','position'].map(actionKey=>{
