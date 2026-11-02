@@ -49,6 +49,7 @@ button,.button{border:0;border-radius:12px;padding:12px 14px;font-weight:800;fon
  <div class="card"><h2>陸玖専用・月間成長レポート</h2><p class="tiny muted">保存された練習・試合評価・測定記録から、その月の取り組みと次の重点を自動でまとめます。</p><label class="label" for="growthReportMonth">対象月</label><select id="growthReportMonth" onchange="renderMonthlyGrowthReport()"></select><div id="monthlyGrowthReport"></div></div>
  <div class="card"><h2>練習の積み重ね</h2><div id="growthTrainingChart"></div><div class="tiny muted">月ごとの練習記録数です。回数の増加は技術向上そのものを意味しません。</div></div>
  <div class="card"><h2>試合での評価推移</h2><div id="growthMatchChart"></div><div class="tiny muted">本人確認済みの陸玖の試合場面について、「良かった」の割合を月ごとに表示。評価件数も併記します。</div></div>
+ <div class="card"><h2>判断力の成長グラフ</h2><div id="growthDecisionChart"></div><div class="tiny muted">月ごとの「判断の質」と「周囲の確認」を可視化します。本人確認済みの陸玖の場面だけを集計し、未評価は割合に含めません。</div></div>
  <div class="card"><h2>試合→練習→次の試合｜テーマ別の改善率</h2><div id="growthImprovementSummary"></div><div class="tiny muted">改善率＝次の試合で「良かった」と確認できた件数 ÷ 評価済み件数。練習達成率＝練習チェック完了数 ÷ 全チェック数。評価待ちは分母に含めません。</div></div>
  <div class="card"><h2>身体測定の推移</h2><p class="tiny muted">種目ごとに別々のグラフで表示します。30m走・アジリティは短いほど、立ち幅跳びは長いほど良い方向です。</p><div id="growthMeasureCharts"></div></div>
  <div class="card"><h2>記録の見方</h2><div class="tiny muted">実際に保存されたデータだけを描画します。測定条件・路面・靴・計測方法が異なる場合、数値の差をそのまま成長と判断しないでください。記録が1件だけの項目は点のみ表示します。</div></div>
@@ -922,8 +923,31 @@ function renderMonthlyGrowthReport(){
  const measures=r.measureSummary.length?r.measureSummary.map(m=>'<div class="tiny">・'+esc(m.type)+'：'+esc(m.first.value)+' → <b>'+esc(m.last.value)+' '+esc(m.unit)+'</b>'+(m.delta===null?'（月内1件）':'（月内差 '+(m.delta>0?'+':'')+m.delta.toFixed(2)+' '+esc(m.unit)+'）')+'｜'+m.count+'件</div>').join(''):'<div class="tiny muted">この月の身体測定記録はありません。</div>';
  host.innerHTML='<div class="grid two" style="margin-top:10px">'+metric('練習記録',r.trainings+'回','対象月の保存件数')+metric('試合場面の評価',r.assessed+'件',r.assessed?'良かった '+r.good+'／改善したい '+r.needs:'評価入力待ち')+metric('良かった評価',r.goodRate===null?'—':r.goodRate+'%','陸玖本人として確認・評価した場面のみ')+metric('練習チェック達成率',r.stepRate===null?'—':r.stepRate+'%',r.stepsDone+'/'+r.stepsTotal+'項目')+'</div><div class="listitem" style="margin-top:8px"><b>今月の取り組みテーマ</b><div class="tiny">'+(r.topFocus?esc(r.topFocus[0])+'（'+r.topFocus[1]+'回）':'練習テーマの記録なし')+'</div><div class="tiny muted">良かった場面の最多テーマ：'+(r.best?esc(r.best[0])+'（'+r.best[1]+'件）':'評価データなし')+'</div></div><div class="listitem"><b>試合→練習→次の試合</b><div class="tiny">連携練習 '+r.linked+'件｜改善の兆し '+r.linkedImproved+'・課題継続 '+r.linkedNeeds+'・評価待ち '+r.linkedPending+'</div></div><div class="listitem"><b>身体測定</b>'+measures+'</div><div class="note" style="margin-top:10px"><b>来月のおすすめ重点：'+esc(r.priority)+'</b><div class="tiny">'+esc(r.next)+'</div></div><div class="tiny muted" style="margin-top:8px">保存済み記録だけを集計します。記録がない項目はゼロ成長と判断せず「データなし」として扱います。タイムの計測条件が異なる場合は単純比較しません。</div>';
 }
+function getDecisionGrowthSeries(){
+ const byMonth={};
+ (state.matchAnalyses||[]).forEach(match=>{
+  const month=String(match.date||'').slice(0,7);if(!/^\\d{4}-\\d{2}$/.test(month))return;
+  (match.candidateEvents||[]).filter(ev=>ev.reviewLabel==='陸玖').forEach(ev=>{
+   const q=ev.decisionQuality||'未評価',scan=ev.decisionScan||'未確認';
+   const row=byMonth[month]||(byMonth[month]={month,total:0,qualityCount:0,good:0,scanCount:0,scanned:0,quality:{},scan:{}});
+   row.total++;
+   if(q!=='未評価'&&q!=='判断保留'){row.qualityCount++;row.quality[q]=(row.quality[q]||0)+1;if(q==='最適な選択'||q==='良い選択')row.good++;}
+   if(scan!=='未確認'&&scan!=='映像では不明'){row.scanCount++;row.scan[scan]=(row.scan[scan]||0)+1;if(scan==='周囲を確認できた')row.scanned++;}
+  });
+ });
+ return Object.values(byMonth).sort((a,b)=>a.month.localeCompare(b.month)).map(r=>({...r,goodRate:r.qualityCount?Math.round(r.good/r.qualityCount*100):null,scanRate:r.scanCount?Math.round(r.scanned/r.scanCount*100):null}));
+}
+function renderDecisionGrowthChart(){
+ const host=document.getElementById('growthDecisionChart');if(!host)return;
+ const rows=getDecisionGrowthSeries(),qualityRows=rows.filter(r=>r.goodRate!==null),scanRows=rows.filter(r=>r.scanRate!==null);
+ if(!rows.length||(!qualityRows.length&&!scanRows.length)){host.innerHTML='<div class="empty">判断力の評価記録がまだありません。試合動画の場面で陸玖本人として確認し、「判断の質」「周囲の確認」を入力すると、月ごとの推移が表示されます。</div>';return;}
+ const q=qualityRows.map(r=>({date:r.month+'-01',value:r.goodRate})),sc=scanRows.map(r=>({date:r.month+'-01',value:r.scanRate}));
+ const totals=rows.reduce((a,r)=>({events:a.events+r.total,assessed:a.assessed+r.qualityCount,good:a.good+r.good,scan:a.scan+r.scanCount,scanned:a.scanned+r.scanned}),{events:0,assessed:0,good:0,scan:0,scanned:0});
+ host.innerHTML='<div class="listitem"><b>判断の質：良い選択率</b><div class="tiny muted">「最適な選択」「良い選択」÷ 判断評価済み場面</div>'+renderGrowthLineChart('良い判断の割合',q,'％',{decimals:0,empty:'判断の質の評価がまだありません。'})+'</div><div class="listitem"><b>周囲の確認：確認できた割合</b><div class="tiny muted">「周囲を確認できた」÷ 周囲確認の評価済み場面</div>'+renderGrowthLineChart('周囲を確認できた割合',sc,'％',{decimals:0,empty:'周囲の確認の評価がまだありません。'})+'</div><div class="tiny muted">陸玖本人として確認した場面 '+totals.events+'件｜判断評価 '+totals.assessed+'件（良い選択 '+totals.good+'件）｜周囲確認 '+totals.scan+'件（確認できた '+totals.scanned+'件）。未評価・判断保留・映像では不明は割合の分母から除外します。</div>';
+}
 function renderGrowthDashboard(){
  renderMonthlyGrowthReport();
+ renderDecisionGrowthChart();
  const months=[];const now=new Date();for(let offset=5;offset>=0;offset--){const d=new Date(now.getFullYear(),now.getMonth()-offset,1);months.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));}
  const trainings=state.trainings||[],matches=state.matchAnalyses||[],measures=state.measures||[];
  const trainingPoints=months.map(m=>({label:m.slice(5)+'月',value:trainings.filter(t=>String(t.date||'').slice(0,7)===m).length}));
