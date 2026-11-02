@@ -182,19 +182,35 @@ async function removeClipVideo(id){const db=await openVideoDB();try{await new Pr
 async function playSavedClip(id,time){try{const saved=await getClipVideo(id);if(!saved||!(saved.blob instanceof Blob)){alert('この記録の動画データが見つかりません。設定画面の「動画と記録の整合性チェック」を確認してください。');return}if(matchVideo.dataset.objectUrl)URL.revokeObjectURL(matchVideo.dataset.objectUrl);const url=URL.createObjectURL(saved.blob);matchVideo.dataset.objectUrl=url;showView('video');videoMeta.textContent='保存動画：'+(saved.name||'動画ファイル')+'（端末内に保存）'+(Number.isFinite(Number(time))?'・確認位置 '+formatMatchTime(Number(time)):'')+'。iPhoneで自動再生されない場合は、動画中央の再生ボタンを押してください。';matchVideo.onerror=()=>{videoMeta.textContent='動画を再生できません。ファイル形式または動画データを確認してください。'};matchVideo.onloadeddata=()=>{videoMeta.textContent='保存動画の読み込み成功：'+(saved.name||'動画ファイル')+'。映像が表示されたら再生ボタンを押して、実際の再生も確認してください。'};matchVideo.onplay=()=>{videoMeta.textContent='保存動画を再生中：'+(saved.name||'動画ファイル')};matchVideo.onended=()=>{videoMeta.textContent='保存動画の再生が最後まで完了しました：'+(saved.name||'動画ファイル')};matchVideo.onloadedmetadata=()=>{const duration=Number(matchVideo.duration);const target=Number(time);if(Number.isFinite(target)&&target>=0&&Number.isFinite(duration)&&duration>0)matchVideo.currentTime=Math.min(target,duration);};matchVideo.src=url;matchVideo.load();matchVideo.controls=true;videoWrap.scrollIntoView({behavior:'smooth',block:'center'})}catch(e){console.error('保存動画の再生失敗',e);alert('保存動画を開けませんでした。端末の空き容量と動画データを確認してください。')}}
 async function playSavedForm(id){try{const saved=await getClipVideo('form-'+id);if(!saved||!(saved.blob instanceof Blob)){alert('このフォーム記録の動画データが見つかりません。設定画面の「動画と記録の整合性チェック」を確認してください。');return}if(formVideo.dataset.objectUrl)URL.revokeObjectURL(formVideo.dataset.objectUrl);const url=URL.createObjectURL(saved.blob);formVideo.dataset.objectUrl=url;showView('form');document.getElementById('formVideoPlaybackStatus').textContent='保存動画：'+(saved.name||'動画ファイル')+'。iPhoneで自動再生されない場合は、動画中央の再生ボタンを押してください。';formVideo.onerror=()=>{document.getElementById('formVideoPlaybackStatus').textContent='動画を再生できません。ファイル形式または動画データを確認してください。'};formVideo.onloadeddata=()=>{document.getElementById('formVideoPlaybackStatus').textContent='保存フォーム動画の読み込み成功。再生ボタンを押して実際の動作も確認してください。'};formVideo.onplay=()=>{document.getElementById('formVideoPlaybackStatus').textContent='保存フォーム動画を再生中'};formVideo.onended=()=>{document.getElementById('formVideoPlaybackStatus').textContent='保存フォーム動画の再生が最後まで完了しました'};formVideo.src=url;formVideo.load();formVideo.controls=true;formVideo.scrollIntoView({behavior:'smooth',block:'center'})}catch(e){console.error('保存フォーム動画の再生失敗',e);alert('保存したフォーム動画を開けませんでした。')}}
 async function saveClip(){if(!videoTitle.value.trim()){alert('動画タイトルを入力してください');return}const id=Date.now();let file=videoFile.files[0]||await pendingMatchSave;if(!file){try{const pending=await getClipVideo('__pending_match_video__');if(pending&&pending.blob)file=pending.blob}catch(e){console.warn('仮保存動画の取得失敗',e)}}if(file&&await checkVideoCapacityBeforeSave(file)==='metadata')file=null;let scores=[+s1.value,+s2.value,+s3.value,+s4.value];const record={id,date:today(),title:videoTitle.value.trim(),time:clipTime.value===''?null:+clipTime.value,type:clipType.value,scores,score:Math.round(scores.reduce((a,b)=>a+b,0)/20*100),good:clipGood.value.trim(),improve:clipImprove.value.trim(),hasVideo:false};if(file){try{await storeClipVideo(id,file);record.hasVideo=true;try{await removeClipVideo('__pending_match_video__')}catch(cleanupError){console.warn('仮保存動画の後片付けは保留しました',cleanupError)}}catch(e){console.error('動画保存失敗',e);if(!confirm('動画を端末に保存できませんでした。分析メモだけ保存しますか？'))return}}state.clips.unshift(record);clipGood.value='';clipImprove.value='';persist();alert(record.hasVideo?'プレー分析と動画をこのiPhoneに保存しました':'プレー分析を保存しました（動画ファイルは未保存）')}
+function isManuallyReviewedMatchEvent(ev){
+ return !!ev&&ev.reviewLabel==='陸玖'&&ev.reviewSource!=='ai'&&ev.identityStatus!=='unverified_ai';
+}
+function markManualMatchReview(ev,label){
+ if(!ev)return;
+ ev.reviewLabel=label;
+ ev.reviewSource='manual';
+ ev.manualReviewAt=new Date().toISOString();
+ ev.manualReviewVersion=1;
+}
+function getMatchEvidenceCounts(matches){
+ const events=(matches||[]).flatMap(m=>(m.candidateEvents||[]).map(ev=>({match:m,ev})));
+ const manuallyReviewed=events.filter(x=>x.ev.reviewSource==='manual'||(x.ev.reviewLabel&&x.ev.reviewLabel!=='未確認'&&x.ev.reviewSource!=='ai'));
+ return {candidate:events.length,manualRiku:manuallyReviewed.filter(x=>x.ev.reviewLabel==='陸玖').length,manualOther:manuallyReviewed.filter(x=>x.ev.reviewLabel==='別の選手').length,unreviewed:events.length-manuallyReviewed.length,manualRated:manuallyReviewed.filter(x=>x.ev.reviewLabel==='陸玖'&&['良かった','改善したい'].includes(x.ev.assessment)).length};
+}
 function setCandidateReview(candidateId,reviewLabel){
  const raw=matchAiResult.dataset.result;
  if(!raw)return;
  let result;try{result=JSON.parse(raw)}catch(e){return}
  const event=(result.summary?.candidate_events||[]).find(x=>String(x.id)===String(candidateId));
  if(!event)return;
- event.review_label=reviewLabel;
+ markManualMatchReview(event,reviewLabel);
+ event.review_label=reviewLabel;event.review_source='manual';event.manual_review_at=event.manualReviewAt;
  matchAiResult.dataset.result=JSON.stringify(result);
  const savedId=Number(matchAiResult.dataset.savedId||0);
  if(savedId){
   const record=(state.matchAnalyses||[]).find(x=>x.id===savedId);
   const saved=(record?.candidateEvents||[]).find(x=>String(x.id)===String(candidateId));
-  if(saved){saved.reviewLabel=reviewLabel;syncTrainingMatchEventLink(record,saved);}
+  if(saved){markManualMatchReview(saved,reviewLabel);syncTrainingMatchEventLink(record,saved);}
   persist();
  }
  const status=document.getElementById('candidate-review-'+candidateId);
@@ -207,15 +223,15 @@ function setCandidateTrackReview(candidateId,trackId){
  const event=(result.summary?.candidate_events||[]).find(x=>String(x.id)===String(candidateId));if(!event)return;
  const tracks=event.dense_analysis?.track_summary?.tracks||[];
  if(!tracks.some(t=>String(t.track_id)===String(trackId)))return;
- event.selected_track_id=String(trackId);event.review_label='陸玖';
+ event.selected_track_id=String(trackId);markManualMatchReview(event,'陸玖');event.review_label='陸玖';event.review_source='manual';event.manual_review_at=event.manualReviewAt;
  matchAiResult.dataset.result=JSON.stringify(result);
  const savedId=Number(matchAiResult.dataset.savedId||0);
- if(savedId){const record=(state.matchAnalyses||[]).find(x=>x.id===savedId);const saved=(record?.candidateEvents||[]).find(x=>String(x.id)===String(candidateId));if(saved){saved.selectedTrackId=String(trackId);saved.reviewLabel='陸玖';syncTrainingMatchEventLink(record,saved);}persist();}
+ if(savedId){const record=(state.matchAnalyses||[]).find(x=>x.id===savedId);const saved=(record?.candidateEvents||[]).find(x=>String(x.id)===String(candidateId));if(saved){saved.selectedTrackId=String(trackId);markManualMatchReview(saved,'陸玖');syncTrainingMatchEventLink(record,saved);}persist();}
  const status=document.getElementById('candidate-review-'+candidateId);
  if(status)status.textContent='確認結果：陸玖（選択トラック '+trackId+'）'+(savedId?'・履歴に保存済み':'・履歴保存時に記録');
  refreshCandidateReviewSummary();
 }
-function candidateReviewSummary(events,id){const a=events||[];const count=fn=>a.filter(fn).length;return '<div class="tiny"'+(id?' id="'+id+'"':'')+'>確認集計：陸玖 '+count(x=>x.review_label==='陸玖')+'場面／良かった '+count(x=>x.assessment==='良かった')+'場面／改善したい '+count(x=>x.assessment==='改善したい')+'場面</div>';}
+function candidateReviewSummary(events,id){const a=events||[];const count=fn=>a.filter(fn).length;return '<div class="tiny"'+(id?' id="'+id+'"':'')+'>AI候補 '+a.length+'場面｜手動確認：陸玖 '+count(x=>x.review_label==='陸玖'&&x.review_source==='manual')+'場面／別の選手 '+count(x=>x.review_label==='別の選手'&&x.review_source==='manual')+'場面｜陸玖の手動評価：良かった '+count(x=>x.assessment==='良かった'&&x.review_source==='manual')+'／改善したい '+count(x=>x.assessment==='改善したい'&&x.review_source==='manual')+'</div>';}
 function refreshCandidateReviewSummary(){const el=document.getElementById('candidate-summary-live');if(!el)return;let r;try{r=JSON.parse(matchAiResult.dataset.result||'{}')}catch(e){return}el.outerHTML=candidateReviewSummary(r.summary?.candidate_events||[],'candidate-summary-live');}
 function buildDecisionFeedback(ev){
  const quality=ev.decisionQuality||'未評価',scan=ev.decisionScan||'未確認',choice=ev.actionType||'未分類',tips=[];
@@ -252,7 +268,7 @@ function saveMatchScanResult(){
  const sm=result.summary||{},id=Date.now();
  const timeline=(sm.frames||[]).map(f=>({time:f.time_seconds??null,leftKnee:f.left_knee_angle_deg??null,rightKnee:f.right_knee_angle_deg??null,leftHip:f.left_hip_angle_deg??null,rightHip:f.right_hip_angle_deg??null,trunk:f.trunk_lean_image_angle_deg??null,leftFootMotion:f.left_foot_image_motion_per_sec??null,rightFootMotion:f.right_foot_image_motion_per_sec??null}));
  state.matchAnalyses=state.matchAnalyses||[];
- const savedRecord={id,date:today(),title:videoTitle.value.trim()||(videoFile.files[0]?.name)||'試合動画',jerseyNumbers:result.requested_jersey_numbers||String(state.settings.jersey1)+','+String(state.settings.jersey2),duration:sm.duration_seconds??null,frames:sm.sampled_pose_frames??0,interval:sm.sampling_interval_seconds??null,knee:sm.average_left_right_knee_angle_deg??null,hip:sm.average_left_right_hip_angle_deg??null,trunk:sm.average_trunk_lean_image_angle_deg??null,identityConfirmed:sm.identity_confirmed===true,evidencePolicy:sm.evidence_policy||null,jobId:result.job_id||null,timeline,personDetection:sm.person_detection_summary||null,personTrackSummary:sm.person_track_summary||null,jerseyOcrSummary:sm.jersey_ocr_summary||null,candidateEvents:(sm.candidate_events||[]).map(ev=>({id:ev.id,time:ev.time_seconds,label:ev.label,reason:ev.reason,clipAvailable:ev.clip_available===true,clipUrl:ev.clip_url||null,denseAnalysis:ev.dense_analysis||null,selectedTrackId:ev.selected_track_id||null,reviewLabel:ev.review_label||'未確認',actionType:ev.action_type||'未選択',assessment:ev.assessment||'未選択',note:ev.candidate_note||'',decisionQuality:ev.decision_quality||'未評価',decisionScan:ev.decision_scan||'未確認',positionRole:ev.position_role||'',playStyle:ev.play_style||'',situationType:ev.situation_type||'',situationLabel:ev.situation_label||'',availableOptions:ev.available_options||[],actualChoice:ev.actual_choice||'',outcome:ev.outcome||'',decisionQuality:ev.decision_quality||'未評価'})),highlight:(()=>{try{return JSON.parse(matchAiResult.dataset.highlight||'null')}catch(e){return null}})(),feedback:sm.feedback||[]};
+ const savedRecord={id,date:today(),title:videoTitle.value.trim()||(videoFile.files[0]?.name)||'試合動画',jerseyNumbers:result.requested_jersey_numbers||String(state.settings.jersey1)+','+String(state.settings.jersey2),duration:sm.duration_seconds??null,frames:sm.sampled_pose_frames??0,interval:sm.sampling_interval_seconds??null,knee:sm.average_left_right_knee_angle_deg??null,hip:sm.average_left_right_hip_angle_deg??null,trunk:sm.average_trunk_lean_image_angle_deg??null,identityConfirmed:sm.identity_confirmed===true,evidencePolicy:sm.evidence_policy||null,jobId:result.job_id||null,timeline,personDetection:sm.person_detection_summary||null,personTrackSummary:sm.person_track_summary||null,jerseyOcrSummary:sm.jersey_ocr_summary||null,candidateEvents:(sm.candidate_events||[]).map(ev=>({id:ev.id,time:ev.time_seconds,label:ev.label,reason:ev.reason,clipAvailable:ev.clip_available===true,clipUrl:ev.clip_url||null,denseAnalysis:ev.dense_analysis||null,selectedTrackId:ev.selected_track_id||null,reviewLabel:ev.review_label||'未確認',reviewSource:ev.review_source==='manual'?'manual':null,manualReviewAt:ev.manual_review_at||null,actionType:ev.action_type||'未選択',assessment:ev.assessment||'未選択',note:ev.candidate_note||'',decisionQuality:ev.decision_quality||'未評価',decisionScan:ev.decision_scan||'未確認',positionRole:ev.position_role||'',playStyle:ev.play_style||'',situationType:ev.situation_type||'',situationLabel:ev.situation_label||'',availableOptions:ev.available_options||[],actualChoice:ev.actual_choice||'',outcome:ev.outcome||'',decisionQuality:ev.decision_quality||'未評価'})),highlight:(()=>{try{return JSON.parse(matchAiResult.dataset.highlight||'null')}catch(e){return null}})(),feedback:sm.feedback||[]};
  state.matchAnalyses.unshift(savedRecord);
  savedRecord.candidateEvents.forEach(ev=>syncTrainingMatchEventLink(savedRecord,ev));
  matchAiResult.dataset.savedId=String(id);persist();alert('AI試合スキャン結果を履歴に保存しました');
@@ -274,7 +290,7 @@ function syncTrainingMatchEventLink(match,ev){
  (state.trainings||[]).forEach(t=>{
   t.linkedMatchEvents=(Array.isArray(t.linkedMatchEvents)?t.linkedMatchEvents:[]).filter(x=>!(String(x.matchId)===keyMatch&&String(x.eventId)===keyEvent));
  });
- if(ev.reviewLabel!=='陸玖'||!ev.actionType||ev.actionType==='未選択')return null;
+ if(!isManuallyReviewedMatchEvent(ev)||!ev.actionType||ev.actionType==='未選択')return null;
  const focus=getTrainingFocusForMatchEvent(ev);
  const candidates=(state.trainings||[]).filter(t=>String(t.date||'')<String(match.date||'')&&(t.focus||inferTrainingFocus(t.menu,t.category))===focus).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||Number(b.id)-Number(a.id));
  if(!candidates.length)return null;
@@ -286,7 +302,7 @@ function syncTrainingMatchEventLink(match,ev){
 function linkMatchEventToTraining(matchId,eventId){
  const match=(state.matchAnalyses||[]).find(x=>Number(x.id)===Number(matchId));
  const ev=(match?.candidateEvents||[]).find(x=>String(x.id)===String(eventId));
- if(!match||!ev||ev.reviewLabel!=='陸玖'){alert('陸玖本人として確認した場面だけを結びつけられます。');return}
+ if(!match||!ev||!isManuallyReviewedMatchEvent(ev)){alert('陸玖本人として手動確認した場面だけを結びつけられます。');return}
  const training=syncTrainingMatchEventLink(match,ev);
  if(!training){alert('この試合より前に、同じテーマの練習記録がありません。先に練習記録を保存してね。');return}
  persist();
@@ -345,7 +361,7 @@ function renderMatchImprovementSuggestion(match,ev){
 function applyMatchImprovementPlan(matchId,eventId){
  const match=(state.matchAnalyses||[]).find(x=>String(x.id)===String(matchId));
  const ev=(match?.candidateEvents||[]).find(x=>String(x.id)===String(eventId));
- if(!match||!ev||ev.reviewLabel!=='陸玖'||ev.assessment!=='改善したい'){alert('陸玖本人として確認し、「改善したい」と評価した場面を選んでください。');return}
+ if(!match||!ev||!isManuallyReviewedMatchEvent(ev)||ev.assessment!=='改善したい'){alert('陸玖本人として手動確認し、「改善したい」と評価した場面を選んでください。');return}
  const p=getMatchImprovementPlan(ev);
  if(!state.menus.some(x=>x.name===p.title)){state.menus.unshift({name:p.title,category:p.category,minutes:p.minutes});persist();}
  renderAll();
@@ -479,7 +495,7 @@ function saveMatchEventEdits(matchId,eventId){
  if(!['陸玖','別の選手','未確認'].includes(review)){alert('本人確認の選択が正しくありません。');return}
  if(!['未選択','ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール','その他'].includes(action)){alert('プレー分類の選択が正しくありません。');return}
  if(!['未選択','良かった','改善したい'].includes(assessment)){alert('評価の選択が正しくありません。');return}
- ev.reviewLabel=review;ev.actionType=action;ev.assessment=assessment;ev.note=read('note').trim().slice(0,300);
+ markManualMatchReview(ev,review);ev.actionType=action;ev.assessment=assessment;ev.assessmentSource='manual';ev.manualAssessmentAt=new Date().toISOString();ev.note=read('note').trim().slice(0,300);
  ev.situationType=read('situationType');ev.situationLabel=read('situationLabel').trim().slice(0,80);
  ev.availableOptions=[...root.querySelectorAll('input[data-field="availableOption"]:checked')].map(x=>x.value);
  ev.actualChoice=read('actualChoice');ev.outcome=read('outcome');ev.decisionQuality=read('decisionQuality')||'未評価';
