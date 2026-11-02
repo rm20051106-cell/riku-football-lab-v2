@@ -572,7 +572,7 @@ function renderDecisionSituationComparison(matchId){
   const options=group.flatMap(x=>x.ev.availableOptions||[]);
   const qualityText=Object.keys(qualityCounts).length?Object.entries(qualityCounts).map(([k,v])=>esc(k)+' '+v+'件').join('／'):'手動評価はまだありません';
   const choiceOutcomeGroups=new Map();group.filter(x=>x.ev.actualChoice&&x.ev.outcome).forEach(x=>{const choice=x.ev.actualChoice;if(!choiceOutcomeGroups.has(choice))choiceOutcomeGroups.set(choice,{});const outcomes=choiceOutcomeGroups.get(choice);outcomes[x.ev.outcome]=(outcomes[x.ev.outcome]||0)+1});
-  const choiceOutcomeText=choiceOutcomeGroups.size?[...choiceOutcomeGroups.entries()].map(([choice,outcomes])=>'<div class="tiny">'+esc(choice)+'：'+Object.entries(outcomes).map(([outcome,count])=>esc(outcome)+' '+count+'件').join('／')+'</div>').join(''):'<div class="tiny muted">選択と結果の両方が記録された場面はまだありません</div>';
+  const choiceOutcomeText=choiceOutcomeGroups.size?[...choiceOutcomeGroups.entries()].map(([choice,outcomes])=>{const total=Object.values(outcomes).reduce((sum,count)=>sum+count,0);return '<div class="tiny"><b>'+esc(choice)+'</b>（結果記録 '+total+'件）：'+Object.entries(outcomes).map(([outcome,count])=>esc(outcome)+' '+count+'件（'+Math.round(count/total*100)+'%）').join('／')+'</div>'}).join(''):'<div class="tiny muted">選択と結果の両方が記録された場面はまだありません</div>';
   const assessedOptions=group.filter(x=>(x.ev.availableOptions||[]).length).length;
   const assessedChoice=group.filter(x=>x.ev.actualChoice).length;
   const assessedOutcome=group.filter(x=>x.ev.outcome).length;
