@@ -1,0 +1,51 @@
+name: Validate RIKU FOOTBALL LAB
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  syntax-and-container:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Check Python syntax
+        run: python -m compileall -q backend
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Check inline JavaScript syntax
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          html = Path("index.html").read_text(encoding="utf-8")
+          scripts = re.findall(r"<script\b[^>]*>([\s\S]*?)</script>", html, re.I)
+          if not scripts:
+              raise SystemExit("No inline scripts found")
+          out = Path("/tmp/riku-inline-scripts")
+          out.mkdir(exist_ok=True)
+          for index, script in enumerate(scripts):
+              (out / f"script-{index}.js").write_text(script, encoding="utf-8")
+          print(f"Extracted {len(scripts)} inline script(s)")
+          PY
+          for file in /tmp/riku-inline-scripts/*.js; do
+            node --check "$file"
+          done
+
+      - name: Build backend Docker image
+        run: docker build -t riku-football-lab-ai ./backend
