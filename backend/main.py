@@ -73,18 +73,28 @@ def analyze_frame(frame, pose):
         v = lm[mp_pose.PoseLandmark[name].value]
         return [float(v.x), float(v.y), float(v.visibility)]
     visible = sum(1 for v in lm if v.visibility >= 0.5)
-    left_knee = angle(p("LEFT_HIP")[:2], p("LEFT_KNEE")[:2], p("LEFT_ANKLE")[:2])
-    right_knee = angle(p("RIGHT_HIP")[:2], p("RIGHT_KNEE")[:2], p("RIGHT_ANKLE")[:2])
-    left_hip = angle(p("LEFT_SHOULDER")[:2], p("LEFT_HIP")[:2], p("LEFT_KNEE")[:2])
-    right_hip = angle(p("RIGHT_SHOULDER")[:2], p("RIGHT_HIP")[:2], p("RIGHT_KNEE")[:2])
-    shoulder_mid = [(p("LEFT_SHOULDER")[0] + p("RIGHT_SHOULDER")[0]) / 2,
-                    (p("LEFT_SHOULDER")[1] + p("RIGHT_SHOULDER")[1]) / 2]
-    hip_mid = [(p("LEFT_HIP")[0] + p("RIGHT_HIP")[0]) / 2,
-               (p("LEFT_HIP")[1] + p("RIGHT_HIP")[1]) / 2]
-    # Image-space trunk lean estimate; camera angle and perspective affect this.
-    trunk_dx = shoulder_mid[0] - hip_mid[0]
-    trunk_dy = shoulder_mid[1] - hip_mid[1]
-    trunk_angle = round(float(np.degrees(np.arctan2(abs(trunk_dx), max(1e-6, abs(trunk_dy))))), 1)
+    def visible_points(*names):
+        return all(p(name)[2] >= 0.5 for name in names)
+    left_knee = angle(p("LEFT_HIP")[:2], p("LEFT_KNEE")[:2], p("LEFT_ANKLE")[:2]) if visible_points("LEFT_HIP", "LEFT_KNEE", "LEFT_ANKLE") else None
+    right_knee = angle(p("RIGHT_HIP")[:2], p("RIGHT_KNEE")[:2], p("RIGHT_ANKLE")[:2]) if visible_points("RIGHT_HIP", "RIGHT_KNEE", "RIGHT_ANKLE") else None
+    left_hip = angle(p("LEFT_SHOULDER")[:2], p("LEFT_HIP")[:2], p("LEFT_KNEE")[:2]) if visible_points("LEFT_SHOULDER", "LEFT_HIP", "LEFT_KNEE") else None
+    right_hip = angle(p("RIGHT_SHOULDER")[:2], p("RIGHT_HIP")[:2], p("RIGHT_KNEE")[:2]) if visible_points("RIGHT_SHOULDER", "RIGHT_HIP", "RIGHT_KNEE") else None
+    trunk_angle = None
+    if visible_points("LEFT_SHOULDER", "RIGHT_SHOULDER", "LEFT_HIP", "RIGHT_HIP"):
+        shoulder_mid = [(p("LEFT_SHOULDER")[0] + p("RIGHT_SHOULDER")[0]) / 2,
+                        (p("LEFT_SHOULDER")[1] + p("RIGHT_SHOULDER")[1]) / 2]
+        hip_mid = [(p("LEFT_HIP")[0] + p("RIGHT_HIP")[0]) / 2,
+                   (p("LEFT_HIP")[1] + p("RIGHT_HIP")[1]) / 2]
+        trunk_dx = shoulder_mid[0] - hip_mid[0]
+        trunk_dy = shoulder_mid[1] - hip_mid[1]
+        trunk_angle = round(float(np.degrees(np.arctan2(abs(trunk_dx), max(1e-6, abs(trunk_dy))))), 1)
+    metric_quality = {
+        "left_knee": "measured" if left_knee is not None else "insufficient_visibility",
+        "right_knee": "measured" if right_knee is not None else "insufficient_visibility",
+        "left_hip": "measured" if left_hip is not None else "insufficient_visibility",
+        "right_hip": "measured" if right_hip is not None else "insufficient_visibility",
+        "trunk": "measured" if trunk_angle is not None else "insufficient_visibility",
+    }
     landmarks = {}
     for name in ["LEFT_SHOULDER", "RIGHT_SHOULDER", "LEFT_HIP", "RIGHT_HIP",
                  "LEFT_KNEE", "RIGHT_KNEE", "LEFT_ANKLE", "RIGHT_ANKLE",
@@ -96,6 +106,8 @@ def analyze_frame(frame, pose):
         ]
     return {
         "visible_landmarks": visible,
+        "measurement_source": "MediaPipe Pose landmark geometry",
+        "metric_quality": metric_quality,
         "left_knee_angle_deg": left_knee,
         "right_knee_angle_deg": right_knee,
         "left_hip_angle_deg": left_hip,
@@ -181,16 +193,27 @@ def analyze_task_pose(lm):
         visibility = float(getattr(item, "visibility", 1.0))
         return [float(item.x), float(item.y), visibility]
     visible = sum(1 for item in lm if float(getattr(item, "visibility", 1.0)) >= 0.5)
-    left_knee = angle(p("LEFT_HIP")[:2], p("LEFT_KNEE")[:2], p("LEFT_ANKLE")[:2])
-    right_knee = angle(p("RIGHT_HIP")[:2], p("RIGHT_KNEE")[:2], p("RIGHT_ANKLE")[:2])
-    left_hip = angle(p("LEFT_SHOULDER")[:2], p("LEFT_HIP")[:2], p("LEFT_KNEE")[:2])
-    right_hip = angle(p("RIGHT_SHOULDER")[:2], p("RIGHT_HIP")[:2], p("RIGHT_KNEE")[:2])
-    shoulder_mid = [(p("LEFT_SHOULDER")[0] + p("RIGHT_SHOULDER")[0]) / 2,
-                    (p("LEFT_SHOULDER")[1] + p("RIGHT_SHOULDER")[1]) / 2]
-    hip_mid = [(p("LEFT_HIP")[0] + p("RIGHT_HIP")[0]) / 2,
-               (p("LEFT_HIP")[1] + p("RIGHT_HIP")[1]) / 2]
-    trunk_angle = round(float(np.degrees(np.arctan2(abs(shoulder_mid[0] - hip_mid[0]),
-                                                     max(1e-6, abs(shoulder_mid[1] - hip_mid[1]))))), 1)
+    def visible_points(*names):
+        return all(p(name)[2] >= 0.5 for name in names)
+    left_knee = angle(p("LEFT_HIP")[:2], p("LEFT_KNEE")[:2], p("LEFT_ANKLE")[:2]) if visible_points("LEFT_HIP", "LEFT_KNEE", "LEFT_ANKLE") else None
+    right_knee = angle(p("RIGHT_HIP")[:2], p("RIGHT_KNEE")[:2], p("RIGHT_ANKLE")[:2]) if visible_points("RIGHT_HIP", "RIGHT_KNEE", "RIGHT_ANKLE") else None
+    left_hip = angle(p("LEFT_SHOULDER")[:2], p("LEFT_HIP")[:2], p("LEFT_KNEE")[:2]) if visible_points("LEFT_SHOULDER", "LEFT_HIP", "LEFT_KNEE") else None
+    right_hip = angle(p("RIGHT_SHOULDER")[:2], p("RIGHT_HIP")[:2], p("RIGHT_KNEE")[:2]) if visible_points("RIGHT_SHOULDER", "RIGHT_HIP", "RIGHT_KNEE") else None
+    trunk_angle = None
+    if visible_points("LEFT_SHOULDER", "RIGHT_SHOULDER", "LEFT_HIP", "RIGHT_HIP"):
+        shoulder_mid = [(p("LEFT_SHOULDER")[0] + p("RIGHT_SHOULDER")[0]) / 2,
+                        (p("LEFT_SHOULDER")[1] + p("RIGHT_SHOULDER")[1]) / 2]
+        hip_mid = [(p("LEFT_HIP")[0] + p("RIGHT_HIP")[0]) / 2,
+                   (p("LEFT_HIP")[1] + p("RIGHT_HIP")[1]) / 2]
+        trunk_angle = round(float(np.degrees(np.arctan2(abs(shoulder_mid[0] - hip_mid[0]),
+                                                         max(1e-6, abs(shoulder_mid[1] - hip_mid[1]))))), 1)
+    metric_quality = {
+        "left_knee": "measured" if left_knee is not None else "insufficient_visibility",
+        "right_knee": "measured" if right_knee is not None else "insufficient_visibility",
+        "left_hip": "measured" if left_hip is not None else "insufficient_visibility",
+        "right_hip": "measured" if right_hip is not None else "insufficient_visibility",
+        "trunk": "measured" if trunk_angle is not None else "insufficient_visibility",
+    }
     names = ["LEFT_SHOULDER", "RIGHT_SHOULDER", "LEFT_HIP", "RIGHT_HIP",
              "LEFT_KNEE", "RIGHT_KNEE", "LEFT_ANKLE", "RIGHT_ANKLE",
              "LEFT_HEEL", "RIGHT_HEEL", "LEFT_FOOT_INDEX", "RIGHT_FOOT_INDEX"]
@@ -201,6 +224,8 @@ def analyze_task_pose(lm):
     bbox = [round(min(xs), 4), round(min(ys), 4), round(max(xs), 4), round(max(ys), 4)] if xs and ys else None
     return {
         "visible_landmarks": visible,
+        "measurement_source": "MediaPipe Pose Landmarker geometry",
+        "metric_quality": metric_quality,
         "left_knee_angle_deg": left_knee,
         "right_knee_angle_deg": right_knee,
         "left_hip_angle_deg": left_hip,
@@ -386,6 +411,16 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
                         "visible_landmarks": metrics["visible_landmarks"],
                         "bbox": metrics["bbox"],
                         "jersey_ocr_candidates": ocr,
+                        "identity_status": "unverified",
+                        "identity_note": "背番号OCR・位置追跡は候補情報です。本人確認は手動で行ってください。",
+                        "pose_measurements": {
+                            "left_knee_angle_deg": metrics.get("left_knee_angle_deg"),
+                            "right_knee_angle_deg": metrics.get("right_knee_angle_deg"),
+                            "left_hip_angle_deg": metrics.get("left_hip_angle_deg"),
+                            "right_hip_angle_deg": metrics.get("right_hip_angle_deg"),
+                            "trunk_lean_image_angle_deg": metrics.get("trunk_lean_image_angle_deg"),
+                            "metric_quality": metrics.get("metric_quality", {}),
+                        },
                     })
                     metrics["jersey_ocr_candidates"] = ocr
                     metrics["person_index"] = person_index
@@ -440,6 +475,12 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
         "jersey_ocr_summary": {
             "candidate_detection_counts": jersey_counts,
             "note": "検出された各人物の胴体領域から読み取った背番号候補です。読み間違いがあり、本人確認ではありません。"
+        },
+        "evidence_policy": {
+            "ai_measured": ["姿勢ランドマーク", "可視性条件を満たした膝・股関節・体幹の画像上角度", "背番号OCR候補", "暫定的な位置関連付け"],
+            "manual_confirmation_required": ["陸玖本人の特定", "実際のポジション", "受ける前の首振り・周囲確認", "サポート角度・スペースへの動き出し", "プレー選択肢と判断の質", "プレー結果"],
+            "not_inferred": True,
+            "note": "AI検出値は個人識別・戦術評価の確定情報ではありません。本人確認済みの場面と手動評価だけを成長集計へ使用してください。"
         },
     }
     return {"ok": True, "mode": "match", "engine": "MediaPipe Pose Landmarker multi-pose + Tesseract OCR", "summary": summary}
@@ -535,6 +576,14 @@ def process_video(path: str, mode: str, camera_angle: str = "未選択", progres
             "note": "姿勢検出できた1人分の胴体領域に対するOCR候補です。複数選手の検出・追跡や本人確認ではありません。"
         }
     if mode == "form":
+        summary["measurement_provenance"] = {
+            "source": "MediaPipe Pose landmark geometry",
+            "visibility_threshold": 0.5,
+            "quality_field": "frames[].metric_quality",
+            "ai_measured": ["可視性条件を満たした膝・股関節角度", "画像上の体幹傾き", "画像座標上の足先移動量"],
+            "manual_review_required": ["軸足とボールの距離", "インパクト時の接触位置・時刻", "キック速度", "狙ったコース", "フォームの良否"],
+            "note": "可視性が不足する関節角度はnullとして扱い、平均値から除外します。"
+        }
         tips = []
         if summary["average_left_right_knee_angle_deg"] is not None:
             tips.append("膝角度は映像上の推定値です。蹴る瞬間の軸足・膝の曲がりを、正面と横からの動画で比較してください。")
