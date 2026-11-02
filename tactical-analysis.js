@@ -12,6 +12,7 @@ const fields=[
  {id:'movement',label:'スペースへの動き出し',options:['映像で確認できない','スペースへ動いた','足元に受けに来た','相手を引きつけた','動き出しなし']},
  {id:'decision',label:'その場面で選べたプレー',options:['映像で確認できない','パス','ドリブル','シュート','キープ','その他']},
  {id:'choiceCount',label:'その場面で確認できた選択肢の数',options:['映像で確認できない','1つ','2つ','3つ以上']},
+ {id:'optionsSeen',label:'映像で確認できた具体的な選択肢',options:['映像で確認できない','パス・ドリブル','パス・シュート','パス・キープ','ドリブル・シュート','ドリブル・キープ','シュート・キープ','パス・ドリブル・シュート','パス・ドリブル・キープ','パス・シュート・キープ','ドリブル・シュート・キープ','パス・ドリブル・シュート・キープ','その他（メモに記入）']},
  {id:'outcome',label:'実際のプレー結果',options:['映像で確認できない','前進できた','味方につながった','シュートにつながった','ボールを失った','チャンスを作れた']},
  {id:'opponentDefense',label:'相手の守備の特徴',options:['映像で確認できない','高い位置から守備','中央を固める守備','サイドへ誘導する守備','最終ラインが低い','1人が対応','複数人で囲む','その他']},
  {id:'pressure',label:'ボールを持った時の相手のプレス',options:['映像で確認できない','強いプレスなし','前からプレス','横から寄せ','後ろから追われる','複数人に囲まれる']},
@@ -299,59 +300,59 @@ function renderTacticalSituationAnalysis(){
  let host=document.getElementById('tacticalSituationAnalysis');
  if(!host){host=document.createElement('section');host.id='tacticalSituationAnalysis';host.className='card';}
  const matches=(typeof state!=='undefined'&&Array.isArray(state.matchAnalyses))?state.matchAnalyses:[];
+ const required=['opponentDefense','pressure','zone','scoreState'];
+ const unknown='映像で確認できない';
+ const valid=v=>!!v&&v!==unknown&&!String(v).includes('不明');
  const scenes=[];
  matches.forEach(match=>(match.candidateEvents||[]).forEach(ev=>{
   const review=ev.tacticalReview;
   if(ev.reviewLabel!=='陸玖'||!review?.reviewedAt||!review.fields)return;
-  scenes.push({match,ev,review,fields:review.fields,opponent:String(review.context?.opponentTeam||'').trim()});
+  const f=review.fields;
+  if(!required.every(k=>valid(f[k])))return;
+  scenes.push({match,ev,review,fields:f,opponent:String(review.context?.opponentTeam||'').trim(),role:String(review.context?.role||'').trim()});
  }));
- const dimensions=[
-  {id:'opponentDefense',title:'相手の守備別',values:['高い位置から守備','中央を固める守備','サイドへ誘導する守備','最終ラインが低い','1人が対応','複数人で囲む','その他']},
-  {id:'pressure',title:'プレスの強さ・方向別',values:['強いプレスなし','前からプレス','横から寄せ','後ろから追われる','複数人に囲まれる']},
-  {id:'zone',title:'ピッチ上の場所別',values:['自陣','中盤','敵陣','ペナルティエリア付近']},
-  {id:'scoreState',title:'試合状況別',values:['リード','同点','ビハインド']}
- ];
- const actionKeys=['scan','orientation','position','support','movement'];
- const actionLabels={scan:'周囲確認',orientation:'身体の向き',position:'立ち位置',support:'サポート角度',movement:'動き出し'};
- const choiceKeys=['パス','ドリブル','シュート','キープ','その他'];
- const valid=v=>v&&v!=='映像で確認できない'&&!String(v).includes('不明');
- const grouped=dimensions.map(dim=>{
-  const groups=dim.values.map(value=>{
-   const subset=scenes.filter(x=>x.fields[dim.id]===value);
-   const counts={};
-   subset.forEach(x=>{const f=x.fields;if(valid(f.decision))counts[f.decision]=(counts[f.decision]||0)+1;});
-   const outcomes={};
-   subset.forEach(x=>{const f=x.fields;if(valid(f.outcome))outcomes[f.outcome]=(outcomes[f.outcome]||0)+1;});
-   const actions=actionKeys.map(key=>{
-    const rows=subset.filter(x=>valid(x.fields[key]));
-    const tally={};rows.forEach(x=>{const v=x.fields[key];tally[v]=(tally[v]||0)+1;});
-    const top=Object.entries(tally).sort((a,b)=>b[1]-a[1])[0];
-    return {key,label:actionLabels[key],count:rows.length,top:top?.[0]||'',topCount:top?.[1]||0};
-   }).filter(x=>x.count);
-   return {value,subset,counts,outcomes,actions};
-  }).filter(g=>g.subset.length);
-  return {dim,groups};
- });
- const opponentGroups={};
- scenes.forEach(x=>{const key=x.opponent||'相手チーム未入力';(opponentGroups[key]||(opponentGroups[key]=[])).push(x);});
- const opponentHtml=Object.entries(opponentGroups).sort((a,b)=>b[1].length-a[1].length).map(([name,rows])=>'<div class="listitem"><div class="grow"><b>'+escT(name)+'</b><div class="tiny muted">'+rows.length+'場面｜'+(rows.length>=3?'状況別の傾向を比較できます':'評価保留：3場面以上必要')+'</div></div></div>').join('');
- const html=grouped.map(({dim,groups})=>{
-  const cards=groups.map(g=>{
-   const n=g.subset.length,ready=n>=3;
-   const decisions=choiceKeys.filter(k=>g.counts[k]).map(k=>k+' '+g.counts[k]+'件').join('／');
-   const results=Object.entries(g.outcomes).sort((a,b)=>b[1]-a[1]).map(([k,v])=>k+' '+v+'件').join('／');
-   const actionSummary=ready?g.actions.map(a=>'<div class="tiny">'+escT(a.label)+'：最多「'+escT(a.top)+'」'+a.topCount+'/'+a.count+'件</div>').join(''):'<div class="tiny muted">行動傾向は評価保留（3場面以上必要）</div>';
-   return '<div class="card" style="margin-top:8px"><b>'+escT(g.value)+'</b><div class="tiny muted">'+n+'場面'+(ready?'':'｜評価保留')+'</div>'+actionSummary+'<div class="tiny" style="margin-top:6px">プレー選択：'+escT(decisions||'記録なし')+'</div><div class="tiny">プレー結果：'+escT(results||'記録なし')+'</div></div>';
-  }).join('');
-  return '<div style="margin-top:12px"><h3>'+escT(dim.title)+'</h3>'+(cards||'<div class="tiny muted">該当する手動確認済み場面がありません。</div>')+'</div>';
+ const keyOf=x=>JSON.stringify([x.opponent,x.role,...required.map(k=>x.fields[k])]);
+ const grouped={};
+ scenes.forEach(x=>{const key=keyOf(x);(grouped[key]||(grouped[key]=[])).push(x);});
+ const positive=['前進できた','味方につながった','シュートにつながった','チャンスを作れた'];
+ const negative=['ボールを失った'];
+ const cards=Object.values(grouped).sort((a,b)=>b.length-a.length).map(rows=>{
+  const first=rows[0], f=first.fields, n=rows.length;
+  const choiceRows=rows.filter(x=>valid(x.fields.choiceCount));
+  const selectedRows=rows.filter(x=>valid(x.fields.decision));
+  const optionsRows=rows.filter(x=>valid(x.fields.optionsSeen));
+  const outcomeRows=rows.filter(x=>valid(x.fields.outcome));
+  const complete=rows.filter(x=>valid(x.fields.choiceCount)&&valid(x.fields.optionsSeen)&&valid(x.fields.decision)&&valid(x.fields.outcome));
+  const results={positive:0,negative:0,other:0};
+  const selection={};
+  let selectedInOptions=0,selectedNotInOptions=0;
+  complete.forEach(x=>{
+   const q=x.fields.optionsSeen.split('・');
+   const selected=x.fields.decision;
+   if(q.includes(selected))selectedInOptions++;else if(x.fields.optionsSeen!=='その他（メモに記入）')selectedNotInOptions++;
+   selection[selected]=(selection[selected]||0)+1;
+   if(positive.includes(x.fields.outcome))results.positive++;
+   else if(negative.includes(x.fields.outcome))results.negative++;
+   else results.other++;
+  });
+  const countSummary=['1つ','2つ','3つ以上'].map(v=>{const c=choiceRows.filter(x=>x.fields.choiceCount===v).length;return c?v+' '+c+'件':'';}).filter(Boolean).join('／');
+  const optionSummary={};
+  optionsRows.forEach(x=>{const v=x.fields.optionsSeen;optionSummary[v]=(optionSummary[v]||0)+1;});
+  const optionHtml=Object.entries(optionSummary).sort((a,b)=>b[1]-a[1]).map(([k,v])=>'<div class="tiny">候補「'+escT(k)+'」 '+v+'件</div>').join('');
+  const selectedSummary=Object.entries(selection).sort((a,b)=>b[1]-a[1]).map(([k,v])=>escT(k)+' '+v+'件').join('／');
+  const quality=complete.length>=3
+   ?'<div class="tiny" style="margin-top:6px"><b>判断の質の材料（同一状況・入力完了 '+complete.length+'件）</b></div><div class="tiny">確認できた候補内から選択：'+selectedInOptions+'件｜候補外の選択：'+selectedNotInOptions+'件</div><div class="tiny">前進・味方接続・シュート/チャンスにつながった結果：'+results.positive+'件｜ボール喪失：'+results.negative+'件｜その他の結果：'+results.other+'件</div><div class="tiny muted">候補内から選んだことや結果だけで正解とは判定しません。映像全体、味方・相手・ゴールの位置、選択しなかった候補の実現可能性を含む指導者の確認が必要です。</div>'
+   :'<div class="tiny muted" style="margin-top:6px">判断の質は評価保留：選択肢・実際の選択・結果がそろった同一状況の記録が3件以上必要（現在 '+complete.length+'件）。</div>';
+  const outcomeSummary=outcomeRows.reduce((a,x)=>{const v=x.fields.outcome;a[v]=(a[v]||0)+1;return a;},{});
+  const outcomeHtml=Object.entries(outcomeSummary).map(([k,v])=>escT(k)+' '+v+'件').join('／');
+  return '<div class="card" style="margin-top:10px"><b>同一状況｜'+escT(first.opponent||'相手未入力')+'｜'+escT(first.role||'役割未入力')+'</b><div class="tiny muted">'+required.map(k=>escT(k==='opponentDefense'?'守備':k==='pressure'?'プレス':k==='zone'?'位置':'試合状況')+'：'+escT(f[k])).join('／')+'｜'+n+'場面</div><div class="tiny" style="margin-top:6px"><b>確認できた選択肢の数：</b>'+escT(countSummary||'記録なし')+'</div>'+optionHtml+'<div class="tiny"><b>実際に選んだプレー：</b>'+escT(selectedSummary||'記録なし')+'</div><div class="tiny"><b>実際の結果：</b>'+escT(outcomeHtml||'記録なし')+'</div>'+quality+'</div>';
  }).join('');
- const content=scenes.length?'<div><h3>相手チーム別の記録</h3>'+opponentHtml+'</div>'+html:'<div class="empty">手動確認済みの場面がありません。試合分析で相手チーム・守備・プレス・場所・試合状況を入力して保存してください。</div>';
- host.innerHTML='<h2>⑨ 相手チーム・試合状況別の判断分析</h2><p class="tiny muted">陸玖本人として確認し、手動保存した場面だけを集計。相手の守備、プレス、プレー位置、リード・同点・ビハインド別に、行動・選択・結果の記録を整理します。</p>'+content+'<div class="tiny muted" style="margin-top:10px">各状況で3場面未満の場合は判断傾向を評価保留にします。プレー選択や結果だけで正解・不正解を決めません。相手チーム名が未入力の記録は「相手チーム未入力」にまとめます。</div>';
+ const excluded=matches.reduce((sum,m)=>sum+(m.candidateEvents||[]).filter(ev=>ev.reviewLabel==='陸玖'&&ev.tacticalReview?.reviewedAt&&ev.tacticalReview.fields&&!required.every(k=>valid(ev.tacticalReview.fields[k]))).length,0);
+ host.innerHTML='<h2>⑨ 同一試合状況での判断比較</h2><p class="tiny muted">陸玖本人として手動確認・保存された場面のみを使用。相手の守備・プレス・プレー位置・試合状況がすべて一致する場面をまとめ、見えている選択肢、実際の選択、結果を比較します。</p>'+(cards||'<div class="empty">比較できる記録がまだありません。相手の守備・プレス・プレー位置・試合状況を映像で確認できた場面から入力してください。</div>')+'<div class="tiny muted" style="margin-top:10px">同一状況の比較条件がそろわない記録 '+excluded+'件は、別の状況と混ぜず比較対象から除外しています。3件未満、または選択肢・選択・結果のいずれかが未確認の場合は判断の質を評価保留にします。結果だけで判断の正解・不正解は断定しません。</div>';
  const report=document.getElementById('tacticalMatchReports');
  const graph=document.getElementById('tacticalGrowthGraph');
  if(report)report.insertAdjacentElement('afterend',host);else if(graph)graph.insertAdjacentElement('afterend',host);else videoView.appendChild(host);
 }
-
 function getTacticalDecisionScenarios(){
  const matches=(typeof state!=='undefined'&&Array.isArray(state.matchAnalyses))?state.matchAnalyses:[];
  const scenes=[];
