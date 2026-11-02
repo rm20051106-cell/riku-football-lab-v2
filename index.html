@@ -49,6 +49,7 @@ button,.button{border:0;border-radius:12px;padding:12px 14px;font-weight:800;fon
  <div class="card"><h2>陸玖専用・月間成長レポート</h2><p class="tiny muted">保存された練習・試合評価・測定記録から、その月の取り組みと次の重点を自動でまとめます。</p><label class="label" for="growthReportMonth">対象月</label><select id="growthReportMonth" onchange="renderMonthlyGrowthReport()"></select><div id="monthlyGrowthReport"></div></div>
  <div class="card"><h2>練習の積み重ね</h2><div id="growthTrainingChart"></div><div class="tiny muted">月ごとの練習記録数です。回数の増加は技術向上そのものを意味しません。</div></div>
  <div class="card"><h2>試合での評価推移</h2><div id="growthMatchChart"></div><div class="tiny muted">本人確認済みの陸玖の試合場面について、「良かった」の割合を月ごとに表示。評価件数も併記します。</div></div>
+ <div class="card"><h2>練習方法別・判断力改善の成功率</h2><div id="growthDecisionPracticeMethodStats"></div></div>
  <div class="card"><h2>繰り返し見つかった判断課題と別メニュー</h2><div id="growthRepeatedDecisionIssue"></div></div>
  <div class="card"><h2>練習前後の判断力の変化（月別）</h2><div id="growthTrainingDecisionChange"></div><div class="tiny muted">練習日を基準に、同じテーマの練習前後の試合評価を照合。月ごとに変化率の平均を表示します。比較できるデータがない月は無理に補完しません。</div></div>
  <div class="card"><h2>判断力の成長グラフ</h2><div id="growthDecisionChart"></div><div class="tiny muted">月ごとの「判断の質」と「周囲の確認」を可視化します。本人確認済みの陸玖の場面だけを集計し、未評価は割合に含めません。</div></div>
@@ -1139,6 +1140,37 @@ function getAlternativeDecisionPracticeEffect(training){
  else if(after&&!before)status='練習前の比較データ不足';
  return {source,before,after,delta,status,comparison};
 }
+function getDecisionPracticeMethodStats(){
+ const groups={};
+ (state.trainings||[]).forEach(training=>{
+  const source=training?.sourceMatch;
+  if(!source?.alternativeDecisionPractice)return;
+  const result=getAlternativeDecisionPracticeEffect(training);
+  if(!result?.before||!result?.after||result.delta===null)return;
+  const method=source.practiceMethod|| (source.retryLevel?'再調整Lv'+source.retryLevel:training.menu||'別メニュー（名称未登録）');
+  const issue=source.decisionIssue||'判断課題';
+  const key=method+'|'+issue;
+  const row=groups[key]||(groups[key]={method,issue,comparisons:[],seen:new Set(),improved:0,unchanged:0,worsened:0,totalReduction:0});
+  const pair=String(result.comparison.before.match.id)+'>'+String(result.comparison.after.match.id);
+  if(row.seen.has(pair))return;
+  row.seen.add(pair);
+  const improved=result.delta<0;
+  if(improved)row.improved++;else if(result.delta>0)row.worsened++;else row.unchanged++;
+  row.totalReduction+=-result.delta;
+  row.comparisons.push({before:result.before.rate,after:result.after.rate,delta:result.delta});
+ });
+ return Object.values(groups).map(row=>({...row,count:row.comparisons.length,successRate:Math.round(row.improved/row.comparisons.length*100),averageReduction:Math.round(row.totalReduction/row.comparisons.length)})).sort((a,b)=>b.successRate-a.successRate||b.count-a.count);
+}
+function renderDecisionPracticeMethodStats(){
+ const host=document.getElementById('growthDecisionPracticeMethodStats');if(!host)return;
+ const rows=getDecisionPracticeMethodStats();
+ if(!rows.length){host.innerHTML='<div class="empty">練習方法別の効果を比較するには、別メニューで練習した記録と、その前後の同じ判断課題を評価した試合記録が必要です。比較データが揃うと、改善した割合・同水準・悪化した割合を表示します。</div>';return;}
+ const enough=rows.filter(r=>r.count>=2);
+ host.innerHTML='<div class="tiny muted">成功率＝練習後に対象課題の出現率が下がった比較件数 ÷ 比較成立件数。1件だけの方法も参考値として表示します。</div>'+
+ rows.map(r=>'<div class="note" style="margin-top:8px"><b>'+esc(r.method)+'</b><div class="tiny muted">対象課題：'+esc(r.issue)+'｜比較 '+r.count+'件</div><div style="height:9px;background:var(--line);border-radius:8px;overflow:hidden;margin:7px 0"><div style="height:9px;width:'+r.successRate+'%;background:var(--accent);border-radius:8px"></div></div><div class="tiny"><b>改善した割合 '+r.successRate+'%</b>｜改善 '+r.improved+'件・同水準 '+r.unchanged+'件・悪化 '+r.worsened+'件</div><div class="tiny">課題率の平均変化：'+(r.averageReduction>0?'−':r.averageReduction<0?'+':'±')+Math.abs(r.averageReduction)+'ポイント（プラスの改善幅）</div></div>').join('')+
+ (enough.length?'<div class="tiny muted" style="margin-top:8px">比較2件以上の方法：'+enough.map(r=>esc(r.method)).join('、')+'。件数が少ない方法は順位を確定せず参考値として扱ってね。</div>':'<div class="tiny muted" style="margin-top:8px">まだ各方法の比較が2件未満なので、優劣は暫定です。記録が増えると信頼性が上がります。</div>')+
+ '<div class="tiny muted" style="margin-top:6px">※試合状況・相手・出場時間などの違いを完全には調整できません。改善率は記録上の関連であり、その練習だけの効果を証明するものではありません。</div>';
+}
 function getAlternativeDecisionRetryPlan(training,effect){
  const steps=Array.isArray(training.steps)&&training.steps.length?training.steps:getTrainingSteps(training.focus);
  const completion=steps.length?(training.stepsDone||[]).length/steps.length:0;
@@ -1178,7 +1210,7 @@ function applyAlternativeDecisionRetry(trainingId){
  const note='【前回の結果】'+source.decisionIssue+'｜課題率 '+effect.before?.rate+'% → '+effect.after.rate+'%（'+(effect.delta>0?'+':'')+effect.delta+'pt）\\n【自動再調整】'+retry.label+'\\n【調整理由】'+retry.reason+'\\n【新しい練習方法】'+retry.note+'\\n【今回の成功基準】同じ判断課題が出た場面を減らし、判断した理由を自分の言葉で説明できること。\\n※試合評価に基づく練習案です。痛みや疲労がある場合は中止し、無理に負荷を上げません。';
  if(!(state.menus||[]).some(m=>m.name===title)){state.menus.unshift({name:title,category:'判断力・再調整',minutes:retry.level===1?8:12});persist();}
  trainMenu.value=title;trainDate.value=today();trainMinutes.value=retry.level===1?8:12;trainFocus.value=source.focus||training.focus;trainNote.value=note;
- pendingTrainingSource={alternativeDecisionPractice:true,focus:source.focus||training.focus,decisionIssue:source.decisionIssue,retryLevel:retry.level,retryFromTrainingId:training.id,retryFromMatchDate:effect.comparison.after.match.date,retryFromMatchId:effect.comparison.after.match.id,issueBaselineRate:effect.after.rate,issueBaselineMatchIds:[String(effect.comparison.after.match.id)]};
+ pendingTrainingSource={alternativeDecisionPractice:true,focus:source.focus||training.focus,decisionIssue:source.decisionIssue,practiceMethod:retry.label,retryLevel:retry.level,retryFromTrainingId:training.id,retryFromMatchDate:effect.comparison.after.match.date,retryFromMatchId:effect.comparison.after.match.id,issueBaselineRate:effect.after.rate,issueBaselineMatchIds:[String(effect.comparison.after.match.id)]};
  showView('training');
 }
 function renderAlternativeDecisionPracticeEffect(training){
@@ -1197,7 +1229,7 @@ function applyAlternativeDecisionPractice(){
  if(!(state.menus||[]).some(m=>m.name===title)){state.menus.unshift({name:title,category:'判断力・別メニュー',minutes:plan.minutes});persist();}
  trainMenu.value=title;trainDate.value=today();trainMinutes.value=plan.minutes;trainFocus.value=issue.focus;
  trainNote.value='【繰り返し確認された課題】'+issue.issue+'（別々の試合 '+issue.matches.size+'試合／評価 '+issue.bad+'/'+issue.assessed+'場面）\\n【別アプローチ】'+plan.note+'\\n【練習ステップ】'+plan.steps.join('／')+'\\n【成功基準】'+plan.success+'\\n※試合評価の記録から提案。本人の能力を断定するものではありません。';
- pendingTrainingSource={alternativeDecisionPractice:true,focus:issue.focus,decisionIssue:issue.issue,issueBaselineRate:issue.rate,issueBaselineMatchIds:Array.from(issue.matches)};
+ pendingTrainingSource={alternativeDecisionPractice:true,focus:issue.focus,decisionIssue:issue.issue,practiceMethod:plan.title,issueBaselineRate:issue.rate,issueBaselineMatchIds:Array.from(issue.matches)};
  showView('training');
 }
 function renderRepeatedDecisionIssue(){
@@ -1213,6 +1245,7 @@ function renderGrowthDashboard(){
  renderDecisionGrowthChart();
  renderMonthlyTrainingDecisionChange();
  renderRepeatedDecisionIssue();
+ renderDecisionPracticeMethodStats();
  renderPositionDecisionAnalysis();
  renderPositionDecisionTraining();
  const months=[];const now=new Date();for(let offset=5;offset>=0;offset--){const d=new Date(now.getFullYear(),now.getMonth()-offset,1);months.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));}
