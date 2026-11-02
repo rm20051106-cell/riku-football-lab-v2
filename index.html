@@ -51,6 +51,7 @@ button,.button{border:0;border-radius:12px;padding:12px 14px;font-weight:800;fon
  <div class="card"><h2>試合での評価推移</h2><div id="growthMatchChart"></div><div class="tiny muted">本人確認済みの陸玖の試合場面について、「良かった」の割合を月ごとに表示。評価件数も併記します。</div></div>
  <div class="card"><h2>判断力の成長グラフ</h2><div id="growthDecisionChart"></div><div class="tiny muted">月ごとの「判断の質」と「周囲の確認」を可視化します。本人確認済みの陸玖の場面だけを集計し、未評価は割合に含めません。</div></div>
  <div class="card"><h2>ポジション別の判断分析</h2><p class="tiny muted">各場面で実際に担当していた役割（GK・DF・MF・FW）を選ぶと、判断の質・周囲の確認・プレー選択を役割別に集計します。ポジションは映像から自動推定せず、確認した内容だけを使います。</p><div id="growthPositionDecision"></div></div>
+ <div class="card"><h2>陸玖専用・判断力トレーニング</h2><p class="tiny muted">ポジション別の試合評価から、優先して伸ばす判断を選び、今日の練習メニューを自動作成します。</p><div id="positionDecisionTraining"></div></div>
  <div class="card"><h2>試合→練習→次の試合｜テーマ別の改善率</h2><div id="growthImprovementSummary"></div><div class="tiny muted">改善率＝次の試合で「良かった」と確認できた件数 ÷ 評価済み件数。練習達成率＝練習チェック完了数 ÷ 全チェック数。評価待ちは分母に含めません。</div></div>
  <div class="card"><h2>身体測定の推移</h2><p class="tiny muted">種目ごとに別々のグラフで表示します。30m走・アジリティは短いほど、立ち幅跳びは長いほど良い方向です。</p><div id="growthMeasureCharts"></div></div>
  <div class="card"><h2>記録の見方</h2><div class="tiny muted">実際に保存されたデータだけを描画します。測定条件・路面・靴・計測方法が異なる場合、数値の差をそのまま成長と判断しないでください。記録が1件だけの項目は点のみ表示します。</div></div>
@@ -974,10 +975,56 @@ function renderPositionDecisionAnalysis(){
   return '<div class="listitem"><div class="grow"><b>'+r.role+'｜確認済み '+r.total+'場面</b><div class="tiny">良い判断率：'+(qRate===null?'評価なし':qRate+'%（'+r.good+'/'+r.qualityCount+'）')+'　周囲確認率：'+(scanRate===null?'評価なし':scanRate+'%（'+r.scanned+'/'+r.scanCount+'）')+'</div><div class="tiny muted">プレー選択：'+esc(actions)+'</div><div class="tiny muted">見直し候補：'+esc(issues)+'</div></div></div>';
  }).join('')+'<div class="tiny muted">集計対象は陸玖本人と確認済み、かつGK・DF・MF・FWの役割を入力した場面のみ。判断保留・未評価・映像では不明は該当率の分母から除外します。件数が少ない役割の割合は参考値です。</div>';
 }
+function getPositionDecisionTrainingPlan(){
+ const rows=getPositionDecisionStats().filter(r=>r.total>0);
+ if(!rows.length)return null;
+ const ranked=rows.map(r=>{
+  const qRate=r.qualityCount?r.good/r.qualityCount:null,scanRate=r.scanCount?r.scanned/r.scanCount:null;
+  const qIssues=Object.entries(r.issues).filter(([k])=>['別の選択肢もあった','判断が遅れた'].includes(k)).reduce((n,[,v])=>n+v,0);
+  const scanIssues=Object.entries(r.issues).filter(([k])=>['ボールだけを見ていた','味方・相手の位置を確認できなかった'].includes(k)).reduce((n,[,v])=>n+v,0);
+  const qWeak=qRate!==null&&r.qualityCount>=2?1-qRate:0,scanWeak=scanRate!==null&&r.scanCount>=2?1-scanRate:0;
+  return {...r,qRate,scanRate,qIssues,scanIssues,score:Math.max(qWeak,scanWeak)*100+qIssues*5+scanIssues*5};
+ }).sort((a,b)=>b.score-a.score||b.total-a.total);
+ const role=ranked[0];
+ const focus=role.scanIssues>0?'ボールを受ける':Object.keys(role.issues).includes('判断が遅れた')?'ボールを受ける':Object.keys(role.actions).includes('ドリブル')?'ドリブル':Object.keys(role.actions).includes('シュート')?'シュート':Object.keys(role.actions).includes('守備・プレス')?'守備・プレス':Object.keys(role.actions).includes('パス')?'ボールを受ける':'オフザボール';
+ const roleTips={
+  GK:'ゴール前で「相手・ボール・味方」の位置を確認。キャッチ後は安全な味方と前進できる味方を見比べて配球先を選ぶ。',
+  DF:'相手が近づく前に首を振り、前進・横パス・安全な戻しの3択を確認。相手の立ち位置で運ぶ方向を変える。',
+  MF:'受ける前に肩越しに周囲を確認。前を向く・ワンタッチで落とす・運ぶの3択を準備してから受ける。',
+  FW:'DFとGKの位置、味方のサポートを確認。裏へ抜ける・足元で受ける・味方へ落とすタイミングを選ぶ。'
+ };
+ const focusTips={
+  'ボールを受ける':'親が左右・背後の位置を変えてパス。受ける前に首を振り、半身で受けて「前を向く／落とす」を選択。',
+  'ドリブル':'親が守備役。相手の重心と空いたスペースを見て、縦突破・方向転換・味方役へのパスを選ぶ。',
+  'シュート':'ゴール前でGK役の立ち位置を変える。蹴る前にGKと空きコースを確認し、強く蹴るかコースを狙うかを選ぶ。',
+  '守備・プレス':'相手役の進行方向と味方の位置を確認。奪いに行く・遅らせる・パスコースを切る判断を練習。',
+  'オフザボール':'ボール保持者と相手DFを見て、足元・背後・斜めのどこへ動くかを選ぶ。動き出しのタイミングも変える。'
+ };
+ const issue=role.qRate!==null&&role.scanRate!==null?(role.qRate<=role.scanRate?'判断の選択肢を増やす':'周囲の確認を増やす'):role.qRate===null?'周囲の確認と選択肢を同時に練習':'記録された課題を反復する';
+ const title=role.role+'の判断力｜'+(focus==='ボールを受ける'?'首振り・選択':focus+'の状況判断');
+ const note='【試合データからの重点】'+role.role+'：'+issue+'。確認済み '+role.total+'場面、判断評価 '+role.qualityCount+'件、周囲確認 '+role.scanCount+'件。\\n【ポジション別の判断】'+roleTips[role.role]+'\\n【今回の練習】'+(focusTips[focus]||focusTips['オフザボール'])+'\\n【進め方】①ゆっくり確認 3分 ②親子で状況を変える 6分 ③判断を声に出して実戦形式 4分。正解を急がず、周囲を見て選べたかを評価する。\\n【成功基準】プレー前に周囲を確認し、状況に合う選択を自分で決められたら成功。';
+ return {role:role.role,focus,title,minutes:13,category:'判断力・ポジション別',note,why:role.role+'の本人確認済み試合場面を分析して作成'};
+}
+function applyPositionDecisionTraining(){
+ const plan=getPositionDecisionTrainingPlan();
+ if(!plan){alert('ポジションを入力した陸玖本人の試合場面がまだありません。試合動画の場面でポジションを選んで保存してね。');return;}
+ let option=Array.from(trainMenu.options).find(o=>o.value===plan.title);
+ if(!option){state.menus.unshift({name:plan.title,category:plan.category,minutes:plan.minutes});persist();}
+ trainMenu.value=plan.title;trainDate.value=today();trainMinutes.value=plan.minutes;trainFocus.value=plan.focus;trainNote.value=plan.note;
+ showView('training');
+}
+function renderPositionDecisionTraining(){
+ const host=document.getElementById('positionDecisionTraining');if(!host)return;
+ const plan=getPositionDecisionTrainingPlan();
+ if(!plan){host.innerHTML='<div class="empty">まだ自動作成できるデータがありません。陸玖本人として確認した試合場面にGK・DF・MF・FWのポジションを入力すると、その記録から専用メニューを作ります。</div>';return;}
+ const roleTips={GK:'配球先と安全な選択',DF:'前進・横パス・戻しの判断',MF:'首振りと前向きで受ける判断',FW:'抜け出し・足元・落としの判断'};
+ host.innerHTML='<div class="listitem"><div class="grow"><b>今回の重点：'+esc(plan.role)+'｜'+esc(plan.focus)+'</b><div class="tiny muted">'+esc(roleTips[plan.role])+'。記録された場面から優先順位を決定。</div></div></div><div class="tiny" style="white-space:pre-line;margin:8px 0">'+esc(plan.note)+'</div><div class="btnrow"><button onclick="applyPositionDecisionTraining()">この内容で今日の練習を作成</button></div><div class="tiny muted">作成後、トレーニング画面で内容・時間を編集して保存できます。記録データは端末内で集計し、外部AIや有料APIは使用しません。</div>';
+}
 function renderGrowthDashboard(){
  renderMonthlyGrowthReport();
  renderDecisionGrowthChart();
  renderPositionDecisionAnalysis();
+ renderPositionDecisionTraining();
  const months=[];const now=new Date();for(let offset=5;offset>=0;offset--){const d=new Date(now.getFullYear(),now.getMonth()-offset,1);months.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));}
  const trainings=state.trainings||[],matches=state.matchAnalyses||[],measures=state.measures||[];
  const trainingPoints=months.map(m=>({label:m.slice(5)+'月',value:trainings.filter(t=>String(t.date||'').slice(0,7)===m).length}));
