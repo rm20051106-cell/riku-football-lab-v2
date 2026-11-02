@@ -1526,11 +1526,13 @@ function getPreviousWeekMatchAdjustment(weekStart){
  const scan=assessed.filter(e=>['周囲を確認できた','ボールだけを見ていた','味方・相手の位置を確認できなかった'].includes(e.decisionScan));
  const scanGood=scan.filter(e=>e.decisionScan==='周囲を確認できた').length;
  const focusCounts={};
- assessed.filter(e=>e.assessment==='改善したい').forEach(e=>{const focus=getTrainingFocusForMatchEvent(e);focusCounts[focus]=(focusCounts[focus]||0)+1;});
+ const needsFocus=assessed.filter(e=>e.assessment==='改善したい'||e.decisionQuality==='別の選択肢もあった'||e.decisionQuality==='判断が遅れた'||e.decisionScan==='ボールだけを見ていた'||e.decisionScan==='味方・相手の位置を確認できなかった');
+ needsFocus.forEach(e=>{const focus=getTrainingFocusForMatchEvent(e);focusCounts[focus]=(focusCounts[focus]||0)+1;});
  const weakFocus=Object.keys(focusCounts).sort((a,b)=>focusCounts[b]-focusCounts[a])[0]||'';
  const qRate=q.length?Math.round(qGood/q.length*100):null,scanRate=scan.length?Math.round(scanGood/scan.length*100):null;
+ const decisionIssues=assessed.filter(e=>e.decisionQuality==='別の選択肢もあった'||e.decisionQuality==='判断が遅れた'||e.decisionScan==='ボールだけを見ていた'||e.decisionScan==='味方・相手の位置を確認できなかった').length;
  let level=2,reason='試合評価は標準。練習と試合での再現を継続';
- if(assessed.length>=2&&(improve>=2||q.length>=2&&qRate<50||scan.length>=2&&scanRate<50)){level=1;reason='試合で改善課題や判断・周囲確認の課題が複数見られたため、翌週は基礎反復と成功体験を優先';}
+ if(assessed.length>=2&&(improve>=2||q.length>=2&&qRate<50||scan.length>=2&&scanRate<50||decisionIssues>=2&&decisionIssues/assessed.length>=0.5)){level=1;reason='試合で改善課題や判断・周囲確認の課題が複数見られたため、翌週は基礎反復と成功体験を優先';}
  else if(assessed.length>=3&&good>=2&&improve===0&&(qRate===null||qRate>=75)&&(scanRate===null||scanRate>=70)){level=3;reason='試合で良い評価が続き、判断・周囲確認も安定しているため、翌週は実戦的な応用へ進む';}
  return {from,to,matches:matches.length,assessed:assessed.length,good,improve,qCount:q.length,qRate,scanCount:scan.length,scanRate,level,reason,weakFocus};
 }
@@ -1570,7 +1572,8 @@ function getWeeklyCoachPlan(){
  const dateAt=(offset)=>{const d=new Date(start);d.setDate(d.getDate()+offset);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
  const fmtWeekStart=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
  const trainingFeedback=getPreviousWeekTrainingAdjustment(fmtWeekStart(start)),matchFeedback=getPreviousWeekMatchAdjustment(fmtWeekStart(start)),growth=getDecisionGrowthLevel(),repeated=getRepeatedDecisionIssue(),preferred=repeated?getPreferredDecisionPracticePlan(repeated.issue):null,goal=growth.goal;
- const combinedLevel=matchFeedback.assessed&&matchFeedback.level===1?1:matchFeedback.assessed&&matchFeedback.level===3&&(!trainingFeedback.assessed||trainingFeedback.level!==1)?3:trainingFeedback.level;\n const feedback={...trainingFeedback,level:combinedLevel,assessed:trainingFeedback.assessed||matchFeedback.assessed,weakFocus:matchFeedback.weakFocus||trainingFeedback.weakFocus,reason:matchFeedback.assessed?matchFeedback.reason+(trainingFeedback.assessed?'。'+trainingFeedback.reason:''):trainingFeedback.reason,matchFeedback};
+ const combinedLevel=matchFeedback.assessed&&matchFeedback.level===1?1:matchFeedback.assessed&&matchFeedback.level===3&&(!trainingFeedback.assessed||trainingFeedback.level!==1)?3:trainingFeedback.level;
+ const feedback={...trainingFeedback,level:combinedLevel,assessed:trainingFeedback.assessed||matchFeedback.assessed,weakFocus:matchFeedback.weakFocus||trainingFeedback.weakFocus,reason:matchFeedback.assessed?matchFeedback.reason+(trainingFeedback.assessed?'。'+trainingFeedback.reason:''):trainingFeedback.reason,matchFeedback};
  const focusMap={'判断の質':'ボールを受ける','周囲の確認':'ボールを受ける','練習実行':'ドリブル','試合への転移':'ドリブル'};
  const focus=(feedback.level===1&&feedback.weakFocus)|| (goal?focusMap[goal.key]||'ボールを受ける':'ボールを受ける'),level=feedback.assessed?feedback.level:((growth.level||2)<=2?1:(growth.level||2)>=4?3:2);
  const goalText=goal?.goal||'受ける前に周囲を確認し、相手を見てプレーを選ぶ';
