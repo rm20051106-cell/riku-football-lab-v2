@@ -414,7 +414,7 @@ function renderMatchLibrary(){
   const idArg=Number.isFinite(Number(ev.id))?String(Number(ev.id)):"'"+String(ev.id).replace(/\\/g,"\\\\").replace(/'/g,"\\'")+"'";
   const status=ev.reviewLabel==='陸玖'?'陸玖確認済み':ev.reviewLabel==='別の選手'?'別の選手':'未確認';
   const canPick=ev.reviewLabel==='陸玖'&&ev.assessment==='良かった'&&ev.clipAvailable&&ev.clipUrl&&match.jobId;
-  return '<article class="listitem" style="display:block;margin-top:8px"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>'+formatMatchTime(ev.time)+'｜'+esc(ev.actionType||'分類未設定')+'</b><span class="tiny">'+esc(status)+'</span></div><div class="tiny muted">'+esc(match.date)+'｜'+esc(match.title)+'</div><div class="tiny">'+esc(ev.label||ev.reason||'動きの変化候補')+'</div>'+(ev.assessment&&ev.assessment!=='未選択'?'<div class="tiny">評価：'+esc(ev.assessment)+'</div>':'')+renderMatchImprovementSuggestion(match,ev)+(ev.note?'<div class="tiny muted">メモ：'+esc(ev.note)+'</div>':'')+(ev.clipAvailable&&ev.clipUrl?'<video controls playsinline preload="none" style="width:100%;max-width:520px;border-radius:10px;margin-top:8px" src="'+getApiUrl()+esc(ev.clipUrl)+'"></video><div class="tiny muted">切り抜き動画はサーバー一時保存です。大切な場面は再生後にiPhoneへ保存してください。</div>':'<div class="tiny muted">この場面の切り抜き動画はありません。元の試合記録から前後の映像を確認できます。</div>')+(canPick?'<label class="tiny" style="display:flex;align-items:center;gap:7px;margin:8px 0"><input class="cross-match-highlight-choice" type="checkbox" data-job-id="'+esc(match.jobId)+'" data-clip-id="'+esc(ev.id)+'">ベストプレー集に入れる</label>':'')+'<div class="btnrow"><button class="secondary small" onclick="openMatchEventInHistory('+Number(match.id)+','+idArg+')">元の試合記録を開く</button>'+(ev.clipAvailable&&ev.clipUrl?'<span class="tiny muted">切り抜き再生は試合記録内</span>':'')+'</div></article>';
+  return '<article class="listitem" style="display:block;margin-top:8px"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>'+formatMatchTime(ev.time)+'｜'+esc(ev.actionType||'分類未設定')+'</b><span class="tiny">'+esc(status)+'</span></div><div class="tiny muted">'+esc(match.date)+'｜'+esc(match.title)+'</div><div class="tiny">'+esc(ev.label||ev.reason||'動きの変化候補')+'</div>'+(ev.assessment&&ev.assessment!=='未選択'?'<div class="tiny">評価：'+esc(ev.assessment)+'</div>':'')+renderWeaponTrialReview(match,ev)+renderMatchImprovementSuggestion(match,ev)+(ev.note?'<div class="tiny muted">メモ：'+esc(ev.note)+'</div>':'')+(ev.clipAvailable&&ev.clipUrl?'<video controls playsinline preload="none" style="width:100%;max-width:520px;border-radius:10px;margin-top:8px" src="'+getApiUrl()+esc(ev.clipUrl)+'"></video><div class="tiny muted">切り抜き動画はサーバー一時保存です。大切な場面は再生後にiPhoneへ保存してください。</div>':'<div class="tiny muted">この場面の切り抜き動画はありません。元の試合記録から前後の映像を確認できます。</div>')+(canPick?'<label class="tiny" style="display:flex;align-items:center;gap:7px;margin:8px 0"><input class="cross-match-highlight-choice" type="checkbox" data-job-id="'+esc(match.jobId)+'" data-clip-id="'+esc(ev.id)+'">ベストプレー集に入れる</label>':'')+'<div class="btnrow"><button class="secondary small" onclick="openMatchEventInHistory('+Number(match.id)+','+idArg+')">元の試合記録を開く</button>'+(ev.clipAvailable&&ev.clipUrl?'<span class="tiny muted">切り抜き再生は試合記録内</span>':'')+'</div></article>';
  }).join(''):'<div class="empty">条件に合う場面がありません。検索語や絞り込みを変えてみてね。</div>')+'<div class="tiny muted" style="margin-top:8px">場面候補はAIが抽出した動きの変化です。プレーの内容や陸玖本人かどうかは、映像を見て確認してください。複数試合の動画は、同じサーバー上に切り抜きが残っている場合に限り連結できます。</div>';
 }
 async function createCrossMatchHighlight(){
@@ -1460,15 +1460,61 @@ function getWeaponPracticePlan(){
  const pattern=weapon.patterns[0]||null;
  if(!pattern)return {mode:'basic',title:'基礎づくり｜受ける・運ぶ・選ぶ',focus:'ボールを受ける',minutes:12,level:'基礎',variation:0,review:last?.weaponReviewStatus||'',note:'【一般的な基礎練習】本人独自の武器パターンはまだ確認できていません。武器を推測せず、受ける前の確認→ファーストタッチ→前進・パスの選択を練習します。\n【相手の位置①】正面2〜3mで構える。\n【相手の位置②】斜め横から寄せる。\n【守備状況③】相手が距離を取る設定で、空いた方向へ運ぶ。',why:'複数試合で確認された連係がないため、基礎練習として提案'};
  const actions=pattern.actions,first=actions[0],second=actions[1];
- const variation=last?.weaponReviewStatus==='余裕だった'?2:last?.weaponReviewStatus==='難しかった'?0:1;
+ const trial=getWeaponTrialFeedback(pattern.key);
+ const reviewVariation=last?.weaponReviewStatus==='余裕だった'?2:last?.weaponReviewStatus==='難しかった'?0:1;
+ const variation=trial.hasEnough&&trial.successRate>=70?2:trial.hasEnough&&trial.successRate<=40?0:reviewVariation;
  const level=variation===2?'応用':variation===0?'基礎':'標準';
  const situations=variation===0?['相手は正面3mで待つ。ゆっくり仕掛けて形を確認','相手は斜め前3m。相手の足が出た方向と逆へ運ぶ','相手は後退して守る。無理に抜かず、次のプレーを選ぶ']:variation===2?['相手は正面1mから素早く寄せる','相手は横から追走し、タッチライン側を切る','相手は一度下がってから前へ出る。間合いの変化を見て判断']:['相手は正面2mで構える','相手は斜め横2mから寄せる','相手は距離を取ってコースを限定する'];
+ if(trial.hasEnough&&trial.stopped>=2&&trial.mostBlockedSituation){situations[2]='前回相手に止められた「'+trial.mostBlockedSituation+'」の守備を再現し、別の突破・連係を選ぶ';}
  const nextReview=last?.weaponReviewStatus==='難しかった'?'前回難しかったため、距離を広げて成功率を優先':last?.weaponReviewStatus==='余裕だった'?'前回余裕があったため、寄せを速くして判断を難しくする':'前回の結果を踏まえて標準難度で確認';
- return {mode:'weapon',patternKey:pattern.key,title:'武器再現｜'+first+'→'+second,focus:second==='シュート'?'シュート':second==='パス'?'パス':second==='ドリブル'?'ドリブル':'ボールを受ける',minutes:15,level,variation,review:last?.weaponReviewStatus||'',note:'【確認済みの武器】'+actions.join(' → ')+'（異なる試合 '+pattern.matches+'試合・連続場面 '+pattern.count+'組）\n【練習の流れ】'+first+'を行った後、必ず'+second+'までつなげる。\n【相手の位置・距離を変える3設定】\n① '+situations[0]+'\n② '+situations[1]+'\n③ '+situations[2]+'\n【成功基準】相手の位置を見て判断し、2つのプレーを途切れずにつなげられたか。各設定を3回ずつ行い、最後に一番成功した形を2回再現する。\n【難易度調整】'+nextReview,why:'確認済みの連係を複数試合で確認。前回の再現度「'+(last?.weaponReviewStatus||'未記録')+'」も反映',sourceMatch:{weaponPractice:true,patternKey:pattern.key,patternActions:actions,patternMatches:pattern.matches,patternCount:pattern.count,variation}};
+ return {mode:'weapon',trialFeedback:trial,patternKey:pattern.key,title:'武器再現｜'+first+'→'+second,focus:second==='シュート'?'シュート':second==='パス'?'パス':second==='ドリブル'?'ドリブル':'ボールを受ける',minutes:15,level,variation,review:last?.weaponReviewStatus||'',note:'【確認済みの武器】'+actions.join(' → ')+'（異なる試合 '+pattern.matches+'試合・連続場面 '+pattern.count+'組）\n【練習の流れ】'+first+'を行った後、必ず'+second+'までつなげる。\n【相手の位置・距離を変える3設定】\n① '+situations[0]+'\n② '+situations[1]+'\n③ '+situations[2]+'\n【成功基準】相手の位置を見て判断し、2つのプレーを途切れずにつなげられたか。各設定を3回ずつ行い、最後に一番成功した形を2回再現する。\n【試合での再現結果】'+(trial.hasEnough?'確認 '+trial.assessed+'場面／'+trial.matches+'試合・成功 '+trial.success+'／止められた '+trial.stopped+'・成功率 '+trial.successRate+'%。'+(trial.mostBlockedSituation?'止められた状況：'+trial.mostBlockedSituation:''):'評価 '+trial.assessed+'場面／'+trial.matches+'試合。難易度はまだ自動変更しません（2試合以上・2場面以上が必要）。')+'\n【難易度調整】'+nextReview,why:'確認済みの連係を複数試合で確認。前回の再現度「'+(last?.weaponReviewStatus||'未記録')+'」も反映',sourceMatch:{weaponPractice:true,patternKey:pattern.key,patternActions:actions,patternMatches:pattern.matches,patternCount:pattern.count,variation,trialAssessed:trial.assessed,trialMatches:trial.matches,trialSuccess:trial.success,trialStopped:trial.stopped,trialSuccessRate:trial.successRate,trialHasEnough:trial.hasEnough}};
 }
 function updateTrainingWeaponReview(id,value){
  const item=(state.trainings||[]).find(t=>String(t.id)===String(id));if(!item)return;
  item.weaponReviewStatus=value||'';item.weaponReviewDate=today();persist();
+}
+function getWeaponTrialPair(match,event){
+ if(!match||!event||event.reviewLabel!=='陸玖'||!event.actionType||event.actionType==='未選択'||!Number.isFinite(Number(event.time)))return null;
+ const scenes=(match.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖'&&e.actionType&&e.actionType!=='未選択'&&Number.isFinite(Number(e.time))).sort((a,b)=>Number(a.time)-Number(b.time));
+ const index=scenes.findIndex(e=>String(e.id)===String(event.id));if(index<1)return null;
+ const previous=scenes[index-1],gap=Number(event.time)-Number(previous.time);
+ if(gap<0||gap>120)return null;
+ const trainings=(state.trainings||[]).filter(t=>t.sourceMatch?.weaponPractice&&Array.isArray(t.sourceMatch.patternActions)&&String(t.date||'')<String(match.date||'')&&t.sourceMatch.patternActions[0]===previous.actionType&&t.sourceMatch.patternActions[1]===event.actionType).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||Number(b.id)-Number(a.id));
+ if(!trainings.length)return null;
+ return {previous,training:trainings[0],actions:trainings[0].sourceMatch.patternActions};
+}
+function getWeaponTrialFeedback(patternKey){
+ const trainings=(state.trainings||[]).filter(t=>t.sourceMatch?.weaponPractice&&t.sourceMatch.patternKey===patternKey).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||''))||Number(a.id)-Number(b.id));
+ const outcomes=[],seen=new Set();
+ (state.matchAnalyses||[]).forEach(match=>{
+  const scenes=(match.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖'&&e.actionType&&e.actionType!=='未選択'&&Number.isFinite(Number(e.time))).sort((a,b)=>Number(a.time)-Number(b.time));
+  for(let i=1;i<scenes.length;i++){
+   const previous=scenes[i-1],event=scenes[i],gap=Number(event.time)-Number(previous.time);
+   if(gap<0||gap>120||previous.actionType!==trainings[0]?.sourceMatch?.patternActions?.[0]||event.actionType!==trainings[0]?.sourceMatch?.patternActions?.[1])continue;
+   if(!['成功','相手に止められた'].includes(event.weaponTrialOutcome))continue;
+   const training=trainings.filter(t=>String(t.date||'')<String(match.date||'')).slice(-1)[0];if(!training)continue;
+   const id=String(match.id)+'|'+String(event.id);if(seen.has(id))continue;seen.add(id);
+   outcomes.push({matchId:match.id,date:match.date||'',title:match.title||'試合',outcome:event.weaponTrialOutcome,situation:event.weaponDefenseSituation||'守備状況不明',distance:event.weaponDefenseDistance||'距離不明',trainingId:training.id});
+  }
+ });
+ const success=outcomes.filter(x=>x.outcome==='成功').length,stopped=outcomes.filter(x=>x.outcome==='相手に止められた').length;
+ const matches=new Set(outcomes.map(x=>String(x.matchId))).size;
+ const blocked={};outcomes.filter(x=>x.outcome==='相手に止められた'&&x.situation!=='守備状況不明').forEach(x=>blocked[x.situation]=(blocked[x.situation]||0)+1);
+ const mostBlockedSituation=Object.entries(blocked).sort((a,b)=>b[1]-a[1])[0]?.[0]||'';
+ return {outcomes,assessed:outcomes.length,matches,success,stopped,successRate:outcomes.length?Math.round(success/outcomes.length*100):null,mostBlockedSituation,hasEnough:matches>=2&&outcomes.length>=2};
+}
+function updateMatchWeaponTrial(matchId,eventId,field,value){
+ const match=(state.matchAnalyses||[]).find(m=>String(m.id)===String(matchId));
+ const event=(match?.candidateEvents||[]).find(e=>String(e.id)===String(eventId));
+ if(!event||event.reviewLabel!=='陸玖'){alert('陸玖本人として確認した場面だけを評価できます。');return}
+ if(!['weaponTrialOutcome','weaponDefenseSituation','weaponDefenseDistance'].includes(field))return;
+ event[field]=value||'';event.weaponTrialReviewedAt=today();persist();renderMatchLibrary();
+}
+function renderWeaponTrialReview(match,event){
+ const pair=getWeaponTrialPair(match,event);if(!pair)return '';
+ const outcome=event.weaponTrialOutcome||'',situation=event.weaponDefenseSituation||'',distance=event.weaponDefenseDistance||'';
+ const options=(values,selected)=>values.map(v=>'<option value="'+esc(v)+'" '+(selected===v?'selected':'')+'>'+esc(v)+'</option>').join('');
+ return '<div class="note" style="margin-top:8px"><b>武器再現トレーニング後の試合評価</b><div class="tiny muted">練習日 '+esc(pair.training.date)+'｜'+esc(pair.actions.join(' → '))+' の流れを確認。直前の場面：'+formatMatchTime(pair.previous.time)+'</div><label class="tiny">結果</label><select onchange="updateMatchWeaponTrial('+Number(match.id)+','+JSON.stringify(String(event.id))+',\'weaponTrialOutcome\',this.value)"><option value="">まだ評価していない</option>'+options(['成功','相手に止められた'],outcome)+'</select><label class="tiny">相手の守備状況</label><select onchange="updateMatchWeaponTrial('+Number(match.id)+','+JSON.stringify(String(event.id))+',\'weaponDefenseSituation\',this.value)"><option value="">選択してください</option>'+options(['正面から寄せる','斜めから寄せる','横から追走','後退して守る','距離を取ってコースを限定','複数人で囲む','守備状況不明'],situation)+'</select><label class="tiny">相手との距離</label><select onchange="updateMatchWeaponTrial('+Number(match.id)+','+JSON.stringify(String(event.id))+',\'weaponDefenseDistance\',this.value)"><option value="">選択してください</option>'+options(['1m以内','1〜2m','2〜3m','3m以上','距離不明'],distance)+'</select><div class="tiny muted">結果・守備状況は映像を見て手動で記録。AIが成功・失敗を推測することはありません。</div></div>';
 }
 function getPositionRoleProfile(){
  const labels={'トップ':'トップ','サイド':'サイド','中盤':'中盤','FW':'FW（前線）','MF':'MF','DF':'DF','GK':'GK'};
