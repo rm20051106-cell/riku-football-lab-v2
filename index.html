@@ -256,7 +256,7 @@ function setCandidateTag(candidateId,field,value){
  event[field]=value;matchAiResult.dataset.result=JSON.stringify(result);
  const savedId=Number(matchAiResult.dataset.savedId||0);
  if(savedId){const record=(state.matchAnalyses||[]).find(x=>x.id===savedId);const saved=(record?.candidateEvents||[]).find(x=>String(x.id)===String(candidateId));
-  if(saved){const map={action_type:'actionType',assessment:'assessment',candidate_note:'note',decision_quality:'decisionQuality',decision_scan:'decisionScan',position_role:'positionRole',play_style:'playStyle'};if(map[field])saved[map[field]]=value;syncTrainingMatchEventLink(record,saved);}persist();}
+  if(saved){const map={action_type:'actionType',assessment:'assessment',candidate_note:'note',decision_quality:'decisionQuality',decision_scan:'decisionScan',position_role:'positionRole',play_style:'playStyle'};if(map[field])saved[map[field]]=value;if(field==='assessment'){saved.assessmentSource='manual';saved.manualAssessmentAt=new Date().toISOString();}syncTrainingMatchEventLink(record,saved);}persist();}
  const el=document.getElementById('candidate-tag-'+candidateId);if(el)el.textContent='分類：'+(event.action_type||'未選択')+'／評価：'+(event.assessment||'未選択');
  if(field==='decision_quality'||field==='decision_scan')refreshDecisionFeedback(candidateId);
  refreshCandidateReviewSummary();
@@ -421,6 +421,10 @@ function renderImprovementFollowup(training){
  }).join('');
  return '<div class="note" style="margin-top:8px"><b>📈 試合での改善追跡</b><div class="tiny '+tone+'">'+esc(r.status)+'</div><div class="tiny muted">元の課題：'+esc(r.source.matchDate||'')+'｜'+esc(r.source.matchTitle||'試合動画')+'｜'+formatMatchTime(r.source.time)+'／テーマ：'+esc(r.focus)+'</div>'+progress+(rows?'<div class="tiny" style="margin-top:6px"><b>練習後の試合履歴</b></div>'+rows:'<div class="tiny muted">練習日より後の試合で、陸玖本人と確認した同じテーマの場面を待っています。</div>')+'<div class="tiny muted" style="margin-top:6px">※本人確認済みの同テーマ場面を複数試合にわたり集計します。練習との関連を追跡するもので、練習だけが改善の原因とは断定しません。</div></div>';
 }
+function renderMatchEvidenceAudit(){
+ const counts=getMatchEvidenceCounts(state.matchAnalyses||[]);
+ return '<div class="card" style="margin:8px 0"><b>AI候補と人の確認を分けた記録</b><div class="grid3" style="margin-top:8px"><div><div class="tiny muted">AIが抽出した候補</div><div class="stat">'+counts.candidate+'<small>場面</small></div></div><div><div class="tiny muted">陸玖と手動確認</div><div class="stat">'+counts.manualRiku+'<small>場面</small></div></div><div><div class="tiny muted">本人未確認</div><div class="stat">'+counts.unreviewed+'<small>場面</small></div></div></div><div class="tiny muted">別の選手として手動確認 '+counts.manualOther+'場面｜陸玖の手動評価 '+counts.manualRated+'場面。AI候補数はプレー回数や成功数ではありません。本人確認・プレー分類・評価を行った場面だけを成長比較と練習連携に使用します。</div></div>';
+}
 function renderMatchLibrary(){
  const host=document.getElementById('matchLibrary');if(!host)return;
  const query=(document.getElementById('matchLibrarySearch')?.value||'').trim().toLowerCase();
@@ -434,7 +438,7 @@ function renderMatchLibrary(){
  const riku=rows.filter(x=>x.ev.reviewLabel==='陸玖').length;
  const eligible=rows.filter(({match,ev})=>ev.reviewLabel==='陸玖'&&ev.assessment==='良かった'&&ev.clipAvailable&&ev.clipUrl&&match.jobId);
  const saved=state.settings?.latestCrossMatchHighlight;
- host.innerHTML='<div class="tiny muted">全 '+total+'場面候補 ／ 表示 '+rows.length+'件'+(filter==='riku'?'（陸玖本人として確認済み '+riku+'件）':'')+'</div><div class="card" style="margin:8px 0"><b>試合をまたいだベストプレー集</b><div class="tiny muted">「陸玖」と本人確認し、評価を「良かった」にした切り抜き動画だけを選べます。対象候補 '+eligible.length+'件／最大12場面</div><div class="btnrow"><button class="secondary small" onclick="createCrossMatchHighlight()">チェックした場面でベストプレー集を作る</button></div><div id="crossMatchHighlightResult" class="tiny" style="margin-top:8px">'+(saved&&saved.url?'<b>前回作成したベストプレー集（'+esc(String(saved.clipCount||0))+'場面）</b><video controls playsinline preload="metadata" style="width:100%;max-width:520px;border-radius:12px;margin-top:8px" src="'+getApiUrl()+esc(saved.url)+'"></video><div class="tiny muted">サーバー一時保存のため、再起動後は再作成が必要です。</div>'+renderHighlightSaveLink(saved.url,'riku-best-plays.mp4'):'')+'</div></div>'+(rows.length?rows.map(({match,ev})=>{
+ host.innerHTML=renderMatchEvidenceAudit()+'<div class="tiny muted">全 '+total+'場面候補 ／ 表示 '+rows.length+'件'+(filter==='riku'?'（陸玖本人として確認済み '+riku+'件）':'')+'</div><div class="card" style="margin:8px 0"><b>試合をまたいだベストプレー集</b><div class="tiny muted">「陸玖」と本人確認し、評価を「良かった」にした切り抜き動画だけを選べます。対象候補 '+eligible.length+'件／最大12場面</div><div class="btnrow"><button class="secondary small" onclick="createCrossMatchHighlight()">チェックした場面でベストプレー集を作る</button></div><div id="crossMatchHighlightResult" class="tiny" style="margin-top:8px">'+(saved&&saved.url?'<b>前回作成したベストプレー集（'+esc(String(saved.clipCount||0))+'場面）</b><video controls playsinline preload="metadata" style="width:100%;max-width:520px;border-radius:12px;margin-top:8px" src="'+getApiUrl()+esc(saved.url)+'"></video><div class="tiny muted">サーバー一時保存のため、再起動後は再作成が必要です。</div>'+renderHighlightSaveLink(saved.url,'riku-best-plays.mp4'):'')+'</div></div>'+(rows.length?rows.map(({match,ev})=>{
   const idArg=Number.isFinite(Number(ev.id))?String(Number(ev.id)):"'"+String(ev.id).replace(/\\/g,"\\\\").replace(/'/g,"\\'")+"'";
   const status=ev.reviewLabel==='陸玖'?'陸玖確認済み':ev.reviewLabel==='別の選手'?'別の選手':'未確認';
   const canPick=ev.reviewLabel==='陸玖'&&ev.assessment==='良かった'&&ev.clipAvailable&&ev.clipUrl&&match.jobId;
@@ -632,7 +636,7 @@ function renderMatchEventTimeline(events,matchId){
  const controls='<div class="card" style="margin:10px 0"><b>場面を絞り込む</b><div class="tiny muted">陸玖確認済み '+riku+' ／ 未確認 '+unconfirmed+' ／ 改善したい '+improve+'</div><div class="tiny muted">判断記録：入力完了 '+decisionComplete+' ／ 未完成 '+decisionIncomplete+'（必須5項目）</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><select id="match-event-filter-'+matchId+'" onchange="filterMatchTimeline('+Number(matchId)+')" style="flex:1;min-width:150px;padding:9px;border:1px solid var(--line,#ccd3dc);border-radius:8px;background:var(--card,#fff);color:inherit"><option value="all">すべての場面（'+sorted.length+'）</option><option value="riku">陸玖本人として確認済み（'+riku+'）</option><option value="unconfirmed">本人未確認（'+unconfirmed+'）</option><option value="improve">陸玖・改善したい（'+improve+'）</option><option value="good">陸玖・良かった（'+sorted.filter(e=>e.reviewLabel==='陸玖'&&e.assessment==='良かった').length+'）</option><option value="decision-incomplete">陸玖・判断記録が未完成（'+decisionIncomplete+'）</option><option value="decision-complete">陸玖・判断記録が入力完了（'+decisionComplete+'）</option></select><input id="match-event-search-'+matchId+'" type="search" placeholder="プレー分類・メモで検索" oninput="filterMatchTimeline('+Number(matchId)+')" style="flex:1;min-width:150px;padding:9px;border:1px solid var(--line,#ccd3dc);border-radius:8px;background:var(--card,#fff);color:inherit"></div><div class="tiny muted" style="margin-top:8px">よく使う検索語（記録済みのメモ・分類だけを検索）</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">'+['首振り','サポート','スペース','ドリブル','パス','シュート'].map(term=>'<button type="button" class="secondary small" onclick="setMatchTimelineSearch('+Number(matchId)+',\''+term+'\')">'+term+'</button>').join('')+'</div><div style="display:flex;justify-content:flex-end;margin-top:8px"><button type="button" class="secondary small" onclick="resetMatchTimelineFilters('+Number(matchId)+')">絞り込みを解除</button></div><div class="tiny muted" id="match-event-visible-'+matchId+'" style="margin-top:6px">表示 '+sorted.length+' / '+sorted.length+'場面</div></div>';
  return renderMatchGoodImproveCompare(sorted,matchId)+renderMatchPositioningPanel(matchId)+renderMatchPositioningSummary()+renderDecisionSituationComparison(matchId)+controls+'<div id="match-event-timeline-'+matchId+'" class="match-event-timeline" style="position:relative;margin:12px 0 8px;padding-left:18px;border-left:2px solid var(--line,#ccd3dc)">'+sorted.map((ev,i)=>{
   const time=formatMatchTime(ev.time),person=ev.reviewLabel||'未確認',action=ev.actionType||'未選択',assessment=ev.assessment||'未選択';
-  const status=person==='陸玖'?'本人確認済み':person==='別の選手'?'別の選手':'本人未確認';
+  const status=person==='陸玖'?'手動確認済み':person==='別の選手'?'別の選手（手動確認）':'本人未確認';
   const decisionStatus=person==='陸玖'?getMatchDecisionRecordStatus(ev):null;
   const decisionStatusHtml=decisionStatus?'<div class="tiny" style="margin-top:5px;color:'+(decisionStatus.complete?'var(--good,#27834a)':'var(--muted,#687386)')+'">判断記録 '+decisionStatus.count+'/'+decisionStatus.total+'項目'+(decisionStatus.complete?'・入力完了':'・未入力：'+decisionStatus.missing.join('、'))+'</div>':'';
   const decisionSummaryParts=[];
@@ -2331,7 +2335,7 @@ function getTrainingMatchCheckpoints(){
 }
 function renderMatchToMatchComparison(analyses){
  const matches=(analyses||[]).map(m=>{
-  const events=(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖');
+  const events=(m.candidateEvents||[]).filter(isManuallyReviewedMatchEvent);
   const good=events.filter(e=>e.assessment==='良かった').length;
   const improve=events.filter(e=>e.assessment==='改善したい').length;
   const rated=good+improve;
@@ -2630,7 +2634,7 @@ function reviewNextMatchGoal(result){
 function renderRikuCoachReport(){
  const el=document.getElementById('rikuCoachReport');if(!el)return;
  const analyses=(state.matchAnalyses||[]).slice();
- const events=analyses.flatMap(match=>(match.candidateEvents||[]).filter(ev=>ev.reviewLabel==='陸玖').map(ev=>({...ev,matchId:match.id,matchDate:match.date,matchTitle:match.title})));
+ const events=analyses.flatMap(match=>(match.candidateEvents||[]).filter(isManuallyReviewedMatchEvent).map(ev=>({...ev,matchId:match.id,matchDate:match.date,matchTitle:match.title})));
  const confirmed=events.length;
  const good=events.filter(ev=>ev.assessment==='良かった').length;
  const improve=events.filter(ev=>ev.assessment==='改善したい').length;
@@ -3053,7 +3057,7 @@ function renderAnalysisHistoryTools(){
 function renderIntegratedGrowthReport(){
  const host=document.getElementById('integratedGrowthReport');if(!host)return;
  const trainings=state.trainings||[],matches=state.matchAnalyses||[],measures=state.measures||[];
- const assessed=matches.flatMap(m=>(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖'&&['良かった','改善したい'].includes(e.assessment)).map(e=>({...e,date:m.date,title:m.title})));
+ const assessed=matches.flatMap(m=>(m.candidateEvents||[]).filter(e=>isManuallyReviewedMatchEvent(e)&&['良かった','改善したい'].includes(e.assessment)).map(e=>({...e,date:m.date,title:m.title})));
  const completed=trainings.filter(t=>Array.isArray(t.steps)&&t.steps.length).map(t=>{const valid=new Set((Array.isArray(t.stepsDone)?t.stepsDone:[]).filter(i=>Number.isInteger(i)&&i>=0&&i<t.steps.length));return {total:t.steps.length,done:valid.size}});
  const completion=completed.length?Math.round(completed.reduce((n,x)=>n+x.done,0)/completed.reduce((n,x)=>n+x.total,0)*100):null;
  const good=assessed.filter(e=>e.assessment==='良かった').length;
