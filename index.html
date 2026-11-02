@@ -1123,6 +1123,27 @@ function renderMatchToMatchComparison(analyses){
  }).join('');
  return '<h3 style="margin-top:16px">試合ごとのプレー変化</h3><div class="card"><div class="tiny muted">今回：'+esc(current.date||'日付不明')+'｜'+esc(current.title||'試合動画')+'</div><div class="tiny muted">前回：'+esc(previous.date||'日付不明')+'｜'+esc(previous.title||'試合動画')+'</div>'+row('陸玖本人として確認した場面',current.confirmedEvents.length,previous.confirmedEvents.length)+row('良かった',current.good,previous.good)+row('改善したい',current.improve,previous.improve)+(current.goodRate!==null&&previous.goodRate!==null?row('評価した場面の「良かった」割合',current.goodRate+'%',previous.goodRate+'%'):'')+'<h4 style="margin:14px 0 6px">プレー別・前回から今回への比較</h4><div class="tiny muted">同じプレー分類ごとに、本人確認した場面数と手動評価の内訳を比較します。</div><div style="overflow-x:auto"><table class="table"><thead><tr><th>プレー</th><th>前回の場面</th><th>今回の場面</th><th>評価内訳</th><th>良かった割合の参考比較</th></tr></thead><tbody>'+(categoryRows||'<tr><td colspan="5">分類済みの場面はありません。</td></tr>')+'</tbody></table></div><h4 style="margin:14px 0 6px">直近最大5試合の推移</h4><div style="overflow-x:auto"><table class="table"><thead><tr><th>日付</th><th>試合</th><th>本人確認</th><th>良かった</th><th>改善したい</th><th>良かった割合</th></tr></thead><tbody>'+trendRows+'</tbody></table></div><h4 style="margin:14px 0 6px">プレー内容の記録数（古い試合から）</h4><div style="overflow-x:auto"><table class="table"><thead><tr><th>プレー</th>'+dateLabels.map(d=>'<th>'+d+'</th>').join('')+'</tr></thead><tbody>'+(categoryTrend||'<tr><td colspan="6">分類済みの場面はありません。</td></tr>')+'</tbody></table></div><div class="tiny muted" style="margin-top:10px">対象は映像を見て手動で「陸玖」と本人確認した場面のみです。良かった割合は評価を付けた場面内の比率で、プレー成功率や能力の点数ではありません。各試合で評価2場面未満の場合は割合比較を保留します。出場時間、相手、ポジション、撮影角度、候補の見つかり方が違うため、同じ条件で記録した試合同士を目安として比べてください。</div></div>';
 }
+function renderLongTermSkillGrowth(analyses){
+ const types=['ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール','その他'];
+ const matches=(analyses||[]).map(m=>({...m,reviewed:(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖'&&types.includes(e.actionType)&&['良かった','改善したい'].includes(e.assessment))})).filter(m=>m.reviewed.length).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+ if(!matches.length)return '<h3 style="margin-top:14px">テーマ別・長期成長記録</h3><div class="empty">陸玖本人として確認し、プレー分類と評価を保存した試合が増えると、テーマ別の長期推移を表示します。</div>';
+ const cards=types.map(type=>{
+  const perMatch=matches.map(m=>{const list=m.reviewed.filter(e=>e.actionType===type);const good=list.filter(e=>e.assessment==='良かった').length,improve=list.length-good;return {match:m,list,good,improve,total:list.length,rate:list.length>=2?Math.round(good/list.length*100):null};}).filter(x=>x.total);
+  if(!perMatch.length)return '';
+  const midpoint=Math.floor(perMatch.length/2),older=perMatch.slice(0,midpoint),recent=perMatch.slice(midpoint);
+  const sum=arr=>({good:arr.reduce((n,x)=>n+x.good,0),improve:arr.reduce((n,x)=>n+x.improve,0),total:arr.reduce((n,x)=>n+x.total,0)});
+  const before=sum(older),now=sum(recent),enough=older.length>=1&&recent.length>=1&&before.total>=2&&now.total>=2;
+  const delta=enough?Math.round(now.good/now.total*100)-Math.round(before.good/before.total*100):null;
+  const label=enough?'前半 '+Math.round(before.good/before.total*100)+'% → 後半 '+Math.round(now.good/now.total*100)+'%（'+(delta>0?'+':'')+delta+'pt）':'比較データを蓄積中（各期間2評価以上で比較）';
+  const rows=perMatch.slice(-6).reverse().map(x=>{
+   const links=x.list.slice(0,2).map(e=>'<button class="secondary small" style="margin:3px 4px 0 0" onclick="openMatchEventInHistory('+JSON.stringify(String(x.match.id))+','+JSON.stringify(String(e.id))+')">'+formatMatchTime(e.time)+' '+(e.assessment==='良かった'?'良':'改善')+'</button>').join('');
+   return '<div class="listitem" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><b>'+esc(x.match.date||'日付不明')+'｜'+esc(x.match.title||'試合')+'</b><span class="tiny muted">良 '+x.good+'／改善 '+x.improve+'</span></div><div class="tiny muted">'+(x.rate===null?'評価1場面・割合は参考外':'良かった割合 '+x.rate+'%')+'</div>'+links+'</div>';
+  }).join('');
+  const badge=enough?(delta>0?'上向き傾向':delta<0?'見直しポイント':'横ばい'):'記録蓄積中';
+  return '<div class="card" style="margin-top:8px"><div style="display:flex;justify-content:space-between;gap:8px"><b>'+esc(type)+'</b><span class="tiny muted">'+badge+'</span></div><div class="stat" style="margin:6px 0">'+(enough?(delta>0?'+':'')+delta:'—')+'<small>'+(enough?'ポイント':'比較待ち')+'</small></div><div class="tiny muted">'+label+'｜評価 '+perMatch.length+'試合・'+perMatch.reduce((n,x)=>n+x.total,0)+'場面</div><h4 style="margin:10px 0 4px">最近の試合記録</h4>'+rows+'</div>';
+ }).filter(Boolean);
+ return '<h3 style="margin-top:16px">テーマ別・長期成長記録</h3><div class="tiny muted">試合ごとの手動評価を古い順に前半・後半で比較します。各期間2場面以上の評価がある場合だけ割合差を表示。最近6試合まで、該当映像へ移動できます。</div>'+(cards.length?cards.join(''):'<div class="empty">テーマ別の評価記録はまだありません。</div>')+'<div class="tiny muted" style="margin-top:8px">割合は本人確認済み場面の「良かった／改善したい」の手動評価比です。能力の伸びや成功率を証明する数値ではありません。試合数、出場時間、相手、ポジションなどの違いも映像と合わせて確認してください。</div>';
+}
 function renderMatchChangeEvidence(analyses){
  const matches=(analyses||[]).map(m=>({...m,reviewed:(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖'&&['良かった','改善したい'].includes(e.assessment))})).filter(m=>m.reviewed.length).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))).slice(0,5);
  if(matches.length<2)return '<h3 style="margin-top:14px">成長が見えるプレー変化</h3><div class="empty">比較できる試合が2試合以上あり、各試合で同じプレーを2場面以上評価すると変化を表示します。</div>';
@@ -1390,6 +1411,7 @@ function renderRikuCoachReport(){
   html+=renderRecentSkillAssessmentTrend(events);
   html+=renderMatchToMatchComparison(analyses);
   html+=renderMatchChangeEvidence(analyses);
+  html+=renderLongTermSkillGrowth(analyses);
   html+='<h3 style="margin-top:14px">次の練習テーマ</h3>';
   html+=focus?'<div class="note"><b>'+esc(focus.type)+'を重点確認</b><div class="tiny">本人確認済みの記録のうち「改善したい」が'+focus.improve+'場面ありました。</div><div style="margin-top:6px">'+esc(focusDrills[focus.type]||focusDrills['その他'])+'</div></div>':'<div class="note">今は改善テーマを決めるだけの評価データがありません。次の試合でも「良かった」「改善したい」を記録していこう。</div>';
   html+=renderIndividualSkillPracticePlan(focus?.type||'ドリブル',events);
