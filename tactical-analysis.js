@@ -822,7 +822,7 @@ function getTacticalMatchContextGroups(){
   const trainingId=c.linkedTrainingRecordId;
   const training=trainingId?trainingById.get(String(trainingId)):null;
   if(training&&String(training.date||'')<=String(match.date||review.reviewedAt).slice(0,10)&&
-     training.role===role&&training.opponentDefense===defense&&training.matchPeriod===period&&training.scoreState===score){
+     training.role===role&&training.opponentDefense===defense&&training.matchPeriod===period&&training.scoreState===score&&training.pressure===f.pressure&&training.zone===f.zone){
    g.training.set(String(training.id),training);
   }
   g.matches.push({date:String(match.date||review.reviewedAt).slice(0,10),matchTitle:match.title||'試合',fields:f,trainingId:training?String(training.id):''});
