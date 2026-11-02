@@ -24,7 +24,7 @@ button,.button{border:0;border-radius:12px;padding:12px 14px;font-weight:800;fon
 <header><div class="brand"><div><div class="logo">RIKU <span>FOOTBALL LAB</span></div><div class="sub">PLAYER DEVELOPMENT SYSTEM</div></div><div class="pill">● PERSONAL LAB</div></div></header>
 <main>
 <section class="view active" id="home">
- <div class="hero"><div class="eyebrow">YOUR NEXT LEVEL STARTS HERE</div><h1>陸玖の成長を、<br>記録から武器に。</h1><p>練習・試合動画・シュートフォーム・測定記録をひとつに。毎回の振り返りを、次のプレーにつなげよう。</p><div class="btnrow"><button onclick="showView('video')">▶ 動画を分析する</button><button class="secondary" onclick="showView('form')">⚽ シュート・FKフォーム</button><button class="secondary" onclick="showView('training')">今日の練習を記録</button></div></div>
+ <div class="hero"><div class="eyebrow">YOUR NEXT LEVEL STARTS HERE</div><h1>陸玖の成長を、<br>記録から武器に。</h1><p>練習・試合動画・シュートフォーム・測定記録をひとつに。毎回の振り返りを、次のプレーにつなげよう。</p><div class="btnrow"><button onclick="showView('video')">▶ 動画を分析する</button><button class="secondary" onclick="showView('form')">⚽ シュート・FKフォーム</button><button class="secondary" onclick="showView('training')">今日の練習を記録</button><button class="secondary" onclick="showView('training')">お手本・練習解説</button></div></div>
  <div class="grid">
   <div class="card"><div class="muted tiny">今月の練習日</div><div class="stat" id="homeDays">0 <small>日</small></div><div class="progress"><span id="monthProgress"></span></div><div class="tiny muted">記録した練習日数</div></div>
   <div class="card"><div class="muted tiny">動画・フォーム記録</div><div class="stat" id="homeVideos">0 <small>件</small></div><div class="tiny muted">振り返りを積み重ねる</div></div>
@@ -1640,5 +1640,6 @@ load();renderChecks();renderAll();if(typeof apiBaseUrl!=='undefined'){apiBaseUrl
 <script src="./physical-growth.js"></script>
 <script src="./riku-ai-coach.js"></script>
 <script src="./growth-reports.js"></script>
+<script src="./practice-guides.js"></script>
 </body>
 </html>
