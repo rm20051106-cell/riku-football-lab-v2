@@ -1485,7 +1485,7 @@ function renderGrowthDashboard(){
  syncMonthlySkillSnapshot();
  renderPlayerSkillProfile();
  renderSkillTrendHistory();
- const monthSet=new Set([today().slice(0,7)]);[...(state.trainings||[]),...(state.matchAnalyses||[]),...(state.measures||[])].forEach(record=>{const date=String(record.date||'');if(/^\\d{4}-\\d{2}-\\d{2}$/.test(date))monthSet.add(date.slice(0,7));});const months=[...monthSet].sort();
+ const monthSet=new Set([today().slice(0,7)]);[...(state.trainings||[]),...(state.matchAnalyses||[]),...(state.measures||[])].forEach(record=>{const date=String(record.date||'');if(/^\d{4}-\d{2}-\d{2}$/.test(date))monthSet.add(date.slice(0,7));});const months=[...monthSet].sort();
  const trainings=state.trainings||[],matches=state.matchAnalyses||[],measures=state.measures||[];
  const trainingPoints=months.map(m=>({label:m.slice(5)+'月',value:trainings.filter(t=>String(t.date||'').slice(0,7)===m).length}));
  growthTrainingChart.innerHTML=renderGrowthBars('月ごとの練習記録数',trainingPoints,'回');
