@@ -56,6 +56,7 @@ function render(){
  renderTacticalPracticePatternCoach();
  renderTacticalPracticeTransferReport();
  renderTacticalTransferGrowthHistory();
+ renderTacticalTransferGrowthCharts();
  let host=document.getElementById(PANEL_ID);
  if(!host){
   const history=document.getElementById('matchScanRecords');
@@ -785,6 +786,48 @@ function applyTacticalTransferGoalsToPlan(plans){
   if(t){const index=Math.min(1,plans.length-1);plans[index]={...plans[index],title:t.title,category:'試合判断の再現',minutes:12,note:t.note+'\\n\\n【試合再現トラッキング】'+priority.context.pressure+'・'+priority.context.zone+'・'+priority.context.scoreState,why:'同じ状況の試合手動確認で繰り返し見られた課題を練習テーマに反映'};}
  }
  return plans;
+}
+
+
+function getTacticalTransferTrendSummary(history){
+ const contexts={};
+ (history||[]).forEach(row=>{const list=contexts[row.contextKey]||(contexts[row.contextKey]=[]);list.push(row);});
+ return Object.keys(contexts).sort().map(key=>{
+  const rows=contexts[key].slice().sort((a,b)=>a.date.localeCompare(b.date));
+  const actions=['scan','movement','support','position'].map(actionKey=>{
+   const points=rows.map(row=>{const action=(row.actions||[]).find(x=>x.key===actionKey);if(!action||action.observed<3)return null;return {date:row.date,score:Math.round(action.good/action.observed*100),good:action.good,bad:action.bad,observed:action.observed};}).filter(Boolean);
+   if(!points.length)return null;
+   const latest=points[points.length-1],previous=points.length>1?points[points.length-2]:null,lastThree=points.slice(-3);
+   const names={scan:'受ける前の周囲確認',movement:'スペースへの動き出し',support:'サポート角度',position:'立ち位置'};
+   return {key:actionKey,label:names[actionKey],points,latest,previous,recentChange:previous?latest.score-previous.score:null,stable:lastThree.length>=3?(Math.max(...lastThree.map(x=>x.score))-Math.min(...lastThree.map(x=>x.score))<=20):null};
+  }).filter(Boolean);
+  return {contextKey:key,rows,actions,priority:actions.slice().sort((a,b)=>a.latest.score-b.latest.score)[0]||null};
+ });
+}
+function renderTacticalTransferGrowthCharts(){
+ const videoView=document.getElementById('video');if(!videoView)return;
+ let host=document.getElementById('tacticalTransferGrowthCharts');
+ if(!host){host=document.createElement('section');host.id='tacticalTransferGrowthCharts';host.className='card';}
+ const history=syncTacticalTransferHistory(),summaries=getTacticalTransferTrendSummary(history);
+ const colors={scan:'#78c8ff',movement:'#c8f169',support:'#ffbd69',position:'#d6a8ff'};
+ const cards=summaries.map(summary=>{
+  const latest=summary.rows[summary.rows.length-1];
+  const actionHtml=summary.actions.map(action=>{
+   const points=action.points.slice(-6),width=560,height=112,left=30,right=12,top=12,bottom=24;
+   const x=i=>left+(points.length<=1?(width-left-right)/2:i*(width-left-right)/(points.length-1)),y=v=>top+(100-v)*(height-top-bottom)/100;
+   const path=points.map((p,i)=>(i?'L':'M')+x(i).toFixed(1)+','+y(p.score).toFixed(1)).join(' ');
+   const dots=points.map((p,i)=>'<circle cx="'+x(i)+'" cy="'+y(p.score)+'" r="4" fill="'+colors[action.key]+'"><title>'+escT(p.date)+'：'+p.score+'%（'+p.good+'/'+p.observed+'場面）</title></circle>').join('');
+   const grid=[0,50,100].map(v=>'<line x1="'+left+'" y1="'+y(v)+'" x2="'+(width-right)+'" y2="'+y(v)+'" stroke="#526176" stroke-opacity=".35"/><text x="'+(left-6)+'" y="'+(y(v)+3)+'" fill="currentColor" opacity=".65" font-size="9" text-anchor="end">'+v+'</text>').join('');
+   const dateLabels=points.map((p,i)=>'<text x="'+x(i)+'" y="'+(height-5)+'" fill="currentColor" opacity=".7" font-size="9" text-anchor="middle">'+escT(p.date.slice(5))+'</text>').join('');
+   const change=action.recentChange===null?'直近変化：比較できる別日データなし':'直近変化：'+(action.recentChange>0?'+':'')+action.recentChange+'ポイント';
+   const stability=action.stable===null?'安定度：評価保留（3時点必要）':(action.stable?'安定度：比較的安定':'安定度：変動あり');
+   return '<div class="card"><b>'+escT(action.label)+'</b><div class="tiny muted">最新 '+action.latest.score+'%｜確認 '+action.latest.good+'/'+action.latest.observed+'場面</div><svg viewBox="0 0 '+width+' '+height+'" role="img" aria-label="'+escT(action.label)+'の成長グラフ" style="width:100%;max-width:560px;height:auto;display:block">'+grid+'<path d="'+path+'" fill="none" stroke="'+colors[action.key]+'" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>'+dots+dateLabels+'</svg><div class="tiny">'+change+'｜'+stability+'</div></div>';
+  }).join('');
+  const priority=summary.priority?'<div class="note"><b>次に伸ばす優先順位：</b>'+escT(summary.priority.label)+'（現在 '+summary.priority.latest.score+'%）。同じ状況で手動確認できた行動のうち、良い行動の割合が最も低い項目です。</div>':'<div class="note">優先順位：評価保留。各行動で手動確認済み3場面以上が必要です。</div>';
+  return '<div class="card"><h3>'+escT(latest.pressure)+'｜'+escT(latest.zone)+'｜'+escT(latest.scoreState)+'</h3><div class="tiny muted">本人の練習 '+latest.trainingCount+'回／試合手動確認 '+latest.matchCount+'場面。グラフは試合の手動確認結果のみを表示します。</div>'+(actionHtml||'<div class="note">評価保留：行動ごとに手動確認済み3場面以上が必要です。</div>')+priority+'</div>';
+ }).join('');
+ host.innerHTML='<h2>⑰ 状況別・行動別の成長グラフ</h2><p class="tiny muted">状況ごとに、受ける前の周囲確認・スペースへの動き出し・サポート角度・立ち位置を時系列で表示します。直近変化は直前の別日との比較、安定度は直近3時点の幅で確認します。</p>'+(cards||'<div class="note">評価保留：同じ状況の練習3回以上と、その後の試合手動確認3場面以上がそろうとグラフを表示します。</div>')+'<div class="tiny muted">割合は手動確認できた場面内での良い行動の比率で、総合能力点ではありません。安定度は直近3時点の差が20ポイント以内なら「比較的安定」と表示します。試合の観察値と練習実施値は合算していません。</div>';
+ const prior=document.getElementById('tacticalTransferGrowthHistory');if(prior)prior.insertAdjacentElement('afterend',host);else videoView.appendChild(host);
 }
 
 function install(){
