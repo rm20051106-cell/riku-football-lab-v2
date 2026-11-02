@@ -3233,7 +3233,7 @@ function getMatchGrowthTimelineData(){
 }
 function getMatchGrowthRecommendations(){
  return getMatchGrowthTimelineData().map(item=>{
-  const latest=item.latest,repeated=item.repeatedIssues[0];
+  const latest=item.latest,repeated=item.repeatedIssues.find(x=>x.status==='再確認が必要')||item.repeatedIssues[0];
   let priority=0,reason='試合評価がまだありません。';
   if(repeated&&repeated.status==='再確認が必要'){priority=5;reason='同じ課題タグ「'+repeated.key+'」の評価が前回より低下。映像を再確認し、基礎練習を見直す候補。';}
   else if(latest&&latest.improve>latest.good){priority=4;reason='直近試合で「改善したい」の手動評価が多い。';}
@@ -3255,7 +3255,7 @@ function renderMatchGrowthTimeline(){
    const reflectionHtml=row.trainingNotes.slice(0,2).map(t=>'<div class="tiny">練習振り返り：良かった '+esc((t.reflection?.good||[]).join('／')||'未記録')+'｜改善 '+esc((t.reflection?.improve||[]).join('／')||'未記録')+'｜次回 '+esc((t.reflection?.next||[]).join('／')||'未記録')+'</div>').join('');return '<div class="listitem" style="display:block"><b>'+esc(row.date)+'｜'+esc(row.title)+'</b><div class="tiny muted">'+rating+'｜'+rate+'</div><div class="tiny muted">前回試合後〜今回試合前の練習：'+training+'</div>'+trainingNotes+reflectionHtml+(scenes?'<div class="tiny">確認済み場面：'+scenes+'</div>':'')+'</div>';
   }).join(''):'<div class="empty">この分類の成長比較はまだありません。試合場面を手動確認し、成長比較の分類を選んで保存してください。</div>';
   const previous=item.previous,latest=item.latest;
-  const compare=previous&&latest&&previous.total>=2&&latest.total>=2?'<div class="tiny">直近比較：'+previous.rate+'% → '+latest.rate+'%（'+(latest.rate-previous.rate>0?'+':'')+(latest.rate-previous.rate)+'ポイント）</div>':'<div class="tiny muted">直近2試合の比較は、各試合2場面以上の手動評価がそろうまで保留。</div>';
+  const compare=previous&&latest&&previous.total>=2&&latest.total>=2?'<div class="tiny">分類記録の比較（'+esc(previous.date)+' → '+esc(latest.date)+'）：'+previous.rate+'% → '+latest.rate+'%（'+(latest.rate-previous.rate>0?'+':'')+(latest.rate-previous.rate)+'ポイント）</div>':'<div class="tiny muted">この分類の直近2つの記録試合は、各2場面以上の手動評価がそろうまで比較を保留。</div>';
   const issues=item.repeatedIssues.length?item.repeatedIssues.slice(0,3).map(x=>'<div class="tiny muted">同じ課題「'+esc(x.key)+'」：'+esc(x.first)+' '+x.firstRate+'% → '+esc(x.last)+' '+x.lastRate+'%｜'+esc(x.status)+(x.delta===null?'':'（'+(x.delta>0?'+':'')+x.delta+'pt）')+'</div>').join(''):'<div class="tiny muted">同じ課題タグを付けた複数試合の比較はまだありません。</div>';
   return '<div class="card" style="margin-top:8px"><div class="brand"><b>'+esc(item.key)+'</b><span class="tiny muted">'+item.rows.length+'試合記録</span></div><div class="tiny muted">'+esc(item.description)+'</div>'+compare+issues+'<div style="margin-top:8px"><b class="tiny">試合ごとの推移（最新6試合）</b>'+trend+'</div><div class="tiny muted" style="margin-top:7px">分類・課題タグ・評価は陸玖本人として確認した映像を見て手動入力したものだけ。練習回数やチェック数は取り組み記録であり、上達の原因や技術レベルを証明するものではありません。</div></div>';
  }).join('');
