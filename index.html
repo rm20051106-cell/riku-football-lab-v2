@@ -474,6 +474,7 @@ function saveMatchEventEdits(matchId,eventId){
  persist();
  const status=document.getElementById('match-event-link-status-'+matchId+'-'+String(eventId));
  if(status)status.textContent=linked?'練習記録「'+linked.menu+'」へ自動連携しました。':'一致する過去の練習記録がないため、自動連携は保留です。';
+ renderAll();
 }
 function filterMatchTimeline(matchId){
  const root=document.getElementById('match-event-timeline-'+matchId);if(!root)return;
@@ -531,7 +532,7 @@ function renderMatchPositioningSummary(){
  const a=getMatchPositioningAnalysis();
  return '<div class="card" style="margin:10px 0"><b>試合中の判断・ポジショニング分析</b><div class="tiny muted">陸玖本人として確認済みの場面 '+a.confirmedScenes+'件。評価は手動入力のみで、動画から自動推測しません。</div>'+a.rows.map(r=>'<div class="listitem"><div class="grow"><b>'+r.label+'</b><div class="tiny muted">'+(r.assessed?r.good+'良かった／'+r.improve+'改善したい・'+r.matchCount+'試合':'評価記録なし')+'</div><div class="tiny">'+(r.enough?'比較可能：良かった '+r.rate+'%':'記録不足：3場面以上かつ2試合以上の評価が必要')+'</div></div></div>').join('')+(a.priority?'<div class="note"><b>次週の重点候補：'+a.priority.label+'</b><div class="tiny">'+a.priority.drill+'</div></div>':'<div class="tiny muted">複数試合の評価がそろうまで、次週の重点は決めません。</div>')+'</div>';
 }
-function normalizeSituationLabel(value){return String(value||'').normalize('NFKC').toLocaleLowerCase().replace(/[\\s　]+/g,' ').trim();}
+function normalizeSituationLabel(value){return String(value||'').normalize('NFKC').toLocaleLowerCase().replace(/[\s　]+/g,' ').trim();}
 function renderDecisionSituationComparison(matchId){
  const all=(state.matchAnalyses||[]).flatMap(match=>(match.candidateEvents||[]).filter(ev=>ev.reviewLabel==='陸玖'&&ev.situationType&&normalizeSituationLabel(ev.situationLabel)).map(ev=>({match,ev,key:ev.situationType+'|'+normalizeSituationLabel(ev.situationLabel)})));
  const groups=new Map();all.forEach(x=>{if(!groups.has(x.key))groups.set(x.key,[]);groups.get(x.key).push(x)});
