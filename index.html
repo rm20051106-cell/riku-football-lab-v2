@@ -154,15 +154,33 @@ function inferTrainingFocus(menu,category){const source=(String(menu||'')+' '+St
  };
  return common[focus]||common['その他'];
 }
+function getTrainingIssueKey(source){
+ const focus=source?.focus||'その他';
+ const action=source?.actionType||focus;
+ const position=source?.positionRole||'';
+ return [focus,action,position].map(v=>String(v||'').trim().toLowerCase()).join('|');
+}
+function saveTrainingReflectionSnapshot(record){
+ if(!record)return null;
+ const reflection=buildTrainingReflection(record);
+ record.reflectionSnapshot={...reflection,version:1,savedAt:new Date().toISOString(),stepsDone:Array.isArray(record.stepsDone)?record.stepsDone.slice():[],reviewStatus:record.reviewStatus||'',matchTransferStatus:record.matchTransferStatus||'',source:'training_record'};
+ return record.reflectionSnapshot;
+}
+function getTrainingCycleSummary(training){
+ const followup=getImprovementFollowup(training);
+ const steps=Array.isArray(training?.steps)?training.steps:[];
+ const done=Array.isArray(training?.stepsDone)?training.stepsDone.filter(i=>Number.isInteger(i)&&i>=0&&i<steps.length):[];
+ return {issueKey:training?.sourceMatch?.issueKey||getTrainingIssueKey({focus:training?.focus,actionType:training?.sourceMatch?.actionType,positionRole:training?.sourceMatch?.positionRole}),stepsTotal:steps.length,stepsDone:done.length,completion:steps.length?Math.round(done.length/steps.length*100):0,reflection:training?.reflectionSnapshot||null,followup};
+}
 function updateTrainingStep(id,index,checked){
  const record=(state.trainings||[]).find(t=>String(t.id)===String(id));if(!record)return;
  const steps=record.steps||getTrainingSteps(record.focus||inferTrainingFocus(record.menu,record.category));
  const done=Array.isArray(record.stepsDone)?record.stepsDone.slice():[];
  if(checked&&!done.includes(index))done.push(index);
  if(!checked){const at=done.indexOf(index);if(at>=0)done.splice(at,1);}
- record.steps=steps;record.stepsDone=done;persist();renderAll();
+ record.steps=steps;record.stepsDone=done;saveTrainingReflectionSnapshot(record);record.updatedAt=new Date().toISOString();persist();renderAll();
 }
-function saveTraining(){let menu=trainMenu.value;if(!menu)return;const menuData=state.menus.find(x=>x.name===menu);const chosen=trainFocus.value==='自動'?inferTrainingFocus(menu,menuData?.category):trainFocus.value;const checkPrompts={'ドリブル':'試合で相手を抜くための運び出し・切り返しを使えたか','パス':'受ける前に周囲を見て、味方へ正確につなげたか','シュート':'軸足とミートを意識して、狙ったコースへ打てたか','ボールを受ける':'受ける前に首を振り、前を向くタッチができたか','守備・プレス':'飛び込まずに相手の進行方向を限定できたか','オフザボール':'パスが出る前に動き出して、受ける場所を作れたか','その他':'練習で意識したポイントを試合で一度でも試せたか'};const record={id:Date.now(),date:trainDate.value||today(),menu,minutes:+trainMinutes.value||0,effort:trainEffort.value,focus:chosen,note:trainNote.value.trim(),steps:getTrainingSteps(chosen),stepsDone:[],matchCheckPrompt:checkPrompts[chosen]||checkPrompts['その他'],matchCheckStatus:'次の試合で確認',sourceMatch:pendingTrainingSource?{...pendingTrainingSource}:null};if(pendingTrainingSource)record.sourceMatch={...pendingTrainingSource};state.trainings.unshift(record);pendingTrainingSource=null;trainNote.value='';trainFocus.value='自動';persist();alert('練習記録を保存しました。次の試合で「'+(checkPrompts[chosen]||checkPrompts['その他'])+'」を確認できます。')}
+function saveTraining(){let menu=trainMenu.value;if(!menu)return;const menuData=state.menus.find(x=>x.name===menu);const chosen=trainFocus.value==='自動'?inferTrainingFocus(menu,menuData?.category):trainFocus.value;const checkPrompts={'ドリブル':'試合で相手を抜くための運び出し・切り返しを使えたか','パス':'受ける前に周囲を見て、味方へ正確につなげたか','シュート':'軸足とミートを意識して、狙ったコースへ打てたか','ボールを受ける':'受ける前に首を振り、前を向くタッチができたか','守備・プレス':'飛び込まずに相手の進行方向を限定できたか','オフザボール':'パスが出る前に動き出して、受ける場所を作れたか','その他':'練習で意識したポイントを試合で一度でも試せたか'};const record={id:Date.now(),date:trainDate.value||today(),menu,minutes:+trainMinutes.value||0,effort:trainEffort.value,focus:chosen,note:trainNote.value.trim(),steps:getTrainingSteps(chosen),stepsDone:[],matchCheckPrompt:checkPrompts[chosen]||checkPrompts['その他'],matchCheckStatus:'次の試合で確認',sourceMatch:pendingTrainingSource?{...pendingTrainingSource}:null};if(pendingTrainingSource)record.sourceMatch={...pendingTrainingSource};if(record.sourceMatch){record.sourceMatch.issueKey=record.sourceMatch.issueKey||getTrainingIssueKey(record.sourceMatch);record.sourceMatch.linkedManuallyConfirmed=true;}saveTrainingReflectionSnapshot(record);state.trainings.unshift(record);pendingTrainingSource=null;trainNote.value='';trainFocus.value='自動';persist();alert('練習記録を保存しました。次の試合で「'+(checkPrompts[chosen]||checkPrompts['その他'])+'」を確認できます。')}
 function addMenu(){let name=newMenuName.value.trim();if(!name){alert('メニュー名を入力してください');return}state.menus.push({name,category:newMenuCategory.value,minutes:10});newMenuName.value='';persist()}
 function removeMenu(i){if(!confirm('このメニューを削除しますか？'))return;state.menus.splice(i,1);persist()}
 function saveMeasure(){let v=Number(measureValue.value);if(!measureValue.value||!Number.isFinite(v)){alert('数値を入力してください');return}state.measures.unshift({date:measureDate.value||today(),type:measureType.value,value:v,unit:measureUnit.value,note:measureNote.value.trim()});measureValue.value='';measureNote.value='';persist();alert('測定値を保存しました')}
@@ -367,23 +385,24 @@ function applyMatchImprovementPlan(matchId,eventId){
  renderAll();
  trainMenu.value=p.title;trainDate.value=today();trainMinutes.value=p.minutes;trainFocus.value=p.focus==='パス'?'ボールを受ける':p.focus;
  trainNote.value='【試合からの改善課題】'+match.date+'｜'+(match.title||'試合動画')+'｜'+formatMatchTime(ev.time)+'\n場面：'+(ev.label||ev.reason||'映像で確認した場面')+'\n評価：改善したい\n\n【次回メニュー】'+p.note;
- pendingTrainingSource={matchId:match.id,eventId:ev.id,matchDate:match.date,matchTitle:match.title||'試合動画',time:ev.time??null,focus:p.focus,assessment:ev.assessment,retryLevel:p.retryLevel||0,previousTrainingId:p.previousTrainingId||null,retryReason:p.retryReason||'',reflectionGood:p.reflectionGood||[],reflectionImprove:p.reflectionImprove||[],reflectionNext:p.reflectionNext||[]};
+ pendingTrainingSource={matchId:match.id,eventId:ev.id,matchDate:match.date,matchTitle:match.title||'試合動画',time:ev.time??null,focus:p.focus,actionType:ev.actionType||p.focus,positionRole:ev.positionRole||'',issueKey:getTrainingIssueKey({focus:p.focus,actionType:ev.actionType||p.focus,positionRole:ev.positionRole||''}),assessment:ev.assessment,retryLevel:p.retryLevel||0,previousTrainingId:p.previousTrainingId||null,retryReason:p.retryReason||'',reflectionGood:p.reflectionGood||[],reflectionImprove:p.reflectionImprove||[],reflectionNext:p.reflectionNext||[]};
  showView('training');
 }
 function getImprovementFollowup(training){
  const source=training?.sourceMatch;if(!source)return null;
  const focus=source.focus||training.focus||inferTrainingFocus(training.menu,training.category);
+ const expectedAction=source.actionType||'';
  const later=(state.matchAnalyses||[]).filter(m=>String(m.date||'')>String(training.date||'')&&String(m.date||'')>=String(source.matchDate||''))
-  .flatMap(m=>(m.candidateEvents||[]).filter(ev=>isManuallyReviewedMatchEvent(ev)&&ev.actionType&&ev.actionType!=='未選択'&&getTrainingFocusForMatchEvent(ev)===focus).map(ev=>({match:m,event:ev,assessment:ev.assessment||'未評価'})))
+  .flatMap(m=>(m.candidateEvents||[]).filter(ev=>isManuallyReviewedMatchEvent(ev)&&ev.actionType&&ev.actionType!=='未選択'&&getTrainingFocusForMatchEvent(ev)===focus&&(!expectedAction||ev.actionType===expectedAction)).map(ev=>({match:m,event:ev,assessment:ev.assessment||'未評価'})))
   .sort((a,b)=>String(a.match.date||'').localeCompare(String(b.match.date||''))||Number(a.event.time||0)-Number(b.event.time||0));
- if(!later.length)return {status:'次の試合待ち',focus,source,results:[],good:0,improve:0,assessed:0,rate:null};
+ if(!later.length)return {status:'次の試合待ち',focus,source,issueKey:source.issueKey||getTrainingIssueKey(source),results:[],good:0,improve:0,assessed:0,rate:null};
  const assessed=later.filter(x=>['良かった','改善したい'].includes(x.assessment));
  const good=assessed.filter(x=>x.assessment==='良かった').length;
  const improve=assessed.filter(x=>x.assessment==='改善したい').length;
  const rate=assessed.length?Math.round(good/assessed.length*100):null;
  const status=assessed.length>=2&&rate>=60?'改善傾向あり':assessed.length>=2&&rate<=40?'課題継続・練習再調整':good>improve?'改善の兆しあり':improve>good?'まだ改善課題あり':'次の試合で評価待ち';
  const first=later[0];
- return {status,focus,source,match:first.match,event:first.event,assessment:first.assessment,results:later,good,improve,assessed:assessed.length,rate};
+ return {status,focus,source,issueKey:source.issueKey||getTrainingIssueKey(source),match:first.match,event:first.event,assessment:first.assessment,results:later,good,improve,assessed:assessed.length,rate};
 }
 function getTrainingDecisionComparison(training){
  if(!training?.date)return null;
@@ -419,7 +438,7 @@ function renderImprovementFollowup(training){
   const arg=String(x.event.id).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
   return '<div class="tiny" style="margin-top:4px">・'+esc(x.match.date)+' '+esc(x.match.title||'試合')+'｜'+formatMatchTime(x.event.time)+'｜'+esc(x.assessment)+(x.assessment==='良かった'||x.assessment==='改善したい'?'<button class="secondary small" style="margin-left:5px" onclick="openMatchEventInHistory('+Number(x.match.id)+',\''+arg+'\')">場面を見る</button>':'')+'</div>';
  }).join('');
- return '<div class="note" style="margin-top:8px"><b>📈 試合での改善追跡</b><div class="tiny '+tone+'">'+esc(r.status)+'</div><div class="tiny muted">元の課題：'+esc(r.source.matchDate||'')+'｜'+esc(r.source.matchTitle||'試合動画')+'｜'+formatMatchTime(r.source.time)+'／テーマ：'+esc(r.focus)+'</div>'+progress+(rows?'<div class="tiny" style="margin-top:6px"><b>練習後の試合履歴</b></div>'+rows:'<div class="tiny muted">練習日より後の試合で、陸玖本人と確認した同じテーマの場面を待っています。</div>')+'<div class="tiny muted" style="margin-top:6px">※本人確認済みの同テーマ場面を複数試合にわたり集計します。練習との関連を追跡するもので、練習だけが改善の原因とは断定しません。</div></div>';
+ return '<div class="note" style="margin-top:8px"><b>📈 試合での改善追跡</b><div class="tiny '+tone+'">'+esc(r.status)+'</div><div class="tiny muted">照合キー：'+esc(r.issueKey||r.focus)+'（同じプレー分類・手動確認済み場面のみ）</div><div class="tiny muted">元の課題：'+esc(r.source.matchDate||'')+'｜'+esc(r.source.matchTitle||'試合動画')+'｜'+formatMatchTime(r.source.time)+'／テーマ：'+esc(r.focus)+'</div>'+progress+(rows?'<div class="tiny" style="margin-top:6px"><b>練習後の試合履歴</b></div>'+rows:'<div class="tiny muted">練習日より後の試合で、陸玖本人と確認した同じテーマの場面を待っています。</div>')+'<div class="tiny muted" style="margin-top:6px">※本人確認済みの同テーマ場面を複数試合にわたり集計します。練習との関連を追跡するもので、練習だけが改善の原因とは断定しません。</div></div>';
 }
 function renderMatchEvidenceAudit(){
  const counts=getMatchEvidenceCounts(state.matchAnalyses||[]);
@@ -435,7 +454,7 @@ function renderMatchLibrary(){
   return categoryOk&&(!query||hay.includes(query));
  }).sort((a,b)=>String(b.match.date||'').localeCompare(String(a.match.date||''))||Number(a.ev.time||0)-Number(b.ev.time||0));
  const total=(state.matchAnalyses||[]).reduce((n,m)=>n+(m.candidateEvents||[]).length,0);
- const riku=rows.filter(x=>x.isManuallyReviewedMatchEvent(ev)).length;
+ const riku=rows.filter(({ev})=>isManuallyReviewedMatchEvent(ev)).length;
  const eligible=rows.filter(({match,ev})=>isManuallyReviewedMatchEvent(ev)&&ev.assessment==='良かった'&&ev.clipAvailable&&ev.clipUrl&&match.jobId);
  const saved=state.settings?.latestCrossMatchHighlight;
  host.innerHTML=renderMatchEvidenceAudit()+'<div class="tiny muted">全 '+total+'場面候補 ／ 表示 '+rows.length+'件'+(filter==='riku'?'（陸玖本人として確認済み '+riku+'件）':'')+'</div><div class="card" style="margin:8px 0"><b>試合をまたいだベストプレー集</b><div class="tiny muted">「陸玖」と本人確認し、評価を「良かった」にした切り抜き動画だけを選べます。対象候補 '+eligible.length+'件／最大12場面</div><div class="btnrow"><button class="secondary small" onclick="createCrossMatchHighlight()">チェックした場面でベストプレー集を作る</button></div><div id="crossMatchHighlightResult" class="tiny" style="margin-top:8px">'+(saved&&saved.url?'<b>前回作成したベストプレー集（'+esc(String(saved.clipCount||0))+'場面）</b><video controls playsinline preload="metadata" style="width:100%;max-width:520px;border-radius:12px;margin-top:8px" src="'+getApiUrl()+esc(saved.url)+'"></video><div class="tiny muted">サーバー一時保存のため、再起動後は再作成が必要です。</div>'+renderHighlightSaveLink(saved.url,'riku-best-plays.mp4'):'')+'</div></div>'+(rows.length?rows.map(({match,ev})=>{
@@ -1887,7 +1906,7 @@ function getTrainingReviewAdjustment(focus){
 }
 function updateTrainingMatchTransfer(id,value){
  const record=(state.trainings||[]).find(t=>String(t.id)===String(id));if(!record)return;
- record.matchTransferStatus=value;record.matchTransferUpdatedAt=today();persist();renderAll();
+ record.matchTransferStatus=value;record.matchTransferUpdatedAt=today();saveTrainingReflectionSnapshot(record);record.updatedAt=new Date().toISOString();persist();renderAll();
 }
 function getTrainingTransferSummary(){
  const records=(state.trainings||[]).filter(t=>['できた','少しできた','まだ'].includes(t.matchTransferStatus));
@@ -1936,7 +1955,7 @@ function renderTrainingReflectionCard(record){
 }
 function updateTrainingReview(id,value){
  const record=(state.trainings||[]).find(t=>String(t.id)===String(id));if(!record)return;
- record.reviewStatus=value;record.reviewedAt=today();persist();renderAll();
+ record.reviewStatus=value;record.reviewedAt=today();saveTrainingReflectionSnapshot(record);record.updatedAt=new Date().toISOString();persist();renderAll();
 }
 function getPreviousWeekMatchAdjustment(weekStart){
  const start=new Date(weekStart+'T00:00:00');start.setDate(start.getDate()-7);
