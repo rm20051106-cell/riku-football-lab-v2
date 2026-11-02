@@ -20,7 +20,7 @@ function sameSetupRows(rows,latest){if(!latest||!latest.setup)return [];const k=
 function makeEvidence(s){
  const scenes=verifiedScenes(s),out={};
  const dribbleGroups={};
- scenes.forEach(x=>{if(!x.dribble||!valid(x.dribble.attempt)||x.dribble.attempt==='1対1の突破場面ではない')return;const c=x.event.tacticalReview?.context||{};const key=[c.zone,c.pressure,c.defense,c.space,c.scoreState].join('|');if(key.replace(/\\|/g,'').trim())dribbleGroups[key]=(dribbleGroups[key]||0)+1;});
+ scenes.forEach(x=>{if(!x.dribble||!valid(x.dribble.attempt)||x.dribble.attempt==='1対1の突破場面ではない')return;const c=x.event.tacticalReview?.context||{};const key=[c.zone,c.pressure,c.defense,c.space,c.scoreState].join('|');if([c.zone,c.pressure,c.defense,c.space,c.scoreState].some(valid))dribbleGroups[key]=(dribbleGroups[key]||0)+1;});
  function bucket(id){return out[id]||(out[id]={count:0,issues:{},strengths:{},sources:[],latest:''});}
  function add(id,value,source,date,kind){
   if(!valid(value))return;const b=bucket(id);b.count++;b.latest=date>b.latest?date:b.latest;
