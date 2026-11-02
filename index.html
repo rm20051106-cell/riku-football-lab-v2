@@ -986,7 +986,7 @@ function printMonthlyGrowthReport(){
  const win=window.open('','_blank');
  if(!win){alert('印刷画面を開けませんでした。Safariのポップアップ設定を確認してください。');return;}
  win.document.open();
- win.document.write('<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+title+'</title>'+style+'</head><body><header class="masthead"><div><div class="brand">RIKU FOOTBALL LAB｜PLAYER DEVELOPMENT</div><h1>'+title+'</h1><div class="date">対象月：'+key+'　｜　作成日：'+generated+'</div></div><div class="brand">PLAYER No. 10 / 74</div></header>'+summary+'<div class="tiny muted">このカルテは保存された練習・測定・本人確認済みの試合記録を整理したものです。記録件数は実力の点数ではなく、試合場面の評価も保護者・本人が確認して入力した内容です。</div>'+host.innerHTML+'<div class="brandline">RIKU FOOTBALL LAB　｜　陸玖の成長を、記録から武器に。　｜　'+generated+'</div><script>window.onload=function(){setTimeout(function(){window.print()},450)};<\/script><script src="./tactical-analysis.js"></script>
+ win.document.write('<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+title+'</title>'+style+'</head><body><header class="masthead"><div><div class="brand">RIKU FOOTBALL LAB｜PLAYER DEVELOPMENT</div><h1>'+title+'</h1><div class="date">対象月：'+key+'　｜　作成日：'+generated+'</div></div><div class="brand">PLAYER No. 10 / 74</div></header>'+summary+'<div class="tiny muted">このカルテは保存された練習・測定・本人確認済みの試合記録を整理したものです。記録件数は実力の点数ではなく、試合場面の評価も保護者・本人が確認して入力した内容です。</div>'+host.innerHTML+'<div class="brandline">RIKU FOOTBALL LAB　｜　陸玖の成長を、記録から武器に。　｜　'+generated+'</div><script>window.onload=function(){setTimeout(function(){window.print()},450)};<\/script><script src="./tactical-analysis.js"><\/script>
 </body></html>');
  win.document.close();
 }
