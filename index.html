@@ -33,7 +33,7 @@ button,.button{border:0;border-radius:12px;padding:12px 14px;font-weight:800;fon
  </div>
  <div class="card"><h2>今日のおすすめ</h2><div id="dailyPlan"></div><div class="btnrow"><button class="secondary" onclick="showView('training')">メニューを見る</button></div></div>
  <div class="card"><h2>試合前の注目ポイント</h2><p class="tiny muted">試合の日に、意識することを3つまで確認。チェックは今日の日付で保存されます。</p><div id="matchdayFocus"></div></div>
- <div class="card"><h2>試合前コンディション・準備メニュー</h2><p class="tiny muted">試合日・ポジション・直近の練習負荷をもとに、前日・当日・試合直前の短時間メニューを作成します。強い追い込みは行わず、疲労や痛みがある日は休む内容です。</p><div id="preMatchPreparation"></div><div class="divider"></div><div id="postMatchRecovery"></div></div>
+ <div class="card"><h2>試合前コンディション・準備メニュー</h2><p class="tiny muted">試合日・ポジション・直近の練習負荷をもとに、前日・当日・試合直前の短時間メニューを作成します。強い追い込みは行わず、疲労や痛みがある日は休む内容です。</p><div id="preMatchPreparation"></div><div class="divider"></div><div id="postMatchRecovery"></div><div class="divider"></div><div id="recoveryTrendAnalysis"></div></div>
  <div class="card"><h2>分析機能について</h2><p class="tiny muted">このアプリでは、動画の再生・コマ送り用の振り返り・時刻付きメモ・採点、フォーム確認表、映像上の姿勢ガイド表示を利用できます。背番号を自動認識して全試合から陸玖だけを追跡したり、AIが骨格を自動計測したりする機能は、別途AI解析サーバーとの接続が必要です。接続していない状態で「AIが自動判定した」と偽ることはしません。</p></div>
 </section>
 
@@ -1844,6 +1844,8 @@ function getWeeklyCoachPlan(){
  {day:'土曜',date:dateAt(5),title:'チーム練習・試合｜判断を実戦で使う',minutes:0,category:'チーム活動',focus,team:true,note:'試合・チーム練習では「受ける前に見る→選ぶ→実行」を意識。終わったらできた場面を1つだけ記録。',why:'練習した判断を試合で試す'},
  {day:'日曜',date:dateAt(6),title:'チーム活動・振り返り',minutes:0,category:'チーム活動・休養',focus,team:true,note:'チーム活動を優先。活動がない場合は休養。週の最後に「できた判断」「次に試すこと」を親子で1つずつ振り返る。',why:'次週の目標につなげる'}
  ];
+ const recoverySafety=getRecoverySafetySummary(today());
+ if(recoverySafety.level==='stop'||recoverySafety.level==='light')days.forEach(plan=>{if(plan.minutes){plan.minutes=recoverySafety.level==='stop'?0:Math.min(plan.minutes,5);plan.title=recoverySafety.level==='stop'?'回復確認まで休養':'回復優先｜短時間の軽い活動';plan.category='回復・安全優先';plan.rest=recoverySafety.level==='stop';plan.note=recoverySafety.reason+'\n痛み・違和感がある場合は運動を中止し、保護者に伝えてください。';plan.why+='／体調記録に基づく安全調整';}else if(recoverySafety.level==='stop'){plan.rest=true;plan.team=false;plan.title='活動を見合わせて保護者に相談';plan.note=recoverySafety.reason;plan.why='痛み・違和感の記録を優先';}});
  return days.map(plan=>{const adjusted=plan.minutes?adaptTrainingPlanFromReflection(plan):plan;return {...adjusted,date:plan.date,day:plan.day,team:!!plan.team,rest:!!plan.rest,sourceMatch:plan.sourceMatch||null,difficultyLevel:feedback.assessed?feedback.level:adjusted.difficultyLevel,note:plan.minutes?adjusted.note+'\n\n'+getTrainingSessionGuide(adjusted.focus,level):plan.note,why:plan.why};});
 }
 function applyWeeklyCoachSession(index){
@@ -2713,9 +2715,67 @@ function renderPostMatchRecovery(){
  (decision.key==='stop'?'<div class="note" style="border:1px solid var(--danger,#c44)"><b>痛み・違和感がある場合</b><div class="tiny">サッカー練習や自主トレを勧めません。保護者に必ず伝え、痛みが続く・強い・腫れや歩行困難がある場合は医療機関に相談してください。</div></div>':'')+
  compare+olderText+'<div class="tiny muted" style="margin-top:8px">この判定は家庭での記録に基づく一般的な目安で、診断や復帰許可ではありません。通常練習への復帰は、痛みがなく日常動作が問題ないことを確認し、必要なら医療専門職・チーム指導者と相談してください。</div>';
 }
+function getRecoveryTrendData(mode){
+ const pre=state.preMatchHealthChecks||{},post=state.postMatchRecovery||{},all=[];
+ const sleepValue=v=>({'5時間未満':4.5,'5〜6時間':5.5,'6〜7時間':6.5,'7〜8時間':7.5,'8時間以上':8.5}[v]??null);
+ Object.values(pre).forEach(x=>{if(!x?.date)return;all.push({date:x.date,source:'試合前',fatigue:x.fatigue===''||x.fatigue==null?null:Number(x.fatigue),legs:x.legs===''||x.legs==null?null:Number(x.legs),sleep:sleepValue(x.sleep),pain:x.pain||''});});
+ Object.values(post).forEach(x=>{if(!x?.date)return;all.push({date:x.date,source:'試合後・回復日',fatigue:x.fatigue===''||x.fatigue==null?null:Number(x.fatigue),legs:x.legs===''||x.legs==null?null:Number(x.legs),sleep:sleepValue(x.sleep),pain:x.pain||''});});
+ const now=new Date(today()+'T00:00:00'),cutoff=new Date(now);
+ cutoff.setDate(cutoff.getDate()-(mode==='month'?183:55));
+ const selected=all.filter(x=>new Date(x.date+'T00:00:00')>=cutoff&&new Date(x.date+'T00:00:00')<=now).sort((a,b)=>a.date.localeCompare(b.date));
+ const buckets={};
+ selected.forEach(x=>{
+  const d=new Date(x.date+'T00:00:00');let key,label;
+  if(mode==='month'){key=x.date.slice(0,7);label=key.replace('-','/');}
+  else{const day=d.getDay(),monday=new Date(d);monday.setDate(d.getDate()+(day===0?-6:1-day));key=monday.toLocaleDateString('sv-SE');label=key.slice(5).replace('-','/');}
+  const b=buckets[key]||(buckets[key]={key,label,records:0,fatigue:[],legs:[],sleep:[],pain:0,painKnown:0,pre:0,post:0});
+  b.records++;b[x.source==='試合前'?'pre':'post']++;
+  if(x.fatigue!==null&&Number.isFinite(x.fatigue))b.fatigue.push(x.fatigue);
+  if(x.legs!==null&&Number.isFinite(x.legs))b.legs.push(x.legs);
+  if(x.sleep!==null)b.sleep.push(x.sleep);
+  if(x.pain){b.painKnown++;if(x.pain!=='なし')b.pain++;}
+ });
+ return Object.values(buckets).sort((a,b)=>a.key.localeCompare(b.key)).map(b=>({...b,fatigue:b.fatigue.length?b.fatigue.reduce((a,v)=>a+v,0)/b.fatigue.length:null,legs:b.legs.length?b.legs.reduce((a,v)=>a+v,0)/b.legs.length:null,sleep:b.sleep.length?b.sleep.reduce((a,v)=>a+v,0)/b.sleep.length:null}));
+}
+function getRecoverySafetySummary(asOfDate){
+ const post=Object.values(state.postMatchRecovery||{}).filter(x=>x.date&&x.date<=asOfDate).sort((a,b)=>a.date.localeCompare(b.date));
+ const pre=Object.values(state.preMatchHealthChecks||{}).filter(x=>x.date&&x.date<=asOfDate).sort((a,b)=>a.date.localeCompare(b.date));
+ const latestPost=post[post.length-1],latestPre=pre[pre.length-1];
+ const latest=[latestPost&&{...latestPost,source:'試合後'},latestPre&&{...latestPre,source:'試合前'}].filter(Boolean).sort((a,b)=>a.date.localeCompare(b.date)).pop();
+ if(latest?.pain&&latest.pain!=='なし')return {level:'stop',reason:latest.date+'の'+latest.source+'記録に痛み・違和感があります。痛みがなくなったと本人・保護者で確認できるまで練習を再開せず、保護者と医療機関への相談を優先してください。'};
+ const recent=post.filter(x=>x.date>=new Date(new Date(asOfDate+'T00:00:00').getTime()-6*86400000).toLocaleDateString('sv-SE'));
+ const elevated=recent.filter(x=>Number(x.fatigue)>=3||Number(x.legs)>=3||x.sleep==='5時間未満'||x.sleep==='5〜6時間');
+ if(elevated.length>=2)return {level:'light',reason:'直近7日間に疲労・足の重さ・睡眠不足の注意記録が複数あります。次週の自主練習は短く軽くし、強度を上げず、毎回の体調確認を優先します。'};
+ return {level:'normal',reason:recent.length?'直近の記録だけでは強い疲労の継続は確認されません。毎回の体調確認を続けます。':'回復記録が不足しています。負荷を増やす根拠にはせず、本人の当日の体調を優先します。'};
+}
+function getRecoveryPersistenceSummary(){
+ const records=Object.values(state.postMatchRecovery||{}).filter(x=>x.date).sort((a,b)=>a.date.localeCompare(b.date));
+ let painRun=0,fatigueRun=0,longestPain=0,longestFatigue=0,prev=null;
+ records.forEach(x=>{
+  const d=new Date(x.date+'T00:00:00'),consecutive=prev&&((d-new Date(prev.date+'T00:00:00'))/86400000===1);
+  if(!consecutive){painRun=0;fatigueRun=0;}
+  if(x.pain&&x.pain!=='なし')painRun++;else painRun=0;
+  if(Number(x.fatigue)>=3||Number(x.legs)>=3)fatigueRun++;else fatigueRun=0;
+  longestPain=Math.max(longestPain,painRun);longestFatigue=Math.max(longestFatigue,fatigueRun);prev=x;
+ });
+ return {longestPain,longestFatigue,postCount:records.length};
+}
+function renderRecoveryTrendAnalysis(){
+ const host=document.getElementById('recoveryTrendAnalysis');if(!host)return;
+ const mode=state.settings?.recoveryTrendMode||'week',data=getRecoveryTrendData(mode),safety=getRecoverySafetySummary(today()),persistence=getRecoveryPersistenceSummary();
+ const chart=(title,key,max,unit,empty)=>{const points=data.filter(x=>x[key]!==null);if(points.length<2)return '<div class="note" style="margin-top:8px"><b>'+title+'</b><div class="tiny muted">'+(points.length?'記録は1期間のみです。変化の線を引くには、別の期間の記録が必要です。':empty)+'</div></div>';const w=320,h=112,left=24,right=8,top=10,bottom=24,step=(w-left-right)/Math.max(1,data.length-1),xy=points.map(x=>{const idx=data.indexOf(x),v=Math.max(0,Math.min(max,x[key]));return {x:left+idx*step,y:top+(max-v)/(max)*(h-top-bottom),label:x.label,value:x[key]};});const poly=xy.map(p=>p.x.toFixed(1)+','+p.y.toFixed(1)).join(' ');const circles=xy.map(p=>'<circle cx="'+p.x+'" cy="'+p.y+'" r="3" fill="currentColor"><title>'+esc(p.label)+': '+p.value.toFixed(1)+unit+'</title></circle>').join('');const labels=data.map((x,i)=>'<text x="'+(left+i*step)+'" y="'+(h-5)+'" font-size="8" text-anchor="middle" fill="currentColor">'+esc(x.label)+'</text>').join('');return '<div class="note" style="margin-top:8px"><b>'+title+'</b><svg viewBox="0 0 '+w+' '+h+'" role="img" aria-label="'+title+'" style="width:100%;height:auto;max-height:150px"><line x1="'+left+'" y1="'+(h-bottom)+'" x2="'+(w-right)+'" y2="'+(h-bottom)+'" stroke="currentColor" opacity=".25"/><polyline points="'+poly+'" fill="none" stroke="currentColor" stroke-width="2"/>'+circles+labels+'</svg><div class="tiny muted">各期間の平均 '+unit+'。数値は記録された範囲の集計です。</div></div>';};
+ const painPoints=data.filter(x=>x.painKnown>0);
+ const painChart=painPoints.length>=2?'<div class="note" style="margin-top:8px"><b>痛み・違和感の記録件数（評価点ではありません）</b>'+data.map(x=>'<div class="tiny">'+esc(x.label)+'：'+(x.painKnown?x.pain+'件／記録 '+x.painKnown+'件':'記録なし')+'</div>').join('')+'</div>':'<div class="note" style="margin-top:8px"><b>痛み・違和感の記録</b><div class="tiny muted">比較できる期間の記録がまだ不足しています。痛みは能力点数に換算しません。</div></div>';
+ let trendText='記録不足：複数期間の記録がたまると傾向を表示します。';
+ if(persistence.longestPain>=2)trendText='痛み・違和感が連続した日付で記録されています。練習再開を勧めず、保護者に伝えて医療機関へ相談してください。';
+ else if(persistence.longestFatigue>=2)trendText='疲労または足の重さが強い記録が連続した日付で見られます。回復に時間がかかっている可能性があるため、休養を優先して保護者と状態を確認してください。';
+ else if(persistence.postCount>=3)trendText='記録が複数ありますが、連続した強い疲労・痛みは確認されていません。記録のない日は回復したと判断しません。';
+ host.innerHTML='<h3>疲労・回復の長期トレンド</h3><div class="tiny muted">試合前・試合後の保存記録を集計。記録がない日は補完せず、痛みは能力評価に使いません。</div><label class="label" style="margin-top:8px">集計期間</label><select onchange="updateRecoveryTrendMode(this.value)"><option value="week" '+(mode==='week'?'selected':'')+'>週別（直近8週間）</option><option value="month" '+(mode==='month'?'selected':'')+'>月別（直近6か月）</option></select>'+chart('全身の疲労（平均 0〜4）','fatigue',4,'点','疲労の記録がありません。')+chart('足の重さ（平均 0〜4）','legs',4,'点','足の重さの記録がありません。')+chart('睡眠時間（平均）','sleep',9,'時間','睡眠の記録がありません。')+painChart+'<div class="note" style="margin-top:8px"><b>回復に時間がかかる傾向</b><div class="tiny">'+esc(trendText)+'</div></div><div class="note" style="margin-top:8px"><b>次週の安全調整</b><div class="tiny">'+esc(safety.reason)+'</div></div><div class="tiny muted" style="margin-top:8px">睡眠時間は選択肢の代表値（5時間未満＝4.5時間、8時間以上＝8.5時間）で概算。診断・競技復帰の判定ではありません。痛みが続く、強い、腫れ、歩行困難がある場合は医療機関に相談してください。</div>';
+}
+function updateRecoveryTrendMode(value){state.settings=state.settings||{};state.settings.recoveryTrendMode=value==='month'?'month':'week';persist();}
 function renderAll(){
  if(document.getElementById('growthTrainingChart'))renderGrowthDashboard();
- state.aiFormAnalyses=state.aiFormAnalyses||[];state.matchAnalyses=state.matchAnalyses||[];let date=today(),month=date.slice(0,7),days=new Set(state.trainings.filter(x=>x.date.startsWith(month)).map(x=>x.date)).size;homeDays.innerHTML=`${days} <small>日</small>`;monthProgress.style.width=Math.min(100,days/12*100)+'%';homeVideos.innerHTML=`${state.clips.length+state.forms.length} <small>件</small>`;let sprint=state.measures.find(x=>x.type==='30m走');homeSprint.innerHTML=sprint?`${esc(sprint.value)} <small>${esc(sprint.unit)}</small>`:'—';homeNumbers.textContent=`${state.settings.jersey1} / ${state.settings.jersey2}`;const coachPlan=getCoachTrainingPlan();const weekPlan=getWeeklyCoachPlan();const weekFeedback=getPreviousWeekTrainingAdjustment(weekPlan[0].date);const weekMatchFeedback=getPreviousWeekMatchAdjustment(weekPlan[0].date);dailyPlan.innerHTML='<div class="listitem"><span class="tag good">AIコーチ提案</span><div class="grow"><b>'+esc(coachPlan.title)+'</b><div class="tiny muted">'+coachPlan.minutes+'分・'+esc(coachPlan.why)+'</div><div class="tiny">'+esc(coachPlan.note)+'</div><button class="secondary small" onclick="applyCoachTrainingPlan()">このメニューで練習を始める</button></div></div><h3 style="margin:14px 0 6px">判断力データ連動｜今週の7日間プラン</h3><div class="tiny muted">判断力レベル・次の目標・成功率の高い練習方法を反映。月〜水は短時間の自主練、木〜日はチーム活動と回復を優先します。</div>'+weekPlan.map((p,i)=>'<div class="listitem"><div class="grow"><b>'+p.day+'｜'+esc(p.title)+'</b><div class="tiny muted">'+p.date+'・'+(p.minutes?p.minutes+'分':p.rest?'休養日':'チーム活動')+'・'+esc(p.why)+'</div><div class="tiny" style="white-space:pre-line">'+esc(p.note)+'</div>'+(p.minutes?'<button class="secondary small" onclick="applyWeeklyCoachSession('+i+')">この日の練習を始める</button>':p.team?'<span class="tag">チーム活動で意識</span>':'<span class="tag">回復優先</span>')+'</div></div>').join('')+renderWeeklyAdjustmentSummary(weekFeedback,weekMatchFeedback)+renderCoachOverallAssessment()+renderIntegratedDevelopmentBrief()+renderMonthlyGrowthTrajectory();renderMatchdayFocus();createPreMatchPreparation();renderPostMatchRecovery();
+ state.aiFormAnalyses=state.aiFormAnalyses||[];state.matchAnalyses=state.matchAnalyses||[];let date=today(),month=date.slice(0,7),days=new Set(state.trainings.filter(x=>x.date.startsWith(month)).map(x=>x.date)).size;homeDays.innerHTML=`${days} <small>日</small>`;monthProgress.style.width=Math.min(100,days/12*100)+'%';homeVideos.innerHTML=`${state.clips.length+state.forms.length} <small>件</small>`;let sprint=state.measures.find(x=>x.type==='30m走');homeSprint.innerHTML=sprint?`${esc(sprint.value)} <small>${esc(sprint.unit)}</small>`:'—';homeNumbers.textContent=`${state.settings.jersey1} / ${state.settings.jersey2}`;const coachPlan=getCoachTrainingPlan();const weekPlan=getWeeklyCoachPlan();const weekFeedback=getPreviousWeekTrainingAdjustment(weekPlan[0].date);const weekMatchFeedback=getPreviousWeekMatchAdjustment(weekPlan[0].date);dailyPlan.innerHTML='<div class="listitem"><span class="tag good">AIコーチ提案</span><div class="grow"><b>'+esc(coachPlan.title)+'</b><div class="tiny muted">'+coachPlan.minutes+'分・'+esc(coachPlan.why)+'</div><div class="tiny">'+esc(coachPlan.note)+'</div><button class="secondary small" onclick="applyCoachTrainingPlan()">このメニューで練習を始める</button></div></div><h3 style="margin:14px 0 6px">判断力データ連動｜今週の7日間プラン</h3><div class="tiny muted">判断力レベル・次の目標・成功率の高い練習方法を反映。月〜水は短時間の自主練、木〜日はチーム活動と回復を優先します。</div>'+weekPlan.map((p,i)=>'<div class="listitem"><div class="grow"><b>'+p.day+'｜'+esc(p.title)+'</b><div class="tiny muted">'+p.date+'・'+(p.minutes?p.minutes+'分':p.rest?'休養日':'チーム活動')+'・'+esc(p.why)+'</div><div class="tiny" style="white-space:pre-line">'+esc(p.note)+'</div>'+(p.minutes?'<button class="secondary small" onclick="applyWeeklyCoachSession('+i+')">この日の練習を始める</button>':p.team?'<span class="tag">チーム活動で意識</span>':'<span class="tag">回復優先</span>')+'</div></div>').join('')+renderWeeklyAdjustmentSummary(weekFeedback,weekMatchFeedback)+renderCoachOverallAssessment()+renderIntegratedDevelopmentBrief()+renderMonthlyGrowthTrajectory();renderMatchdayFocus();createPreMatchPreparation();renderPostMatchRecovery();renderRecoveryTrendAnalysis();
 trainDate.value=trainDate.value||date;measureDate.value=measureDate.value||date;
 trainMenu.innerHTML=state.menus.map((m,i)=>`<option value="${esc(m.name)}">${esc(m.category)}｜${esc(m.name)}</option>`).join('');
 menuList.innerHTML=state.menus.map((m,i)=>`<div class="listitem"><div class="grow"><b>${esc(m.name)}</b><div class="tiny muted">${esc(m.category)}・目安${m.minutes||10}分</div></div><button class="danger small" onclick="removeMenu(${i})">削除</button></div>`).join('');
