@@ -48,6 +48,7 @@ button,.button{border:0;border-radius:12px;padding:12px 14px;font-weight:800;fon
  <p class="section-desc">保存された練習・試合評価・測定記録を時系列で表示。記録が増えるほど変化が見やすくなります。</p>
  <div class="card"><h2>練習の積み重ね</h2><div id="growthTrainingChart"></div><div class="tiny muted">月ごとの練習記録数です。回数の増加は技術向上そのものを意味しません。</div></div>
  <div class="card"><h2>試合での評価推移</h2><div id="growthMatchChart"></div><div class="tiny muted">本人確認済みの陸玖の試合場面について、「良かった」の割合を月ごとに表示。評価件数も併記します。</div></div>
+ <div class="card"><h2>試合→練習→次の試合｜テーマ別の改善率</h2><div id="growthImprovementSummary"></div><div class="tiny muted">改善率＝次の試合で「良かった」と確認できた件数 ÷ 評価済み件数。練習達成率＝練習チェック完了数 ÷ 全チェック数。評価待ちは分母に含めません。</div></div>
  <div class="card"><h2>身体測定の推移</h2><p class="tiny muted">種目ごとに別々のグラフで表示します。30m走・アジリティは短いほど、立ち幅跳びは長いほど良い方向です。</p><div id="growthMeasureCharts"></div></div>
  <div class="card"><h2>記録の見方</h2><div class="tiny muted">実際に保存されたデータだけを描画します。測定条件・路面・靴・計測方法が異なる場合、数値の差をそのまま成長と判断しないでください。記録が1件だけの項目は点のみ表示します。</div></div>
 </section>
@@ -816,11 +817,35 @@ function renderGrowthBars(title,points,unit){
  const bars=list.map((p,i)=>{const v=Number(p.value),h=v/max*(H-T-B),xx=L+i*slot+(slot-bar)/2,yy=H-B-h;return '<rect x="'+xx.toFixed(1)+'" y="'+yy.toFixed(1)+'" width="'+bar.toFixed(1)+'" height="'+h.toFixed(1)+'" rx="5" fill="currentColor" opacity=".72"><title>'+esc(p.label)+'：'+v+' '+esc(unit)+'</title></rect><text x="'+(xx+bar/2).toFixed(1)+'" y="'+(yy-6).toFixed(1)+'" text-anchor="middle" font-size="12" fill="currentColor">'+v+'</text><text x="'+(xx+bar/2).toFixed(1)+'" y="'+(H-24)+'" text-anchor="middle" font-size="10" fill="currentColor">'+esc(p.label)+'</text>';}).join('');
  return '<div style="margin:8px 0"><b>'+esc(title)+'</b><svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="'+esc(title)+'の月別グラフ" style="width:100%;height:auto;display:block">'+bars+'</svg></div>';
 }
+function getThemeImprovementStats(){
+ const groups={};
+ (state.trainings||[]).filter(t=>t.sourceMatch).forEach(training=>{
+  const focus=training.sourceMatch.focus||training.focus||inferTrainingFocus(training.menu,training.category);
+  const g=groups[focus]||(groups[focus]={theme:focus,chains:0,improved:0,needsWork:0,pending:0,practiceDone:0,practiceTotal:0,practiceSessions:0});
+  g.chains++;
+  const steps=Array.isArray(training.steps)&&training.steps.length?training.steps:getTrainingSteps(focus);
+  g.practiceDone+=(training.stepsDone||[]).length;
+  g.practiceTotal+=steps.length;
+  if(steps.length)g.practiceSessions++;
+  const follow=getImprovementFollowup(training);
+  if(follow?.status==='改善の兆しあり')g.improved++;
+  else if(follow?.status==='まだ改善課題あり')g.needsWork++;
+  else g.pending++;
+ });
+ return Object.values(groups).map(g=>({...g,assessed:g.improved+g.needsWork,improvementRate:g.improved+g.needsWork?Math.round(g.improved/(g.improved+g.needsWork)*100):null,practiceRate:g.practiceTotal?Math.round(g.practiceDone/g.practiceTotal*100):null})).sort((a,b)=>b.chains-a.chains||a.theme.localeCompare(b.theme,'ja'));
+}
+function renderThemeImprovementStats(){
+ const host=document.getElementById('growthImprovementSummary');if(!host)return;
+ const rows=getThemeImprovementStats();
+ if(!rows.length){host.innerHTML='<div class="empty">まだ試合から作成した練習記録がありません。試合場面の「このメニューで練習を作成」から始めると、テーマ別の改善率を集計できます。</div>';return;}
+ host.innerHTML=rows.map(g=>'<div class="listitem" style="display:block"><b>'+esc(g.theme)+'</b><div class="tiny muted">改善課題からの練習 '+g.chains+'件｜次の試合：改善 '+g.improved+'・課題継続 '+g.needsWork+'・評価待ち '+g.pending+'</div><div class="tiny" style="margin-top:6px">試合での改善率：<b>'+(g.improvementRate===null?'評価データ待ち':g.improvementRate+'%')+'</b>'+(g.assessed?'（'+g.improved+'/'+g.assessed+'件）':'')+'</div><div style="height:8px;background:var(--line,#ddd);border-radius:8px;overflow:hidden;margin:4px 0 8px"><div style="height:100%;width:'+(g.improvementRate??0)+'%;background:var(--accent,#7cba43);border-radius:8px"></div></div><div class="tiny">練習チェック達成率：<b>'+(g.practiceRate===null?'未記録':g.practiceRate+'%')+'</b>（'+g.practiceDone+'/'+g.practiceTotal+'項目）</div><div class="tiny muted">練習 '+g.practiceSessions+'回分のチェックを集計。次の試合で本人確認・評価された同じテーマの最初の場面を基準にしています。</div></div>').join('');
+}
 function renderGrowthDashboard(){
  const months=[];const now=new Date();for(let offset=5;offset>=0;offset--){const d=new Date(now.getFullYear(),now.getMonth()-offset,1);months.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));}
  const trainings=state.trainings||[],matches=state.matchAnalyses||[],measures=state.measures||[];
  const trainingPoints=months.map(m=>({label:m.slice(5)+'月',value:trainings.filter(t=>String(t.date||'').slice(0,7)===m).length}));
  growthTrainingChart.innerHTML=renderGrowthBars('月ごとの練習記録数',trainingPoints,'回');
+ renderThemeImprovementStats();
  const matchPoints=months.map(m=>{const events=matches.filter(x=>String(x.date||'').slice(0,7)===m).flatMap(x=>(x.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖'&&['良かった','改善したい'].includes(e.assessment)));return {month:m,label:m.slice(5)+'月',value:events.length?Math.round(events.filter(e=>e.assessment==='良かった').length/events.length*100):null,count:events.length};}).filter(p=>p.value!==null);
  growthMatchChart.innerHTML=matchPoints.length?renderGrowthLineChart('良かった評価の割合（%）',matchPoints.map(p=>({date:p.month,value:p.value})), '%',{decimals:0,empty:'評価済みの試合場面がまだありません。'}):'<div class="empty">評価済みの試合場面がまだありません。陸玖本人として確認し、良かった／改善したいを入力すると推移が表示されます。</div>';
  const types=[{type:'30m走',unit:'秒',decimals:2},{type:'アジリティ',unit:'秒',decimals:2},{type:'立ち幅跳び',unit:'cm',decimals:1}];
