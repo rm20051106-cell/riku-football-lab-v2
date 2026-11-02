@@ -52,6 +52,7 @@ function render(){
  renderTacticalSituationAnalysis();
  renderTacticalDecisionScenarios();
  renderTacticalTrainingLog();
+ renderTacticalDecisionGrowthReport();
  let host=document.getElementById(PANEL_ID);
  if(!host){
   const history=document.getElementById('matchScanRecords');
@@ -456,6 +457,53 @@ function applyTacticalTrainingResultPlan(plans){
  const d=details[p.key];
  plans[2]={...base,title:d.title,category:'判断力',minutes:10,note:d.note+'\\n\\n【本人の実施記録】直近'+summary.recent.length+'回から次回の重点を調整。',why:'陸玖本人の実施記録 '+summary.recent.length+'回を集計：'+p.label+'（'+p.detail+'）'};
  return applyTacticalTrainingResultPlan(plans);
+}
+
+
+function renderTacticalDecisionGrowthReport(){
+ const videoView=document.getElementById('video');if(!videoView)return;
+ let host=document.getElementById('tacticalDecisionGrowthReport');
+ if(!host){host=document.createElement('section');host.id='tacticalDecisionGrowthReport';host.className='card';}
+ const matches=(typeof state!=='undefined'&&Array.isArray(state.matchAnalyses))?state.matchAnalyses:[];
+ const matchRows=[];
+ matches.forEach(match=>(match.candidateEvents||[]).forEach(ev=>{
+  const review=ev.tacticalReview;
+  if(ev.reviewLabel!=='陸玖'||!review?.reviewedAt||!review.fields)return;
+  const f=review.fields;
+  const date=String(review.reviewedAt||match.date||'').slice(0,10);
+  if(!date)return;
+  matchRows.push({date,matchTitle:match.title||'試合',time:ev.time,fields:f});
+ }));
+ matchRows.sort((a,b)=>a.date.localeCompare(b.date)||Number(a.time||0)-Number(b.time||0));
+ const trainingRows=getTacticalTrainingRecords().filter(x=>String(x.date||'').length===10&&x.date[4]==='-'&&x.date[7]==='-').slice().sort((a,b)=>a.date.localeCompare(b.date));
+ const groupByDate=rows=>{const out={};rows.forEach(x=>(out[x.date]||(out[x.date]=[])).push(x));return Object.keys(out).sort().map(date=>({date,items:out[date]}));};
+ const matchDays=groupByDate(matchRows),trainingDays=groupByDate(trainingRows);
+ const matchReady=matchRows.length>=3&&matchDays.length>=2;
+ const trainingReady=trainingRows.length>=3&&trainingDays.length>=2;
+ const choices=['パス','ドリブル','シュート','キープ','その他'];
+ const matchTimeline=matchDays.slice(-8).map(day=>{
+  const scans=day.items.filter(x=>['左右を確認','前方を確認','複数方向を確認','確認したが首振りなし'].includes(x.fields.scan));
+  const scanGood=scans.filter(x=>['左右を確認','前方を確認','複数方向を確認'].includes(x.fields.scan)).length;
+  const selected=choices.filter(c=>day.items.some(x=>x.fields.decision===c));
+  const contexts=['pressure','zone','scoreState'].map(k=>day.items.map(x=>x.fields[k]).filter(v=>v&&v!=='映像で確認できない'));
+  const contextCount=contexts.reduce((n,a)=>n+a.length,0);
+  return '<div class="listitem"><div class="grow"><b>'+escT(day.date)+'｜試合・手動確認 '+day.items.length+'場面</b><div class="tiny muted">周囲確認：確認できた '+scanGood+'/'+scans.length+'場面（確認不能は分母に含めず）</div><div class="tiny muted">記録されたプレー選択：'+escT(selected.join('・')||'なし')+'（選択肢の数ではありません）</div><div class="tiny muted">状況情報：プレス・場所・試合状況の入力 '+contextCount+'項目</div></div></div>';
+ }).join('');
+ const trainingTimeline=trainingDays.slice(-8).map(day=>{
+  const fast=day.items.filter(x=>x.responseSpeed==='2秒以内').length;
+  const slow=day.items.filter(x=>x.responseSpeed==='3秒以上').length;
+  const many=day.items.filter(x=>x.optionsFound==='3つ以上').length;
+  const one=day.items.filter(x=>x.optionsFound==='1つ').length;
+  const adapted=day.items.filter(x=>x.adapted==='状況に合わせて変えられた').length;
+  const unchanged=day.items.filter(x=>x.adapted==='状況が変わっても同じ選択だった'||x.adapted==='同じ選択を続けた').length;
+  return '<div class="listitem"><div class="grow"><b>'+escT(day.date)+'｜本人の練習実施 '+day.items.length+'回</b><div class="tiny muted">判断の速さ：2秒以内 '+fast+'回／3秒以上 '+slow+'回</div><div class="tiny muted">選択肢：3つ以上 '+many+'回／1つ '+one+'回</div><div class="tiny muted">状況対応：変えられた '+adapted+'回／同じ選択 '+unchanged+'回</div></div></div>';
+ }).join('');
+ const matchStatus=matchReady?'手動確認済み '+matchRows.length+'場面・'+matchDays.length+'日分':'評価保留（3場面以上かつ2日以上の記録が必要。現在 '+matchRows.length+'場面・'+matchDays.length+'日分）';
+ const trainingStatus=trainingReady?'本人実施 '+trainingRows.length+'回・'+trainingDays.length+'日分':'評価保留（本人実施3回以上かつ2日以上の記録が必要。現在 '+trainingRows.length+'回・'+trainingDays.length+'日分）';
+ const comparison='<div class="note"><b>両方の変化の見比べ方</b><div class="tiny">試合側：実際の試合で手動確認できた首振り・プレー選択・状況情報の記録数や内容を時系列で確認します。</div><div class="tiny">練習側：本人が実際に行った判断の速さ・見つけた選択肢・状況対応の記録を時系列で確認します。</div><div class="tiny">同じ日付の変化を並べて見られますが、測定方法が違うため共通点数・合算点・因果関係は作りません。試合で選んだプレーの種類を、本人が見つけた選択肢の数として扱いません。</div></div>';
+ host.innerHTML='<h2>⑫ 判断力の成長レポート｜試合と練習を時系列で比較</h2><p class="tiny muted">陸玖本人として手動確認した試合場面と、陸玖本人の実施確認がある判断トレーニングを、出どころを分けて日付順に表示します。</p><div class="card"><h3>試合中の判断｜手動確認記録</h3><div class="tiny muted">'+escT(matchStatus)+'</div>'+(matchTimeline||'<div class="tiny muted">対象となる手動確認済み試合記録はありません。</div>')+'<div class="tiny muted">判断の速さ（秒数）と本人が見つけた選択肢の数は、手動確認項目にないため試合側では評価しません。</div></div><div class="card"><h3>判断トレーニング｜本人の実施記録</h3><div class="tiny muted">'+escT(trainingStatus)+'</div>'+(trainingTimeline||'<div class="tiny muted">本人の実施記録はありません。</div>')+'<div class="tiny muted">未実施・未入力・判断できなかった記録を、成功として数えません。</div></div>'+comparison+'<div class="tiny muted">評価保留は能力が低いという意味ではなく、傾向を判断するための記録数がまだ足りないという意味です。記録のない日を補間したり、映像から練習結果を推測したりしません。</div>';
+ const log=document.getElementById('tacticalTrainingLog');
+ if(log)log.insertAdjacentElement('afterend',host);else videoView.appendChild(host);
 }
 
 function install(){
