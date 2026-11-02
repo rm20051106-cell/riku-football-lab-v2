@@ -978,6 +978,64 @@ function getActiveSeasonGoal(){
  entries.sort((a,b)=>String(b[1].savedAt||'').localeCompare(String(a[1].savedAt||''))||String(b[0]).localeCompare(String(a[0])));
  return entries.length?{...entries[0][1],year:String(entries[0][0])}:null;
 }
+function getAdaptiveCoachAdjustment(focus){
+ const history=(state.trainings||[]).filter(t=>(t.focus||inferTrainingFocus(t.menu,t.category))===focus).slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||Number(b.id||0)-Number(a.id||0)).slice(0,6);
+ const profile=getTrainingDifficultyProfile(focus);
+ const groups=new Map();
+ history.filter(t=>t.sourceMatch?.issueKey).forEach(t=>{
+  const key=t.sourceMatch.issueKey;
+  const follow=getImprovementFollowup(t);
+  const unresolved=t.reviewStatus==='難しかった'||t.reviewStatus==='まだ試せていない'||t.matchTransferStatus==='まだ'||(follow&&follow.assessed>0&&follow.improve>follow.good);
+  const row=groups.get(key)||{key,count:0,unresolved:0,records:[]};
+  row.count++;if(unresolved)row.unresolved++;row.records.push(t);groups.set(key,row);
+ });
+ const repeated=[...groups.values()].filter(x=>x.count>=2&&x.unresolved>=2).sort((a,b)=>b.unresolved-a.unresolved||b.count-a.count)[0]||null;
+ const variants={
+ 'ドリブル':[{title:'ゲート選択ドリブル',note:'左右2つのゲートを置き、相手の重心を見て通る側を選ぶ。成功したら親子1対1へ。'},{title:'ファーストタッチ方向転換',note:'パスを受ける前に周囲を確認し、最初のタッチで左右どちらかへ運び出す。最後に2〜3歩加速。'},{title:'追走相手からの突破',note:'親が斜め後ろから追走。相手の位置を見て、左右どちらかへボールを運び出す。'}],
+ 'パス':[{title:'色・番号ゲートパス',note:'左右に色違いのゲートを置く。受ける前に確認し、空いているゲートを選んで通す。'},{title:'ワンツーで前進',note:'親へパスして動き直し、返球を前向きに受ける。サポート角度を変えて繰り返す。'},{title:'逆足パスコース選択',note:'左右のゲートを交互に開け、周囲を見て空いたコースへ右足・左足でつなぐ。'}],
+ 'ボールを受ける':[{title:'背後確認から前向きターン',note:'受ける前に左右を確認。親の立つ位置を変え、半身で受けて空いた方向へタッチ。'},{title:'遠い足で受ける練習',note:'親の立ち位置を左右に変え、相手から遠い足で受けて前方へ運ぶ。'},{title:'受ける前の判断ゲーム',note:'親がパス直前に左右へ移動。首振りで確認した情報を使い、空いた方へコントロール。'}],
+ 'シュート':[{title:'ファーストタッチ後のコース選択',note:'左右どちらかへファーストタッチしてから、ゴールの空いたコースを狙う。近距離で正確さを優先。'},{title:'ワンステップシュート',note:'短いパスを受けて軸足と体の向きを整え、落ち着いて蹴る。'},{title:'左右角度を変えるシュート',note:'ゴールに対する角度を左右に変え、軸足とミートを確認してコースを狙う。'}],
+ '守備・プレス':[{title:'誘導して奪う1対1',note:'飛び込まず外側へ誘導し、相手のタッチが大きくなった時だけボールへ寄せる。'},{title:'距離を保つステップ守備',note:'親の速度を歩きから開始。正面を保ち、相手の動きに合わせて小さくステップ。'},{title:'カバーを意識した守備',note:'奪いに行くか遅らせるかを選ぶ。無理な接触や強い競り合いは避ける。'}],
+ 'オフザボール':[{title:'角度を変えるサポート',note:'親の位置を固定し、斜め前・斜め後ろへ動いてパスコースを作る。'},{title:'動き直し2回チャレンジ',note:'一度近づいてから離れ、相手の背中側に受ける場所を作る。'},{title:'タイミングを変える動き出し',note:'親が顔を上げるタイミングを変える。見てから動き出し、パスを受ける。'}]
+ };
+ let alternative=null;
+ if(repeated){
+  const options=variants[focus]||[{title:'場面を変えた基礎チャレンジ',note:'同じ動きを別の角度・距離でゆっくり再現し、成功したら短い対人形式へ進む。'}];
+  const priorMenu=repeated.records[0]?.menu||'';
+  alternative=options.find(x=>x.title!==priorMenu&&!repeated.records.some(t=>String(t.menu||'').includes(x.title)))||options[repeated.unresolved%options.length];
+ }
+ return {focus,profile,historyCount:history.length,latest:history[0]||null,repeated,alternative,sets:profile.level===1?2:3,reps:profile.level===1?4:profile.level===3?6:5,restSeconds:profile.level===1?45:profile.level===3?20:30,minutesDelta:profile.level===1?-2:profile.level===3?2:0};
+}
+function getCoachEvidenceSplit(focus){
+ const pairs=(state.matchAnalyses||[]).flatMap(match=>(match.candidateEvents||[]).map(ev=>({match,ev})));
+ const confirmed=pairs.filter(x=>isManuallyReviewedMatchEvent(x.ev)&&getTrainingFocusForMatchEvent(x.ev)===focus);
+ const rated=confirmed.filter(x=>['良かった','改善したい'].includes(x.ev.assessment));
+ const candidates=pairs.filter(x=>!isManuallyReviewedMatchEvent(x.ev));
+ return {good:rated.filter(x=>x.ev.assessment==='良かった').length,improve:rated.filter(x=>x.ev.assessment==='改善したい').length,unrated:confirmed.length-rated.length,confirmed:confirmed.length,aiCandidates:candidates.length};
+}
+function renderAdaptiveCoachPanel(){
+ const plan=getCoachTrainingPlan(),a=getAdaptiveCoachAdjustment(plan.focus),e=getCoachEvidenceSplit(plan.focus);
+ const history=(state.trainings||[]).filter(t=>(t.focus||inferTrainingFocus(t.menu,t.category))===plan.focus);
+ const done=history.filter(t=>t.reviewStatus==='できた').length;
+ const hard=history.filter(t=>t.reviewStatus==='難しかった'||t.reviewStatus==='まだ試せていない').length;
+ const transfer=history.filter(t=>['できた','少しできた','まだ'].includes(t.matchTransferStatus));
+ const transferGood=transfer.filter(t=>t.matchTransferStatus==='できた'||t.matchTransferStatus==='少しできた').length;
+ const alt=a.alternative;
+ return '<section class="card" style="margin-top:10px"><h3 style="margin-top:0">個別コーチ｜次回メニュー自動調整</h3><div class="tiny muted">優先テーマ：'+esc(plan.focus)+'｜'+esc(a.profile.label)+'｜直近 '+a.historyCount+' 回の練習記録を反映</div><div class="grid3"><div><div class="tiny muted">セット</div><b>'+a.sets+'</b></div><div><div class="tiny muted">1セット回数</div><b>'+a.reps+'</b></div><div><div class="tiny muted">休憩</div><b>'+a.restSeconds+'秒</b></div></div><div class="tiny" style="margin-top:6px">目安 '+Math.max(8,Math.min(20,plan.minutes+a.minutesDelta))+'分。'+esc(a.profile.reason)+'</div><div class="note" style="margin-top:8px"><b>改善した項目（人が確認した記録）</b><div class="tiny">良かった '+e.good+'場面／練習「できた」 '+done+'回／試合再現「できた・少しできた」 '+transferGood+'回</div><b>残っている課題</b><div class="tiny">改善したい '+e.improve+'場面／練習「難しかった・未実施」 '+hard+'回／試合再現「まだ」 '+transfer.filter(t=>t.matchTransferStatus==='まだ').length+'回</div><div class="tiny muted">未評価の本人確認場面 '+e.unrated+'件。件数は記録の集計であり、上達率や因果効果ではありません。</div></div><div class="tiny muted">AI候補場面（未確認）：'+e.aiCandidates+'件。上の改善・課題集計には含めていません。</div>'+(a.repeated&&alt?'<div class="note" style="margin-top:8px"><b>同じ課題が続いているため別メニューを提案</b><div class="tiny">'+esc(alt.title)+'</div><div class="tiny">'+esc(alt.note)+'</div><div class="tiny muted">同一課題キーの練習記録 '+a.repeated.count+'回中、未解決の記録 '+a.repeated.unresolved+'回。</div></div>':'<div class="tiny muted" style="margin-top:8px">同じ課題が複数回続いた記録はまだ確認できません。まずは基本メニューを継続します。</div>')+'<div class="btnrow" style="margin-top:8px"><button class="primary small" onclick="applyAdaptiveCoachPlan(false)">調整済みメニューを作成</button>'+(a.repeated&&alt?'<button class="secondary small" onclick="applyAdaptiveCoachPlan(true)">別メニューで作成</button>':'')+'</div><div class="tiny muted">AI候補は未確認として分離。映像にない動作・判断は評価していません。</div></section>';
+}
+function applyAdaptiveCoachPlan(useAlternative){
+ const base=getCoachTrainingPlan(),a=getAdaptiveCoachAdjustment(base.focus);
+ const alt=useAlternative?a.alternative:null;
+ const title=alt?alt.title:base.title;
+ const minutes=Math.max(8,Math.min(20,base.minutes+a.minutesDelta));
+ const category=alt?'課題別・別メニュー':base.category;
+ const note=(alt?alt.note:base.note)+'\n\n【個別コーチ設定】難易度 '+a.profile.label+'／'+a.sets+'セット×'+a.reps+'回／休憩 '+a.restSeconds+'秒。'+a.profile.reason+'\n'+(alt?'同じ課題が続いたため、前回とは異なる練習方法に変更。':'直近の振り返りに合わせて回数・休憩を調整。')+'\n'+getTrainingSessionGuide(base.focus,a.profile.level);
+ if(!state.menus.some(m=>m.name===title)){state.menus.unshift({name:title,category,minutes});persist();}
+ renderAll();
+ trainMenu.value=title;trainDate.value=today();trainMinutes.value=minutes;trainFocus.value=base.focus;trainNote.value=note;
+ pendingTrainingSource=alt?{adaptiveAlternative:true,focus:base.focus,issueKey:a.repeated?.key||'',alternativeTitle:title,priorIssueCount:a.repeated?.count||0,linkedManuallyConfirmed:false}:null;
+ showView('training');
+}
 function getTrainingDifficultyProfile(focus){
  const recent=(state.trainings||[]).filter(t=>(t.focus||inferTrainingFocus(t.menu,t.category))===focus&&t.date).slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||Number(b.id||0)-Number(a.id||0)).slice(0,5);
  const reviewed=recent.filter(t=>['できた','難しかった','まだ試せていない'].includes(t.reviewStatus));
@@ -999,25 +1057,21 @@ function getTrainingDifficultyProfile(focus){
  return {level,label:level===1?'基礎・成功率アップ':level===3?'応用・判断力アップ':'標準・安定',reason,recentCount:recent.length,done,hard,notTried,transferDone,transferPartial,transferNot,completionRate:completionRate===null?null:Math.round(completionRate),hardEffort};
 }
 function adaptTrainingPlanFromReflection(plan){
- const focus=plan?.focus||'ドリブル';
- const history=(state.trainings||[]).filter(t=>(t.focus||inferTrainingFocus(t.menu,t.category))===focus&&(t.reviewStatus||t.matchTransferStatus)).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||Number(b.id||0)-Number(a.id||0));
- const latest=history[0];
- const profile=getTrainingDifficultyProfile(focus);
- let minutes=Math.max(8,Number(plan.minutes)||12);
+ const focus=plan?.focus||'ドリブル',adjustment=getAdaptiveCoachAdjustment(focus),latest=adjustment.latest,profile=adjustment.profile;
+ const minutes=Math.max(8,Math.min(20,(Number(plan.minutes)||12)+adjustment.minutesDelta));
  const notes=[];
  if(latest){
-  const review=latest.reviewStatus||'',transfer=latest.matchTransferStatus||'';
-  if(review==='難しかった'){minutes=Math.max(8,minutes-2);notes.push('前回「難しかった」ため、最初はゆっくり・少ない回数で基本動作を確認');}
-  else if(review==='まだ試せていない'){minutes=Math.max(8,minutes-1);notes.push('前回試せなかった動きを、簡単な形から再挑戦');}
-  else if(review==='できた')notes.push('前回できた動きに、相手の位置か進む方向の変化を一つ加える');
-  if(transfer==='まだ')notes.push('試合でまだ出せていないため、最後に短い実戦形式で同じ場面を再現');
-  else if(transfer==='少しできた')notes.push('試合で少しできた動きを、相手か方向を一つ変えて再挑戦');
-  else if(transfer==='できた')notes.push('試合でもできた動きを、別の状況でも再現');
+  if(latest.reviewStatus==='難しかった')notes.push('前回「難しかった」ため、動きを分けて少ない回数から開始');
+  else if(latest.reviewStatus==='まだ試せていない')notes.push('未実施だった動きを、最初の一段階だけ短く再挑戦');
+  else if(latest.reviewStatus==='できた')notes.push('前回できた動きに相手の位置・方向・速さのうち一つだけ変化を加える');
+  if(latest.matchTransferStatus==='まだ')notes.push('試合で未再現のため、最後に短い場面再現を追加');
+  else if(latest.matchTransferStatus==='少しできた')notes.push('試合で少し再現できた動きを、別方向でも確認');
+  else if(latest.matchTransferStatus==='できた')notes.push('試合で再現できた動きを、別状況で確認');
  }
+ if(adjustment.repeated&&adjustment.alternative)notes.push('同じ課題が続くため別メニュー「'+adjustment.alternative.title+'」も選択可能');
  notes.push('難易度：'+profile.label+'。'+profile.reason);
- const note=(plan.note||'')+' 【AIコーチ調整】'+notes.join('。')+'。';
- const why=(plan.why||'基本メニュー')+'／直近'+profile.recentCount+'回の練習記録から難易度を調整';
- return {...plan,minutes,difficultyLevel:profile.level,difficultyLabel:profile.label,difficultyReason:profile.reason,difficultyProfile:profile,note,why,reflectionAdjustment:notes.join('。')+'。'};
+ const prescription=adjustment.sets+'セット×'+adjustment.reps+'回、休憩'+adjustment.restSeconds+'秒';
+ return {...plan,minutes,sets:adjustment.sets,reps:adjustment.reps,restSeconds:adjustment.restSeconds,difficultyLevel:profile.level,difficultyLabel:profile.label,difficultyReason:profile.reason,difficultyProfile:profile,note:(plan.note||'')+' 【AIコーチ調整】'+notes.join('。')+'。 【回数設定】'+prescription+'。',why:(plan.why||'基本メニュー')+'／直近'+adjustment.historyCount+'回の練習記録から難易度・回数を調整',reflectionAdjustment:notes.join('。')+'。',alternativePlan:adjustment.alternative||null};
 }
 function getCoachTrainingPlan(){
  const seasonGoal=getActiveSeasonGoal();
@@ -1629,7 +1683,7 @@ function renderCoachOverallAssessment(){
  const drills={'ドリブル':'加速ドリブル1対1。相手の重心を見て逆を取り、抜いた後の2〜3歩まで加速する。','パス':'受ける前に首を振り、半身で受けて前向きのファーストタッチからパス。','シュート':'近距離から軸足をボール横に置き、狙ったコースへ蹴る。','ボールを受ける':'左右を確認して半身で受け、前へ運べる場所にファーストタッチ。','守備・プレス':'飛び込まず相手の進路を限定する親子1対1。','オフザボール':'パスが出る前に動き、味方から見える角度を作る。','その他':'試合映像を見ながらプレー分類を増やす。'};
  const top=a.rows.filter(x=>x.total).sort((x,y)=>y.total-x.total);
  const detail=top.length?top.map(x=>'<div class="listitem"><div class="grow"><b>'+esc(x.skill)+'</b><div class="tiny muted">評価 '+x.total+'場面・良 '+x.good+'・改善 '+x.improve+(x.rate===null?'':'・良かった割合 '+x.rate+'%')+' ／ 練習 '+x.sessions+'回'+(x.transfer?'・試合で試せた '+x.transferDone+'/'+x.transfer+'回':'')+'</div></div></div>').join(''):'<div class="empty">試合で陸玖として確認し、評価を入力するとプレー別に分析します。</div>';
- return '<section class="note" style="margin-top:14px"><h3 style="margin-top:0">専属AIコーチ｜総合評価</h3>'+renderRecentMatchCoachInsight()+'<div class="tiny muted">根拠：本人確認済み試合場面 '+a.allReviews+'件・練習記録 '+a.totalTraining+'件</div><div class="listitem"><div class="grow"><b>今の強み候補</b><div class="tiny">'+esc(strengthText)+'</div></div></div><div class="listitem"><div class="grow"><b>次に伸ばすテーマ</b><div class="tiny">'+esc(focusText)+'</div><div class="tiny muted">'+esc(focusReason)+'</div></div></div><div class="tiny muted">コーチの練習提案：'+esc(drills[focus?.skill]||'基本技術をバランスよく練習し、試合後に一つ振り返る')+'</div><h4>プレー別の評価</h4>'+detail+'<div class="tiny muted">評価の確かさ：'+esc(a.confidence)+'。3場面未満の項目は強み・課題として断定しません。試合数、出場時間、相手、ポジションの違いも影響します。これは映像AIによる自動判定ではなく、入力された記録の整理です。</div></section>';
+ return '<section class="note" style="margin-top:14px"><h3 style="margin-top:0">専属AIコーチ｜総合評価</h3>'+renderRecentMatchCoachInsight()+'<div class="tiny muted">根拠：本人確認済み試合場面 '+a.allReviews+'件・練習記録 '+a.totalTraining+'件</div><div class="listitem"><div class="grow"><b>今の強み候補</b><div class="tiny">'+esc(strengthText)+'</div></div></div><div class="listitem"><div class="grow"><b>次に伸ばすテーマ</b><div class="tiny">'+esc(focusText)+'</div><div class="tiny muted">'+esc(focusReason)+'</div></div></div><div class="tiny muted">コーチの練習提案：'+esc(drills[focus?.skill]||'基本技術をバランスよく練習し、試合後に一つ振り返る')+'</div><h4>プレー別の評価</h4>'+detail+'<div class="tiny muted">評価の確かさ：'+esc(a.confidence)+'。3場面未満の項目は強み・課題として断定しません。試合数、出場時間、相手、ポジションの違いも影響します。これは映像AIによる自動判定ではなく、入力された記録の整理です。</div>'+renderAdaptiveCoachPanel()+'</section>';
 }
 function getPlayerWeaponPatterns(){
  const byMatch=new Map();
