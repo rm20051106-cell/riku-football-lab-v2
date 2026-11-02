@@ -57,6 +57,7 @@ button,.button{border:0;border-radius:12px;padding:12px 14px;font-weight:800;fon
  <div class="card"><h2>ポジション別の判断分析</h2><p class="tiny muted">各場面で実際に担当していた役割（GK・DF・MF・FW）を選ぶと、判断の質・周囲の確認・プレー選択を役割別に集計します。ポジションは映像から自動推定せず、確認した内容だけを使います。</p><div id="growthPositionDecision"></div></div>
  <div class="card"><h2>陸玖専用・判断力トレーニング自動作成</h2><p class="tiny muted">ポジション別の試合評価から、改善優先度が最も高い役割を自動で選び、その場面に合った練習メニューを作ります。評価データが少ない場合は、記録を増やしてから自動作成します。</p><div id="positionDecisionTrainingPlan"></div></div>
  <div class="card"><h2>陸玖専用・判断力トレーニング</h2><p class="tiny muted">ポジション別の試合評価から、優先して伸ばす判断を選び、今日の練習メニューを自動作成します。</p><div id="positionDecisionTraining"></div></div>
+ <div class="card"><h2>陸玖の得意・課題ランキング｜次週の重点</h2><div id="growthSkillProfile"></div><div class="tiny muted">本人確認済みの試合評価と練習後の振り返りから算出。評価件数が少ない場合は参考順位として表示します。</div></div>
  <div class="card"><h2>試合→練習→次の試合｜テーマ別の改善率</h2><div id="growthImprovementSummary"></div><div class="tiny muted">改善率＝次の試合で「良かった」と確認できた件数 ÷ 評価済み件数。練習達成率＝練習チェック完了数 ÷ 全チェック数。評価待ちは分母に含めません。</div></div>
  <div class="card"><h2>身体測定の推移</h2><p class="tiny muted">種目ごとに別々のグラフで表示します。30m走・アジリティは短いほど、立ち幅跳びは長いほど良い方向です。</p><div id="growthMeasureCharts"></div></div>
  <div class="card"><h2>記録の見方</h2><div class="tiny muted">実際に保存されたデータだけを描画します。測定条件・路面・靴・計測方法が異なる場合、数値の差をそのまま成長と判断しないでください。記録が1件だけの項目は点のみ表示します。</div></div>
@@ -1339,6 +1340,7 @@ function renderGrowthDashboard(){
  renderDecisionPracticeMethodStats();
  renderPositionDecisionAnalysis();
  renderPositionDecisionTraining();
+ renderPlayerSkillProfile();
  const months=[];const now=new Date();for(let offset=5;offset>=0;offset--){const d=new Date(now.getFullYear(),now.getMonth()-offset,1);months.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));}
  const trainings=state.trainings||[],matches=state.matchAnalyses||[],measures=state.measures||[];
  const trainingPoints=months.map(m=>({label:m.slice(5)+'月',value:trainings.filter(t=>String(t.date||'').slice(0,7)===m).length}));
@@ -1427,6 +1429,54 @@ function renderCoachOverallAssessment(){
  const top=a.rows.filter(x=>x.total).sort((x,y)=>y.total-x.total);
  const detail=top.length?top.map(x=>'<div class="listitem"><div class="grow"><b>'+esc(x.skill)+'</b><div class="tiny muted">評価 '+x.total+'場面・良 '+x.good+'・改善 '+x.improve+(x.rate===null?'':'・良かった割合 '+x.rate+'%')+' ／ 練習 '+x.sessions+'回'+(x.transfer?'・試合で試せた '+x.transferDone+'/'+x.transfer+'回':'')+'</div></div></div>').join(''):'<div class="empty">試合で陸玖として確認し、評価を入力するとプレー別に分析します。</div>';
  return '<section class="note" style="margin-top:14px"><h3 style="margin-top:0">専属AIコーチ｜総合評価</h3>'+renderRecentMatchCoachInsight()+'<div class="tiny muted">根拠：本人確認済み試合場面 '+a.allReviews+'件・練習記録 '+a.totalTraining+'件</div><div class="listitem"><div class="grow"><b>今の強み候補</b><div class="tiny">'+esc(strengthText)+'</div></div></div><div class="listitem"><div class="grow"><b>次に伸ばすテーマ</b><div class="tiny">'+esc(focusText)+'</div><div class="tiny muted">'+esc(focusReason)+'</div></div></div><div class="tiny muted">コーチの練習提案：'+esc(drills[focus?.skill]||'基本技術をバランスよく練習し、試合後に一つ振り返る')+'</div><h4>プレー別の評価</h4>'+detail+'<div class="tiny muted">評価の確かさ：'+esc(a.confidence)+'。3場面未満の項目は強み・課題として断定しません。試合数、出場時間、相手、ポジションの違いも影響します。これは映像AIによる自動判定ではなく、入力された記録の整理です。</div></section>';
+}
+function getPlayerSkillProfile(){
+ const skills=['ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール','その他'];
+ const matches=(state.matchAnalyses||[]).slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+ const allEvents=matches.flatMap(m=>(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖'&&e.actionType&&e.actionType!=='未選択').map(e=>({...e,matchDate:m.date||''})));
+ const trainings=(state.trainings||[]);
+ const rows=skills.map(focus=>{
+  const events=allEvents.filter(e=>getTrainingFocusForMatchEvent(e)===focus).slice(0,12);
+  const assessed=events.filter(e=>['良かった','改善したい'].includes(e.assessment));
+  const good=assessed.filter(e=>e.assessment==='良かった').length;
+  const improve=assessed.filter(e=>e.assessment==='改善したい').length;
+  const sessions=trainings.filter(t=>(t.focus||inferTrainingFocus(t.menu,t.category))===focus).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))).slice(0,8);
+  const reviewed=sessions.filter(t=>['できた','難しかった','まだ試せていない'].includes(t.reviewStatus));
+  const reviewGood=reviewed.filter(t=>t.reviewStatus==='できた').length;
+  const reviewHard=reviewed.filter(t=>t.reviewStatus==='難しかった'||t.reviewStatus==='まだ試せていない').length;
+  const transfer=sessions.filter(t=>['できた','少しできた','まだ'].includes(t.matchTransferStatus));
+  const transferGood=transfer.filter(t=>t.matchTransferStatus==='できた').length;
+  const transferPartial=transfer.filter(t=>t.matchTransferStatus==='少しできた').length;
+  const transferNotYet=transfer.filter(t=>t.matchTransferStatus==='まだ').length;
+  const steps=sessions.reduce((n,t)=>n+(Array.isArray(t.steps)&&t.steps.length?t.steps.length:getTrainingSteps(focus).length),0);
+  const done=sessions.reduce((n,t)=>n+(Array.isArray(t.stepsDone)?t.stepsDone.length:0),0);
+  const completion=steps?Math.round(done/steps*100):null;
+  const components=[];
+  if(assessed.length)components.push({value:good/assessed.length*100,weight:.65,label:'試合評価'});
+  if(reviewed.length)components.push({value:reviewGood/reviewed.length*100,weight:.15,label:'練習振り返り'});
+  if(transfer.length)components.push({value:(transferGood+transferPartial*.5)/transfer.length*100,weight:.2,label:'試合での再現'});
+  const weight=components.reduce((n,x)=>n+x.weight,0);
+  const strengthScore=weight?Math.round(components.reduce((n,x)=>n+x.value*x.weight,0)/weight):null;
+  const weaknessScore=strengthScore===null?null:100-strengthScore;
+  const evidence=assessed.length+reviewed.length+transfer.length;
+  const confidence=evidence>=6?'記録が比較的充実':evidence>=3?'参考順位':'記録を追加中';
+  return {focus,good,improve,assessed:assessed.length,events:events.length,sessions:sessions.length,reviewed:reviewed.length,reviewGood,reviewHard,transfer:transfer.length,transferGood,transferPartial,transferNotYet,completion,strengthScore,weaknessScore,evidence,confidence,lastMatchDate:events[0]?.matchDate||'',lastTrainingDate:sessions[0]?.date||'',components};
+ }).filter(x=>x.evidence>0);
+ const rankable=rows.filter(x=>x.assessed>=2||x.reviewed>=2||x.transfer>=2);
+ const strengths=rankable.slice().sort((a,b)=>(b.strengthScore??-1)-(a.strengthScore??-1)||b.assessed-a.assessed).slice(0,3);
+ const weaknesses=rankable.slice().sort((a,b)=>(b.weaknessScore??-1)-(a.weaknessScore??-1)||b.improve-a.improve).slice(0,3);
+ const priority=weaknesses.find(x=>x.assessed>=2||x.reviewed>=2||x.transfer>=2)||null;
+ return {rows,strengths,weaknesses,priority};
+}
+function renderPlayerSkillProfile(){
+ const host=document.getElementById('growthSkillProfile');if(!host)return;
+ const profile=getPlayerSkillProfile();
+ if(!profile.rows.length){host.innerHTML='<div class="empty">能力分析に使える記録がまだありません。試合場面を「陸玖」と本人確認してプレー種別・評価を入力し、練習後の振り返りも保存するとランキングが育ちます。</div>';return;}
+ const renderRows=(rows,kind)=>rows.length?rows.map((r,i)=>'<div class="listitem" style="display:block"><div class="brand"><b>'+(i+1)+'. '+esc(r.focus)+'</b><b>'+((kind==='strength'?r.strengthScore:r.weaknessScore)??'—')+'点</b></div><div class="tiny muted">試合評価 '+r.good+'良かった／'+r.improve+'改善したい（評価 '+r.assessed+'場面）｜練習振り返り '+r.reviewed+'件｜試合再現 '+r.transferGood+'/'+r.transfer+'件</div><div class="tiny">'+esc(r.confidence)+'｜練習チェック '+(r.completion===null?'未記録':r.completion+'%')+'</div></div>').join(''):'<div class="tiny muted">比較できる記録がまだありません。評価済み場面または練習振り返りを2件以上記録してください。</div>';
+ const priority=profile.priority;
+ const priorityHtml=priority?'<div class="note" style="margin-top:10px"><b>次週の最優先テーマ：'+esc(priority.focus)+'</b><div class="tiny">試合で改善したい '+priority.improve+'場面／練習で難しかった・未実施 '+priority.reviewHard+'件／試合でまだ再現できていない '+priority.transferNotYet+'件。</div><div class="tiny muted">記録から選んだ優先候補です。チーム練習・試合日程・疲労に合わせて調整してください。</div><button class="secondary small" onclick="applyCoachFocusPriority(\''+priority.focus+'\')">このテーマで練習メニューを作る</button></div>':'<div class="note" style="margin-top:10px"><b>次週の優先テーマ：記録を集めています</b><div class="tiny">どの能力が課題か判断するには、同じテーマの評価・振り返りをもう少し記録してください。現時点では苦手と断定しません。</div></div>';
+ const chart=profile.strengths.length?renderGrowthBars('能力スコア（記録のあるテーマ）',profile.strengths.map(x=>({label:x.focus,value:x.strengthScore??0})),'点'):'';
+ host.innerHTML=chart+'<div class="tiny muted">試合評価65%・練習後の自己振り返り15%・試合での再現20%を、記録がある項目だけで重みを調整して集計。映像AIがプレーの良否を自動判定した点数ではありません。</div><h3 style="margin:12px 0 4px">得意を伸ばすランキング</h3>'+renderRows(profile.strengths,'strength')+'<h3 style="margin:12px 0 4px">改善を優先するランキング</h3>'+renderRows(profile.weaknesses,'weakness')+priorityHtml;
 }
 function getCoachPrioritySummary(){
  const skills=['ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール','その他'];
@@ -1603,13 +1653,14 @@ function getWeeklyCoachPlan(){
  const start=new Date(today()+'T00:00:00');start.setDate(start.getDate()+mondayOffset+(weekday>=4||weekday===0?7:0));
  const dateAt=(offset)=>{const d=new Date(start);d.setDate(d.getDate()+offset);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
  const fmtWeekStart=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
- const trainingFeedback=getPreviousWeekTrainingAdjustment(fmtWeekStart(start)),matchFeedback=getPreviousWeekMatchAdjustment(fmtWeekStart(start)),growth=getDecisionGrowthLevel(),repeated=getRepeatedDecisionIssue(),preferred=repeated?getPreferredDecisionPracticePlan(repeated.issue):null,goal=growth.goal;
+ const trainingFeedback=getPreviousWeekTrainingAdjustment(fmtWeekStart(start)),matchFeedback=getPreviousWeekMatchAdjustment(fmtWeekStart(start)),growth=getDecisionGrowthLevel(),repeated=getRepeatedDecisionIssue(),preferred=repeated?getPreferredDecisionPracticePlan(repeated.issue):null,goal=growth.goal,skillPriority=getPlayerSkillProfile().priority;
  const combinedLevel=matchFeedback.assessed&&matchFeedback.level===1?1:matchFeedback.assessed&&matchFeedback.level===3&&(!trainingFeedback.assessed||trainingFeedback.level!==1)?3:trainingFeedback.level;
  const feedback={...trainingFeedback,level:combinedLevel,assessed:trainingFeedback.assessed||matchFeedback.assessed,weakFocus:matchFeedback.weakFocus||trainingFeedback.weakFocus,reason:matchFeedback.assessed?matchFeedback.reason+(trainingFeedback.assessed?'。'+trainingFeedback.reason:''):trainingFeedback.reason,matchFeedback};
  const focusMap={'判断の質':'ボールを受ける','周囲の確認':'ボールを受ける','練習実行':'ドリブル','試合への転移':'ドリブル'};
- const focus=(feedback.level===1&&feedback.weakFocus)|| (goal?focusMap[goal.key]||'ボールを受ける':'ボールを受ける'),level=feedback.assessed?feedback.level:((growth.level||2)<=2?1:(growth.level||2)>=4?3:2);
+ const focus=(feedback.level===1&&feedback.weakFocus)||skillPriority?.focus||(goal?focusMap[goal.key]||'ボールを受ける':'ボールを受ける'),level=feedback.assessed?feedback.level:((growth.level||2)<=2?1:(growth.level||2)>=4?3:2);
  const goalText=goal?.goal||'受ける前に周囲を確認し、相手を見てプレーを選ぶ';
  const primary=preferred?{title:'実績優先｜'+preferred.title,focus:repeated.focus,minutes:preferred.minutes,category:'判断力・実績優先',note:'【対象課題】'+repeated.issue+'\n【過去の比較】改善 '+preferred.stats.improved+'/'+preferred.stats.count+'件・成功率 '+preferred.stats.successRate+'%\n'+preferred.note+'\n【手順】'+preferred.steps.join('／'),why:'比較2件以上・改善2件以上・成功率50%以上の実績を優先',sourceMatch:{alternativeDecisionPractice:true,focus:repeated.focus,decisionIssue:repeated.issue,practiceMethod:preferred.title,preferredMethodApplied:true,methodEvidenceCount:preferred.stats.count,methodSuccessRate:preferred.stats.successRate}}:{title:focus==='ドリブル'?'加速ドリブル＋判断':'首振り＋前向きファーストタッチ',focus,minutes:focus==='ドリブル'?15:12,category:'判断力・次の目標',note:'【今週の最優先目標】'+goalText+'\n'+(focus==='ドリブル'?'マーカーで左右に運び、親子1対1で相手の重心を見て突破方向を選ぶ。':'受ける前に左右・背後を確認し、半身で受けて前進・パス・キープを選ぶ。'),why:'判断力レベルと次の目標「'+(goal?.key||'周囲の確認')+'」を反映'};
+ if(skillPriority){primary.note+='\n【能力分析からの重点】'+skillPriority.focus+'。試合・練習の保存記録をもとに優先候補として選択。';primary.why+='／能力分析の優先テーマを反映';}
  if(feedback.assessed){primary.minutes=Math.max(8,primary.minutes+(feedback.level===1?-3:feedback.level===3?2:0));primary.title=(feedback.level===1?'基礎から再調整｜':feedback.level===3?'応用へステップアップ｜':'継続・安定｜')+primary.title;primary.note+='\n【前週の結果】'+feedback.reason+'。'+(feedback.avgCompletion===null?'':'平均チェック達成 '+feedback.avgCompletion+'%。');primary.why+='／前週の振り返り '+feedback.assessed+'件を反映';}
  const days=[
  {...primary,day:'月曜',date:dateAt(0),note:primary.note+'\n【今日の狙い】ゆっくり正確に行い、成功パターンを3回作る。',why:primary.why+'／基礎確認'},
