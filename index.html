@@ -51,6 +51,7 @@ button,.button{border:0;border-radius:12px;padding:12px 14px;font-weight:800;fon
  <div class="card"><h2>試合での評価推移</h2><div id="growthMatchChart"></div><div class="tiny muted">本人確認済みの陸玖の試合場面について、「良かった」の割合を月ごとに表示。評価件数も併記します。</div></div>
  <div class="card"><h2>判断力の成長グラフ</h2><div id="growthDecisionChart"></div><div class="tiny muted">月ごとの「判断の質」と「周囲の確認」を可視化します。本人確認済みの陸玖の場面だけを集計し、未評価は割合に含めません。</div></div>
  <div class="card"><h2>ポジション別の判断分析</h2><p class="tiny muted">各場面で実際に担当していた役割（GK・DF・MF・FW）を選ぶと、判断の質・周囲の確認・プレー選択を役割別に集計します。ポジションは映像から自動推定せず、確認した内容だけを使います。</p><div id="growthPositionDecision"></div></div>
+ <div class="card"><h2>陸玖専用・判断力トレーニング自動作成</h2><p class="tiny muted">ポジション別の試合評価から、改善が必要な判断テーマを優先して練習メニューを作ります。評価データが少ない場合は、役割に合った基礎メニューを仮提案します。</p><label class="label" for="decisionTrainingRole">練習するポジション</label><select id="decisionTrainingRole" onchange="renderPositionDecisionTraining()"><option value="MF">MF</option><option value="FW">FW</option><option value="DF">DF</option><option value="GK">GK</option></select><div id="positionDecisionTrainingPlan"></div></div>
  <div class="card"><h2>陸玖専用・判断力トレーニング</h2><p class="tiny muted">ポジション別の試合評価から、優先して伸ばす判断を選び、今日の練習メニューを自動作成します。</p><div id="positionDecisionTraining"></div></div>
  <div class="card"><h2>試合→練習→次の試合｜テーマ別の改善率</h2><div id="growthImprovementSummary"></div><div class="tiny muted">改善率＝次の試合で「良かった」と確認できた件数 ÷ 評価済み件数。練習達成率＝練習チェック完了数 ÷ 全チェック数。評価待ちは分母に含めません。</div></div>
  <div class="card"><h2>身体測定の推移</h2><p class="tiny muted">種目ごとに別々のグラフで表示します。30m走・アジリティは短いほど、立ち幅跳びは長いほど良い方向です。</p><div id="growthMeasureCharts"></div></div>
@@ -1019,6 +1020,49 @@ function renderPositionDecisionTraining(){
  if(!plan){host.innerHTML='<div class="empty">まだ自動作成できるデータがありません。陸玖本人として確認した試合場面にGK・DF・MF・FWのポジションを入力すると、その記録から専用メニューを作ります。</div>';return;}
  const roleTips={GK:'配球先と安全な選択',DF:'前進・横パス・戻しの判断',MF:'首振りと前向きで受ける判断',FW:'抜け出し・足元・落としの判断'};
  host.innerHTML='<div class="listitem"><div class="grow"><b>今回の重点：'+esc(plan.role)+'｜'+esc(plan.focus)+'</b><div class="tiny muted">'+esc(roleTips[plan.role])+'。記録された場面から優先順位を決定。</div></div></div><div class="tiny" style="white-space:pre-line;margin:8px 0">'+esc(plan.note)+'</div><div class="btnrow"><button onclick="applyPositionDecisionTraining()">この内容で今日の練習を作成</button></div><div class="tiny muted">作成後、トレーニング画面で内容・時間を編集して保存できます。記録データは端末内で集計し、外部AIや有料APIは使用しません。</div>';
+}
+function getPositionDecisionTrainingPlan(role){
+ const row=getPositionDecisionStats().find(x=>x.role===role);
+ const hasData=!!row&&row.total>0;
+ const issues=row?.issues||{};
+ const topIssue=Object.entries(issues).sort((a,b)=>b[1]-a[1])[0]?.[0]||'';
+ const issueMap={
+  'ボールだけを見ていた':{title:'首振り→半身→次の選択',focus:'ボールを受ける',category:'受ける動き',minutes:12,drill:'親が左右どちらかへパス。ボールが出る前に首を振り、半身で受けて、空いている方向へファーストタッチ。左右各5回。',game:'親がパス直前に左右どちらかを指示。陸玖は確認した方向へ運ぶか、ワンタッチで返す。6本。',goal:'受ける前に周囲を確認し、次のプレーを選べたか'},
+  '味方・相手の位置を確認できなかった':{title:'周囲確認→選択肢づくり',focus:'ボールを受ける',category:'受ける動き',minutes:12,drill:'ボールを受ける前に左右・前方を確認。親が味方役・相手役の位置を変え、空いた場所を声に出して選ぶ。',game:'親が守備役となり、パス・運ぶ・ターンの3択から最適なものを選ぶ。',goal:'味方・相手・スペースを見てプレーを選べたか'},
+  '判断が遅れた':{title:'見る→決める→実行を速く',focus:'ボールを受ける',category:'判断・アジリティ',minutes:12,drill:'親の合図で右・左・前を選択。慣れたらボールを受ける直前の合図に変える。',game:'親が守備位置を変える。陸玖はファーストタッチまでに方向を決め、迷わず実行。',goal:'ボールが来る前に選択肢を決めておけたか'},
+  '別の選択肢もあった':{title:'3択判断トレーニング',focus:'ボールを受ける',category:'判断・パス',minutes:12,drill:'受ける前に「運ぶ・パス・ターン」の3択を確認。親の立ち位置から最も安全で前進できる選択を声に出す。',game:'親が守備のコースを変える。陸玖は状況に応じて3択から選ぶ。',goal:'状況に合った選択肢を選び、実行できたか'},
+  'ボールを受ける':{title:'前向きで受ける判断',focus:'ボールを受ける',category:'受ける動き',minutes:12,drill:'半身で立ち、左右を確認してから前へ運べる足にボールを置く。',game:'親が左右のコースを消す。空いた方へファーストタッチして前進。',goal:'前を向ける位置とタイミングを選べたか'},
+  'ドリブル':{title:'相手の重心を見て突破方向を選ぶ',focus:'ドリブル',category:'突破・ドリブル',minutes:12,drill:'親の体の向きを見て、逆を取る方向を選ぶ。左右交互に切り返し。',game:'親子1対1を短く4〜6本。相手の重心を見て突破方向を選び、抜いた後2〜3歩加速。',goal:'相手を見て突破方向を選び、抜いた後も加速できたか'},
+  'シュート':{title:'シュートかパスかの判断',focus:'シュート',category:'シュート',minutes:12,drill:'ゴール前で親の位置を確認し、シュートコースがあるかを見てから蹴る。',game:'親がコースを消す・空ける。シュートか横パスかを選ぶ。',goal:'相手の位置とコースを見て選択できたか'},
+  '守備・プレス':{title:'奪いに行くか遅らせるか',focus:'守備・プレス',category:'アジリティ',minutes:12,drill:'相手役のボールタッチが大きい時と小さい時で、寄せる距離を変える。',game:'親子1対1で、奪える時は奪い、難しい時はコースを限定して遅らせる。',goal:'相手の状況を見て、奪う・遅らせるを選べたか'},
+  'オフザボール':{title:'動き出すタイミングと角度',focus:'オフザボール',category:'受ける動き',minutes:12,drill:'親が顔を上げるタイミングを見て、相手の背中側や斜めへ動き出す。',game:'親がパスを出すタイミングを変え、パスコースができる瞬間に動く。',goal:'味方の状況を見て動き出し、受ける場所を作れたか'}
+ };
+ let key=topIssue;
+ if(!issueMap[key]&&row){
+  const action=Object.entries(row.actions||{}).sort((a,b)=>b[1]-a[1])[0]?.[0];
+  key=action==='ドリブル'?'ドリブル':action==='シュート'?'シュート':action==='守備・プレス'?'守備・プレス':action==='オフザボール'?'オフザボール':'ボールを受ける';
+ }
+ if(!issueMap[key]){
+  key=role==='FW'?'シュート':role==='DF'?'守備・プレス':role==='GK'?'守備・プレス':'ボールを受ける';
+ }
+ const p={...issueMap[key]};
+ if(role==='GK'&&!topIssue){p.title='GKの状況判断・配球';p.focus='パス';p.category='キック';p.drill='ゴール前でボールを受ける前に左右を確認。近い味方・遠い味方・安全な方向を見比べて声に出す。';p.game='親が左右に目標を作り、陸玖は相手の位置を見て転がすパスかロングキックを選ぶ。';p.goal='安全性と味方の位置を見て配球を選べたか';}
+ const note='【対象ポジション】'+role+'\n【データ根拠】'+(hasData?'陸玖本人の確認済み '+row.total+'場面。'+(topIssue?'最も多い見直し候補：'+topIssue+'（'+issues[topIssue]+'件）':'評価済みの改善候補が少ないため、プレー傾向から選定。'):'このポジションの評価記録なし。役割に合わせた基礎提案。')+'\n【ウォームアップ】軽いボールタッチ・周囲確認（2分）\n【反復】'+p.drill+'\n【実戦形式】'+p.game+'\n【今日の合格基準】'+p.goal+'\n【振り返り】できた判断を1つ、次に変える判断を1つ記録する。痛みや疲労があれば中止し、回数を減らす。';
+ return {...p,role,hasData,evidence:hasData?'確認済み '+row.total+'場面':'記録なし・仮提案',note,why:hasData?'ポジション別の実際の判断評価から改善テーマを優先':'データが少ないため役割別の基礎判断を提案'};
+}
+function renderPositionDecisionTraining(){
+ const host=document.getElementById('positionDecisionTrainingPlan');if(!host)return;
+ const role=document.getElementById('decisionTrainingRole')?.value||'MF';
+ const p=getPositionDecisionTrainingPlan(role);
+ host.innerHTML='<div class="note" style="margin-top:10px"><b>'+esc(p.title)+'</b><div class="tiny muted">'+esc(p.evidence)+'｜'+esc(p.why)+'</div><div class="tiny" style="margin-top:8px">目安 '+p.minutes+'分｜テーマ：'+esc(p.focus)+'</div><div class="tiny" style="margin-top:6px"><b>反復</b><br>'+esc(p.drill)+'</div><div class="tiny" style="margin-top:6px"><b>実戦形式</b><br>'+esc(p.game)+'</div><div class="tiny" style="margin-top:6px"><b>合格基準</b><br>'+esc(p.goal)+'</div></div><div class="btnrow"><button onclick="applyPositionDecisionTraining()">この練習を記録画面にセット</button></div>';
+}
+function applyPositionDecisionTraining(){
+ const role=document.getElementById('decisionTrainingRole')?.value||'MF';
+ const p=getPositionDecisionTrainingPlan(role);
+ if(!state.menus.some(m=>m.name===p.title)){state.menus.unshift({name:p.title,category:p.category,minutes:p.minutes});persist();}
+ renderAll();
+ trainMenu.value=p.title;trainDate.value=today();trainMinutes.value=p.minutes;trainFocus.value=p.focus;trainNote.value=p.note;
+ showView('training');
 }
 function renderGrowthDashboard(){
  renderMonthlyGrowthReport();
