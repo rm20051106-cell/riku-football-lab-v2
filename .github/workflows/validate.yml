@@ -47,7 +47,14 @@ jobs:
             node --check "$file"
           done
 
-      - name: Run frontend data-flow regression tests
+      - name: Install browser E2E dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          python -m pip install --disable-pip-version-check playwright
+          python -m playwright install --with-deps chromium
+
+      - name: Run browser and frontend regression tests
         run: python -m unittest discover -s tests -v
 
       - name: Build backend Docker image
