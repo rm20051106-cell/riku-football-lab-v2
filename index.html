@@ -2688,7 +2688,7 @@ function renderNextMatchGoalVideoEvidence(){
 function renderNextMatchGoalPanel(){
  const goal=state.settings?.nextMatchGoal||null;
  const seasonGoal=getActiveSeasonGoal();
- const growthSuggestion=getMatchGrowthRecommendations().find(x=>x.latest);
+ const growthSuggestion=getMatchGrowthRecommendations().find(x=>x.latest&&x.latest.total>0);
  const suggestedFocus=goal?.focus||seasonGoal?.focus||growthSuggestion?.trainingFocus||'ドリブル';
  const suggestedNote=goal?.note||seasonGoal?.note||growthSuggestion?.goal||'';
  const history=getNextMatchGoalHistory();
@@ -3238,7 +3238,7 @@ function renderMatchGrowthTimeline(){
   const issues=item.repeatedIssues.length?item.repeatedIssues.slice(0,3).map(x=>'<div class="tiny muted">同じ課題「'+esc(x.key)+'」：'+esc(x.first)+' '+x.firstRate+'% → '+esc(x.last)+' '+x.lastRate+'%｜'+esc(x.status)+(x.delta===null?'':'（'+(x.delta>0?'+':'')+x.delta+'pt）')+'</div>').join(''):'<div class="tiny muted">同じ課題タグを付けた複数試合の比較はまだありません。</div>';
   return '<div class="card" style="margin-top:8px"><div class="brand"><b>'+esc(item.key)+'</b><span class="tiny muted">'+item.rows.length+'試合記録</span></div><div class="tiny muted">'+esc(item.description)+'</div>'+compare+issues+'<div style="margin-top:8px"><b class="tiny">試合ごとの推移（最新6試合）</b>'+trend+'</div><div class="tiny muted" style="margin-top:7px">分類・課題タグ・評価は陸玖本人として確認した映像を見て手動入力したものだけ。練習回数やチェック数は取り組み記録であり、上達の原因や技術レベルを証明するものではありません。</div></div>';
  }).join('');
- const recommendations=getMatchGrowthRecommendations().filter(x=>x.latest).slice(0,2);
+ const recommendations=getMatchGrowthRecommendations().filter(x=>x.latest&&x.latest.total>0).slice(0,2);
  const goals=recommendations.map((item,index)=>'<div class="listitem" style="display:block"><b>目標候補 '+(index+1)+'｜'+esc(item.key)+'</b><div class="tiny">'+esc(item.goal)+'</div><div class="tiny muted">'+esc(item.reason)+'</div><button class="secondary small" onclick="applyMatchGrowthGoal('+JSON.stringify(item.key)+')">次の試合の目標に設定</button></div>').join('');
  return '<h3 style="margin-top:14px">試合ごとの成長タイムライン</h3><div class="tiny muted">加速ドリブル・切り返し・判断力・ポジショニングを分けて比較。本人確認済み映像に対して手動で選んだ分類・課題タグ・評価だけを集計します。AI候補のラベルや未確認映像は成長評価に含めません。</div>'+cards+'<h3 style="margin-top:14px">次の試合で試す目標候補</h3>'+(goals||'<div class="empty">手動確認済みの試合評価が蓄積されると、次の目標候補を表示します。</div>');
 }
