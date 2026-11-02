@@ -536,18 +536,19 @@ function normalizeSituationLabel(value){return String(value||'').normalize('NFKC
 function renderDecisionSituationComparison(matchId){
  const all=(state.matchAnalyses||[]).flatMap(match=>(match.candidateEvents||[]).filter(ev=>ev.reviewLabel==='陸玖'&&ev.situationType&&normalizeSituationLabel(ev.situationLabel)).map(ev=>({match,ev,key:ev.situationType+'|'+normalizeSituationLabel(ev.situationLabel)})));
  const groups=new Map();all.forEach(x=>{if(!groups.has(x.key))groups.set(x.key,[]);groups.get(x.key).push(x)});
- const comparable=[...groups.values()].filter(g=>g.length>=2).sort((a,b)=>b.length-a.length);
+ const comparable=[...groups.values()].filter(g=>new Set(g.map(x=>String(x.match.id))).size>=2).sort((a,b)=>new Set(b.map(x=>String(x.match.id))).size-new Set(a.map(x=>String(a.match.id))).size||b.length-a.length);
  const relevant=comparable.filter(g=>!matchId||g.some(x=>String(x.match.id)===String(matchId)));
- if(!relevant.length)return '<div class="card"><b>同じ試合状況での判断比較</b><div class="tiny muted">比較できる同一状況の記録はまだありません。陸玖本人として確認した場面で、状況分類と状況ラベルを毎回同じ言葉で入力してください。2場面以上そろうと比較を表示します。</div></div>';
- return '<div class="card"><b>同じ試合状況での判断比較</b><div class="tiny muted">陸玖本人と確認し、同じ状況分類・状況ラベルを付けた場面だけを比較。選択肢・実際の選択・結果・手動評価を並べます。結果だけで判断の質を決めません。</div>'+relevant.map(group=>{
+ if(!relevant.length)return '<div class="card"><b>同じ試合状況での判断比較</b><div class="tiny muted">比較できる同一状況の記録はまだありません。陸玖本人として確認した場面で、状況分類と状況ラベルを毎回同じ言葉で入力してください。2試合以上で同じ状況が確認されると比較を表示します。</div></div>';
+ const tally=values=>{const counts={};values.filter(Boolean).forEach(value=>counts[value]=(counts[value]||0)+1);return Object.entries(counts).map(([label,count])=>esc(label)+' '+count+'件').join('／')||'未記録';};
+ return '<div class="card"><b>同じ試合状況での判断比較</b><div class="tiny muted">陸玖本人と確認し、同じ状況分類・状況ラベルを付けた場面を2試合以上から比較。選択肢・実際の選択・結果・手動評価を集計します。結果だけで判断の質を決めません。</div>'+relevant.map(group=>{
   const first=group[0].ev,qualities=group.filter(x=>x.ev.decisionQuality&&x.ev.decisionQuality!=='未評価');
   const qualityCounts={};qualities.forEach(x=>qualityCounts[x.ev.decisionQuality]=(qualityCounts[x.ev.decisionQuality]||0)+1);
   const rows=group.slice().sort((a,b)=>String(a.match.date||'').localeCompare(String(b.match.date||''))||Number(a.ev.time||0)-Number(b.ev.time||0)).map(x=>'<div class="listitem" style="display:block"><b>'+esc(x.match.date||'日付不明')+'｜'+esc(x.match.title||'試合')+'｜'+formatMatchTime(x.ev.time)+'</b><div class="tiny">選択肢：'+esc((x.ev.availableOptions||[]).join('・')||'未記録')+'</div><div class="tiny">実際の選択：<b>'+esc(x.ev.actualChoice||'未入力')+'</b>　結果：'+esc(x.ev.outcome||'未入力')+'</div><div class="tiny">判断の質：'+esc(x.ev.decisionQuality||'未評価')+'</div><button class="secondary small" onclick="openMatchEventInHistory('+Number(x.match.id)+','+JSON.stringify(String(x.ev.id))+')">この場面を確認</button></div>').join('');
+  const options=group.flatMap(x=>x.ev.availableOptions||[]);
   const qualityText=Object.keys(qualityCounts).length?Object.entries(qualityCounts).map(([k,v])=>esc(k)+' '+v+'件').join('／'):'手動評価はまだありません';
-  const choices=[...new Set(group.map(x=>x.ev.actualChoice).filter(Boolean))];
-  const outcomes=[...new Set(group.map(x=>x.ev.outcome).filter(Boolean))];
-  return '<div style="border-top:1px solid var(--line);padding-top:10px;margin-top:10px"><b>'+esc(first.situationType)+'｜'+esc(first.situationLabel)+'</b><div class="tiny muted">比較 '+group.length+'場面／実際の選択：'+esc(choices.join('・')||'未入力')+'／結果：'+esc(outcomes.join('・')||'未入力')+'</div><div class="tiny">判断の質の内訳：'+qualityText+'</div>'+rows+'</div>';
- }).join('')+'<div class="tiny muted" style="margin-top:8px">状況ラベルが完全一致する記録のみを同じ状況として扱います。映像で確認できない項目・未入力項目は推測で補いません。判断の質は保護者等が映像を見て選択した評価です。</div></div>';
+  const matchCount=new Set(group.map(x=>String(x.match.id))).size;
+  return '<div style="border-top:1px solid var(--line);padding-top:10px;margin-top:10px"><b>'+esc(first.situationType)+'｜'+esc(first.situationLabel)+'</b><div class="tiny muted">比較 '+matchCount+'試合・'+group.length+'場面</div><div class="tiny">確認された選択肢：'+tally(options)+'</div><div class="tiny">実際に選んだプレー：'+tally(group.map(x=>x.ev.actualChoice))+'</div><div class="tiny">プレー後の結果：'+tally(group.map(x=>x.ev.outcome))+'</div><div class="tiny">判断の質（手動評価）：'+qualityText+'</div>'+rows+'</div>';
+ }).join('')+'<div class="tiny muted" style="margin-top:8px">状況ラベルが完全一致する記録のみを同じ状況として扱います。比較には2試合以上が必要です。映像で確認できない項目・未入力項目は推測で補いません。判断の質は保護者等が映像を見て選択した評価です。</div></div>';
 }
 function renderMatchEventTimeline(events,matchId){
  const sorted=(events||[]).slice().sort((a,b)=>(Number(a.time)||0)-(Number(b.time)||0));
