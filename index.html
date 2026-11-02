@@ -2552,7 +2552,8 @@ function updateMatchdayReflection(id,value){
 }
 function getPreMatchHealthDecision(check){
  const pain=check?.pain||'なし',sleep=check?.sleep||'',fatigue=Number(check?.fatigue||0),legs=Number(check?.legs||0),motivation=Number(check?.motivation||0);
- if(pain!=='なし')return {level:'休養・運動中止',key:'stop',reason:'痛み・違和感が選択されています。運動やウォームアップを中止し、保護者に伝えて状態を確認してください。',minutes:0};
+ if(pain&&pain!=='なし')return {level:'休養・運動中止',key:'stop',reason:'痛み・違和感が選択されています。運動やウォームアップを中止し、保護者に伝えて状態を確認してください。',minutes:0};
+ if(!check||['sleep','fatigue','legs','pain','motivation'].some(k=>check[k]===undefined||check[k]===''))return {level:'入力待ち',key:'pending',reason:'安全に準備強度を決めるため、5項目すべて入力してください。入力が終わるまでは運動メニューを保留します。',minutes:0};
  if(sleep==='5時間未満'||fatigue>=4)return {level:'休養',key:'rest',reason:'睡眠不足または強い疲労があります。今日は運動をせず、休養を優先してください。',minutes:0};
  if((sleep==='5〜6時間'&&fatigue>=2)||fatigue>=3||legs>=3||motivation===1)return {level:'軽い準備',key:'light',reason:'疲労・足の重さ・睡眠・気持ちの状態を考慮し、準備を短く軽くします。',minutes:3};
  return {level:'通常準備',key:'normal',reason:'入力された範囲では大きな注意サインはありません。疲れない範囲で通常の軽い準備を行います。',minutes:5};
@@ -2628,8 +2629,8 @@ function createPreMatchPreparation(){
  const fatigue=tired?'負荷が高めの記録があるため、全メニューを短縮しています。':'疲労をためない軽い内容です。';
  const health=(state.preMatchHealthChecks||{})[dateValue]||{};
  const healthDecision=getPreMatchHealthDecision(health);
- if(healthDecision.key==='stop'||healthDecision.key==='rest'){
-  phases.forEach(p=>{p.minutes=0;p.menu=healthDecision.key==='stop'?'運動・ウォームアップは中止。保護者に伝えて状態を確認する。':'今日は運動をせず、休養・水分・睡眠を優先する。';p.cue=healthDecision.reason;});
+ if(healthDecision.key==='pending'||healthDecision.key==='stop'||healthDecision.key==='rest'){
+  phases.forEach(p=>{p.minutes=0;p.menu=healthDecision.key==='pending'?'5項目の体調チェックを完了するまで運動メニューは保留。':healthDecision.key==='stop'?'運動・ウォームアップは中止。保護者に伝えて状態を確認する。':'今日は運動をせず、休養・水分・睡眠を優先する。';p.cue=healthDecision.reason;});
  }else if(healthDecision.key==='light'){
   phases.forEach(p=>{p.minutes=Math.min(p.minutes,3);p.menu='歩く程度の軽い準備のみ。ボール練習・ダッシュ・強い方向転換は省略する。';p.cue=healthDecision.reason;});
  }
