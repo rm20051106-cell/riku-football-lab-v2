@@ -165,7 +165,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         for index in range(2):
             with page.expect_download() as video_download:
                 export_links.nth(index).click()
-            path = self.temp_path / ("video-export-%d.webm" % index)
+            path = self.temp_path / video_download.value.suggested_filename
             video_download.value.save_as(str(path))
             exported_paths.append(path)
 
