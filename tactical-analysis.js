@@ -50,6 +50,7 @@ function render(){
  renderTacticalGrowthGraph();
  renderTacticalMatchReports();
  renderTacticalSituationAnalysis();
+ renderTacticalDecisionScenarios();
  let host=document.getElementById(PANEL_ID);
  if(!host){
   const history=document.getElementById('matchScanRecords');
@@ -133,7 +134,7 @@ function applyTacticalWeeklyPlan(plans){
   const base=plans[idx];
   plans[idx]={...base,title:template.title,category:template.category,focus:e.focus,minutes:template.minutes,note:template.note+'\\n\\n【試合映像からの改善テーマ】'+e.reason+'。'+e.drill,why:'本人確認済みの試合場面 '+e.count+'件を反映：'+e.reason};
  });
- return plans;
+ return applyTacticalDecisionTrainingPlan(plans);
 }
 function renderTacticalWeeklyEvidence(){
  const host=typeof dailyPlan!=='undefined'?dailyPlan:null;if(!host)return;
@@ -326,6 +327,71 @@ function renderTacticalSituationAnalysis(){
  const report=document.getElementById('tacticalMatchReports');
  const graph=document.getElementById('tacticalGrowthGraph');
  if(report)report.insertAdjacentElement('afterend',host);else if(graph)graph.insertAdjacentElement('afterend',host);else videoView.appendChild(host);
+}
+
+function getTacticalDecisionScenarios(){
+ const matches=(typeof state!=='undefined'&&Array.isArray(state.matchAnalyses))?state.matchAnalyses:[];
+ const scenes=[];
+ matches.forEach(match=>(match.candidateEvents||[]).forEach(ev=>{
+  const review=ev.tacticalReview;
+  if(ev.reviewLabel!=='陸玖'||!review?.reviewedAt||!review.fields)return;
+  scenes.push({fields:review.fields,match,ev});
+ }));
+ const scenarios=[];
+ const add=(key,value,title,setup,task,criteria,minutes,source)=>{
+  const rows=scenes.filter(x=>x.fields[key]===value);
+  if(rows.length>=3){
+   const flags=[];
+   rows.forEach(x=>{
+    const f=x.fields;
+    if(f.scan==='確認したが首振りなし')flags.push('受ける前の確認');
+    if(f.orientation==='後ろ向き')flags.push('半身で受ける準備');
+    if(f.position==='味方と位置が重なる')flags.push('立ち位置の重なり');
+    if(f.support==='真後ろ'||f.support==='パスコースを作れていない')flags.push('サポート角度');
+    if(f.movement==='動き出しなし'||f.movement==='足元に受けに来た')flags.push('スペースへの動き出し');
+   });
+   const repeated=Object.entries(flags.reduce((a,v)=>(a[v]=(a[v]||0)+1,a),{})).sort((a,b)=>b[1]-a[1])[0];
+   scenarios.push({title,setup,task,criteria,minutes,personalized:true,count:rows.length,context:value,contextKey:key,focus:repeated?.[0]||'',focusCount:repeated?.[1]||0,source});
+  }
+ };
+ add('pressure','前からプレス','前からのプレスを受ける','親が正面からゆっくり寄せる。陸玖は味方役からパスを受ける。','受ける前に周囲を確認し、半身で受ける。前が閉じていたら横・後ろへつなぎ、空けばターンして前進。','顔を上げて選択肢を2つ確認し、無理な突進をせず次のプレーにつなぐ',8,'手動確認済みの「前からプレス」');
+ add('pressure','複数人に囲まれる','複数方向から囲まれた時','親ともう1人が左右から距離を保って寄せる。安全なスペースを確保する。','ボールを受ける前に左右を見て、ファーストタッチで片側へ逃げる。難しければワンタッチで味方役へ戻す。','相手に突っ込まず、逃げ道か味方へのパスを選べる',8,'手動確認済みの「複数人に囲まれる」');
+ add('zone','ペナルティエリア付近','ゴール前のパスかシュートか','ゴール前にコーンでゴールと守備役を作る。味方役は斜め前に立つ。','守備役の位置を見て、シュート・味方へのパス・運んで角度を作る、の3択を声に出してから実行。','ゴールが見え、コースがあればシュート。相手が寄せたら味方を使うなど状況に合う選択を説明できる',10,'手動確認済みの「ペナルティエリア付近」');
+ add('scoreState','リード','リード時の落ち着いた判断','親が守備役、味方役を1人置く。時間を意識した短いゲームを行う。','無理に中央突破せず、空いた安全なパスコースやキープを選ぶ。奪われたらすぐ守備に切り替える。','安全な選択肢を探し、味方につなぐ・ボールを守る判断を説明できる',8,'手動確認済みの「リード」');
+ add('scoreState','同点','同点時の前進判断','中盤から開始。守備役は中央か片側を閉じる。','前進できるスペース、味方へのパス、ドリブルの3択を見比べ、最も有効な方法を選ぶ。','急ぎすぎず、前進できる時は思い切って仕掛ける',8,'手動確認済みの「同点」');
+ add('scoreState','ビハインド','ビハインド時の攻撃判断','残り時間を決めて、攻撃側がゴールを目指すミニゲーム。','前進する選択を優先しつつ、相手が複数で寄せたら味方を使って攻撃を続ける。','焦って無理な突破を繰り返さず、味方と連携してチャンスを作る',8,'手動確認済みの「ビハインド」');
+ return {scenes,personalized:scenarios, general:[
+  {title:'一般練習：前からのプレスを外す',setup:'親が正面からゆっくり寄せる。',task:'受ける前に左右を見て、半身で受ける。空いた側へ運ぶか味方役へパス。',criteria:'顔を上げて選択肢を2つ確認する',minutes:8},
+  {title:'一般練習：ゴール前の3択',setup:'コーンでゴールと守備役を作り、斜め前に味方役を置く。',task:'シュート・パス・ドリブルの3択を見てからプレーする。',criteria:'選んだ理由を一言で説明できる',minutes:10},
+  {title:'一般練習：試合状況を変えるミニゲーム',setup:'リード・同点・ビハインドの設定を各2分で切り替える。',task:'リードはボールを守る、同点は状況を見て前進、ビハインドは味方と連携してゴールを狙う。',criteria:'状況に応じてプレーの優先順位を変えられる',minutes:8}
+ ]};
+}
+function renderTacticalDecisionScenarios(){
+ const videoView=document.getElementById('video');if(!videoView)return;
+ let host=document.getElementById('tacticalDecisionScenarios');
+ if(!host){host=document.createElement('section');host.id='tacticalDecisionScenarios';host.className='card';}
+ const data=getTacticalDecisionScenarios();
+ const personalized=data.personalized;
+ const cards=(personalized.length?personalized:data.general).map((x,i)=>
+  '<div class="card" style="margin-top:9px"><b>'+escT(x.title)+'</b><div class="tiny muted">'+(x.personalized?'陸玖の手動確認済み記録から作成｜'+x.count+'場面':'一般的な判断練習｜陸玖本人の弱点を示すものではありません')+'</div>'+
+  (x.focus?'<div class="tiny">繰り返し確認された練習テーマ候補：'+escT(x.focus)+'（該当記録 '+x.focusCount+'件）</div>':'')+
+  '<div class="tiny" style="margin-top:6px"><b>準備：</b>'+escT(x.setup)+'</div><div class="tiny"><b>やること：</b>'+escT(x.task)+'</div><div class="tiny"><b>できた目安：</b>'+escT(x.criteria)+'</div><div class="tiny muted">目安 '+x.minutes+'分｜'+(x.personalized?escT(x.source):'安全な強度で行い、成功・失敗を責めず判断理由を確認')+'</div></div>'
+ ).join('');
+ const planNote=personalized.length?'<div class="note success">本人確認済みの記録から作成した練習テーマを、次週の練習計画にも反映します。</div>':'<div class="note">状況別の本人確認済み記録が各3場面に満たないため、一般練習を表示しています。記録が増えるまで陸玖本人の改善点とは判断しません。</div>';
+ host.innerHTML='<h2>⑩ 試合状況を再現する判断トレーニング</h2><p class="tiny muted">相手のプレス、ゴール前、リード・同点・ビハインドの場面を短い練習に置き換えます。手動確認済みの状況が十分な場合だけ個別シナリオを作ります。</p>'+planNote+cards+'<div class="tiny muted" style="margin-top:10px">小学生向けに短時間・低〜中強度で実施。接触や強い競り合いは避け、親子で安全な距離を保って行ってください。各シナリオの評価は正解率ではなく、選択肢を見て理由を説明できたかで確認します。</div>';
+ const situation=document.getElementById('tacticalSituationAnalysis');
+ if(situation)situation.insertAdjacentElement('afterend',host);else videoView.appendChild(host);
+}
+function applyTacticalDecisionTrainingPlan(plans){
+ if(!Array.isArray(plans)||!plans.length)return plans;
+ const data=getTacticalDecisionScenarios();
+ const chosen=data.personalized[0];
+ const base=plans[2]||plans[0];
+ if(chosen&&base){
+  const note='【試合状況を再現する判断練習】'+chosen.title+'。'+chosen.task+' 成功の目安：'+chosen.criteria+'。本人確認済み '+chosen.count+'場面の状況を反映。';
+  plans[2] = {...base, title:'試合状況別の判断トレーニング', category:'判断力', minutes:chosen.minutes, note:(base.note?base.note+'\\n\\n':'')+note, why:'手動確認済みの同じ試合状況 '+chosen.count+'場面から練習シナリオを作成'};
+ }
+ return plans;
 }
 
 function install(){
