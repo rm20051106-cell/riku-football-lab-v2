@@ -2100,7 +2100,7 @@ function getWeeklyLoadAssessment(){
  const fourteenText=fourteen.getFullYear()+'-'+String(fourteen.getMonth()+1).padStart(2,'0')+'-'+String(fourteen.getDate()).padStart(2,'0');
  const recent14=records.filter(x=>x.date>=fourteenText&&x.date<=today());
  const reviewed=recent14.filter(x=>x.reviewStatus||x.matchTransferStatus||(Array.isArray(x.stepsDone)&&x.stepsDone.length>0));
- const incomplete=reviewed.filter(x=>['難しかった','まだ試せていない'].includes(x.reviewStatus)||x.effort==='きつめ'||(Array.isArray(x.steps)&&x.steps.length>0&&((x.stepsDone||[]).length/x.steps.length)<.5));
+ const incomplete=recent14.filter(x=>['難しかった','まだ試せていない'].includes(x.reviewStatus)||x.effort==='きつめ'||(Array.isArray(x.steps)&&x.steps.length>0&&((x.stepsDone||[]).length/x.steps.length)<.5));
  const comfortable=reviewed.filter(x=>x.reviewStatus==='できた'&&x.effort!=='きつめ'&&Array.isArray(x.steps)&&x.steps.length>0&&(x.stepsDone||[]).length/x.steps.length>=.75);
  const recovery=Object.values(state.postMatchRecovery||{}),recentRecovery=recovery.filter(x=>x.date>=recentStartText&&x.date<=today());
  const safety=getRecoverySafetySummary(today()),evidence=reviewed.length>=2&&recentRecovery.length>=1;
