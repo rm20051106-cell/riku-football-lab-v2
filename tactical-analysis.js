@@ -82,10 +82,10 @@ function render(){
  const notes=adviceFor(f);
  const practiceRows=getTacticalTrainingRecords().slice().sort((a,b)=>String(b.date).localeCompare(String(a.date)));
  const linkedTrainingId=review.context?.linkedTrainingRecordId||'';
- const linkedTrainingOptions='<option value="">紐づけなし（後で評価保留）</option>'+practiceRows.map(x=>'<option value="'+escT(x.id)+'"'+(String(x.id)===String(linkedTrainingId)?' selected':'')+'>'+escT(x.date)+'｜'+escT(x.scenarioTitle||'判断練習')+'｜'+escT(x.pressure||'状況不明')+'・'+escT(x.zone||'位置不明')+'・'+escT(x.scoreState||'状況不明')+'</option>').join('');
+ const linkedTrainingOptions='<option value="">紐づけなし（後で評価保留）</option>'+practiceRows.map(x=>'<option value="'+escT(x.id)+'"'+(String(x.id)===String(linkedTrainingId)?' selected':'')+'>'+escT(x.date)+'｜'+escT(x.scenarioTitle||'判断練習')+'｜'+escT(x.pressure||'状況不明')+'・'+escT(x.zone||'位置不明')+'・'+escT(x.scoreState||'状況不明')+'・'+escT(x.role||'役割未確認')+'</option>').join('');
 
  const saved=review.reviewedAt?'<div class="note success">保存済み：'+escT(review.reviewedAt)+'｜この内容は手動確認した記録です。</div>':'<div class="tiny muted">まだ分析内容は保存されていません。</div>';
- host.innerHTML='<h2>⑥ 試合中の判断・ポジショニング分析</h2><p class="tiny muted">本人確認済みの場面を使い、受ける前→受ける瞬間→次のプレーまでを確認。映像で見えない項目は「映像で確認できない」のまま保存できます。</p><label class="label">試合を選択<select id="tacticalMatchSelect">'+matchOptions+'</select></label><label class="label">陸玖本人として確認した場面<select id="tacticalEventSelect">'+eventOptions+'</select></label><div class="tiny muted">場面時刻：'+escT(typeof formatMatchTime==='function'?formatMatchTime(ev.time):ev.time)+'｜'+escT(ev.label||ev.reason||'動きの変化候補')+'</div><div class="divider"></div>'+reviewHtml+'<label class="label">相手チーム名（任意）<input id="tacticalOpponentTeam" maxlength="80" value="'+escT(review.context?.opponentTeam||'')+'" placeholder="例：FC〇〇"></label><label class="label">この試合場面につながる練習記録（任意）<select id="tacticalLinkedTraining">'+linkedTrainingOptions+'</select></label><div class="tiny muted">この場面より前に実施した練習を選択します。本人が実施した記録と試合の手動確認を、IDで明示的に紐づけます。</div><label class="label">映像で確認した状況・味方や相手の位置など<textarea id="tacticalNote" maxlength="600" rows="3" placeholder="例：左前方に味方、正面に相手。右側に空いたスペースがあった">'+escT(review.note||'')+'</textarea></label><div class="btnrow"><button id="tacticalSaveButton">この場面の分析を保存</button><button type="button" class="secondary" id="tacticalClearButton">入力をリセット</button></div><div id="tacticalSavedState">'+saved+'</div><div id="tacticalAdvice" class="card" style="margin-top:12px"><h3>確認内容からの次の意識</h3>'+notes.map(x=>'<div class="listitem"><div class="grow">'+escT(x)+'</div></div>').join('')+'<div class="tiny muted">これは入力した手動確認内容に基づく練習候補です。AIが映像から首振り・味方や相手の位置・最適判断を自動認識した結果ではありません。</div></div>';
+ host.innerHTML='<h2>⑥ 試合中の判断・ポジショニング分析</h2><p class="tiny muted">本人確認済みの場面を使い、受ける前→受ける瞬間→次のプレーまでを確認。映像で見えない項目は「映像で確認できない」のまま保存できます。</p><label class="label">試合を選択<select id="tacticalMatchSelect">'+matchOptions+'</select></label><label class="label">陸玖本人として確認した場面<select id="tacticalEventSelect">'+eventOptions+'</select></label><div class="tiny muted">場面時刻：'+escT(typeof formatMatchTime==='function'?formatMatchTime(ev.time):ev.time)+'｜'+escT(ev.label||ev.reason||'動きの変化候補')+'</div><div class="divider"></div>'+reviewHtml+'<label class="label">この場面での陸玖の役割（手動確認）<select id="tacticalMatchRole"><option value="">未確認・評価保留</option><option value="トップ"'+(review.context?.role==='トップ'?' selected':'')+'>トップ</option><option value="サイド"'+(review.context?.role==='サイド'?' selected':'')+'>サイド</option><option value="中盤"'+(review.context?.role==='中盤'?' selected':'')+'>中盤</option><option value="その他"'+(review.context?.role==='その他'?' selected':'')+'>その他</option></select></label><label class="label">相手チーム名（任意）<input id="tacticalOpponentTeam" maxlength="80" value="'+escT(review.context?.opponentTeam||'')+'" placeholder="例：FC〇〇"></label><label class="label">この試合場面につながる練習記録（任意）<select id="tacticalLinkedTraining">'+linkedTrainingOptions+'</select></label><div class="tiny muted">この場面より前に実施した練習を選択します。本人が実施した記録と試合の手動確認を、IDで明示的に紐づけます。</div><label class="label">映像で確認した状況・味方や相手の位置など<textarea id="tacticalNote" maxlength="600" rows="3" placeholder="例：左前方に味方、正面に相手。右側に空いたスペースがあった">'+escT(review.note||'')+'</textarea></label><div class="btnrow"><button id="tacticalSaveButton">この場面の分析を保存</button><button type="button" class="secondary" id="tacticalClearButton">入力をリセット</button></div><div id="tacticalSavedState">'+saved+'</div><div id="tacticalAdvice" class="card" style="margin-top:12px"><h3>確認内容からの次の意識</h3>'+notes.map(x=>'<div class="listitem"><div class="grow">'+escT(x)+'</div></div>').join('')+'<div class="tiny muted">これは入力した手動確認内容に基づく練習候補です。AIが映像から首振り・味方や相手の位置・最適判断を自動認識した結果ではありません。</div></div>';
  const matchSelect=document.getElementById('tacticalMatchSelect');
  const eventSelect=document.getElementById('tacticalEventSelect');
  matchSelect.onchange=()=>{selectedMatchId=matchSelect.value;selectedEventId='';render();};
@@ -96,11 +96,12 @@ function render(){
   const previousContext=current.ev.tacticalReview?.context||{};
   const opponentTeam=(document.getElementById('tacticalOpponentTeam')?.value||'').trim().slice(0,80);
   const linkedTrainingRecordId=document.getElementById('tacticalLinkedTraining')?.value||'';
+  const role=document.getElementById('tacticalMatchRole')?.value||'';
   const linkedTraining=practiceRows.find(x=>String(x.id)===String(linkedTrainingRecordId));
   const reviewDate=typeof today==='function'?today():new Date().toISOString().slice(0,10);
   const matchDate=String(current.match.date||reviewDate).slice(0,10);
   if(linkedTraining&&String(linkedTraining.date)>matchDate){alert('試合日より後の日付の練習記録は紐づけできません。');return;}
-  current.ev.tacticalReview={version:3,reviewedAt:reviewDate,fields:values,context:{...previousContext,opponentTeam,linkedTrainingRecordId:linkedTraining?linkedTraining.id:''},note:document.getElementById('tacticalNote').value.trim().slice(0,600)};
+  current.ev.tacticalReview={version:3,reviewedAt:reviewDate,fields:values,context:{...previousContext,opponentTeam,role,linkedTrainingRecordId:linkedTraining?linkedTraining.id:''},note:document.getElementById('tacticalNote').value.trim().slice(0,600)};
   if(typeof persist==='function')persist();
   render();
   alert('試合中の判断・ポジショニング分析を保存しました。');
@@ -411,6 +412,7 @@ function applyTacticalDecisionTrainingPlan(plans){
 
 
 function getTacticalTrainingRecords(){
+ const tacticalRoles=['トップ','サイド','中盤','その他'];
  const rows=(typeof state!=='undefined'&&Array.isArray(state.tacticalDecisionTrainingRecords))?state.tacticalDecisionTrainingRecords:[];
  return rows.filter(x=>x&&x.player==='陸玖'&&x.completed===true&&x.responseSpeed&&x.optionsFound&&x.adapted);
 }
@@ -438,7 +440,7 @@ function renderTacticalTrainingLog(){
  const options=available.map((x,i)=>'<option value="'+i+'">'+escT(x.title)+(x.personalized?'（本人記録に基づく）':'（一般練習）')+'</option>').join('');
  const metrics=summary.ready?summary.scores.map(x=>'<div class="listitem"><div class="grow"><b>'+escT(x.label)+'</b><div class="tiny muted">'+escT(x.detail)+'</div></div><span class="tiny">'+(x.score>0?'良い傾向':x.score<0?'練習テーマ候補':'記録上は同程度')+'</span></div>').join(''):'<div class="note">評価保留：'+escT(summary.reason)+' 記録のない練習を実施済みとして扱いません。</div>';
  const priority=summary.ready?'<div class="note"><b>次回の重点：</b>'+escT(summary.priority.label)+'。'+(summary.priority.key==='speed'?'まずは落ち着いて周囲を見てから、短い時間で選択肢を決める練習。':summary.priority.key==='options'?'受ける前に左右・前方を見て、パス・ドリブル・キープなど複数の選択肢を探す練習。':'守備役の位置や試合状況を変え、状況に応じて選択を切り替える練習。')+'</div>':'';
- host.innerHTML='<h2>⑪ 判断トレーニング実施記録・自動調整</h2><p class="tiny muted">練習後に陸玖本人が実際に行った結果だけを記録します。動画や試合分析から実施結果を推測しません。</p><div class="card"><b>今回の練習</b><label class="label">シナリオ<select id="tacticalTrainingScenario">'+options+'</select></label><label class="label">判断を決めるまでの時間<select id="tacticalTrainingSpeed"><option value="2秒以内">2秒以内</option><option value="2〜3秒">2〜3秒</option><option value="3秒以上">3秒以上</option><option value="判断できなかった">判断できなかった</option></select></label><label class="label">見つけられた選択肢<select id="tacticalTrainingOptions"><option value="1つ">1つ</option><option value="2つ">2つ</option><option value="3つ以上">3つ以上</option><option value="数えられなかった">数えられなかった</option></select></label><label class="label">状況が変わった時の判断<select id="tacticalTrainingAdapt"><option value="状況に合わせて変えられた">状況に合わせて変えられた</option><option value="同じ選択を続けた">同じ選択を続けた</option><option value="状況が変わっても同じ選択だった">状況が変わっても同じ選択だった</option><option value="状況変化なし">状況変化なし</option><option value="判断できなかった">判断できなかった</option></select></label><label class="label">想定した相手のプレス<select id="tacticalTrainingPressure"><option value="強いプレスなし">強いプレスなし</option><option value="前からプレス">前からプレス</option><option value="横から寄せ">横から寄せ</option><option value="後ろから追われる">後ろから追われる</option><option value="複数人に囲まれる">複数人に囲まれる</option><option value="状況設定なし">状況設定なし</option></select></label><label class="label">想定したプレー位置<select id="tacticalTrainingZone"><option value="自陣">自陣</option><option value="中盤">中盤</option><option value="敵陣">敵陣</option><option value="ペナルティエリア付近">ペナルティエリア付近</option><option value="状況設定なし">状況設定なし</option></select></label><label class="label">想定した試合状況<select id="tacticalTrainingScoreState"><option value="リード">リード</option><option value="同点">同点</option><option value="ビハインド">ビハインド</option><option value="状況設定なし">状況設定なし</option></select></label><label class="label">ひとことメモ（任意）<input id="tacticalTrainingNote" maxlength="180" placeholder="例：右を閉じられたので左へパス"></label><button id="tacticalTrainingSave">この練習結果を記録</button><div class="tiny muted">記録者が実施を確認して保存してください。タイム計測が難しい場合は体感で選択できます。本人の記録だけを集計します。</div></div><div class="card"><h3>実施結果から見た傾向</h3><div class="tiny muted">集計対象：直近5回まで／評価開始：3回以上</div>'+metrics+priority+'<div class="tiny muted">これは練習記録の振り返りであり、医学的・競技能力の確定評価ではありません。</div></div><div class="card"><h3>最近の実施記録</h3>'+(summary.rows.length?summary.rows.slice(-8).reverse().map(x=>'<div class="listitem"><div class="grow"><b>'+escT(x.date)+'｜'+escT(x.scenarioTitle)+'</b><div class="tiny muted">速さ：'+escT(x.responseSpeed)+'｜選択肢：'+escT(x.optionsFound)+'｜状況対応：'+escT(x.adapted)+'</div></div></div>').join(''):'<div class="tiny muted">まだ実施記録はありません。</div>')+'</div>';
+ host.innerHTML='<h2>⑪ 判断トレーニング実施記録・自動調整</h2><p class="tiny muted">練習後に陸玖本人が実際に行った結果だけを記録します。動画や試合分析から実施結果を推測しません。</p><div class="card"><b>今回の練習</b><label class="label">シナリオ<select id="tacticalTrainingScenario">'+options+'</select></label><label class="label">判断を決めるまでの時間<select id="tacticalTrainingSpeed"><option value="2秒以内">2秒以内</option><option value="2〜3秒">2〜3秒</option><option value="3秒以上">3秒以上</option><option value="判断できなかった">判断できなかった</option></select></label><label class="label">見つけられた選択肢<select id="tacticalTrainingOptions"><option value="1つ">1つ</option><option value="2つ">2つ</option><option value="3つ以上">3つ以上</option><option value="数えられなかった">数えられなかった</option></select></label><label class="label">状況が変わった時の判断<select id="tacticalTrainingAdapt"><option value="状況に合わせて変えられた">状況に合わせて変えられた</option><option value="同じ選択を続けた">同じ選択を続けた</option><option value="状況が変わっても同じ選択だった">状況が変わっても同じ選択だった</option><option value="状況変化なし">状況変化なし</option><option value="判断できなかった">判断できなかった</option></select></label><label class="label">練習で想定した陸玖の役割<select id="tacticalTrainingRole"><option value="">未確認・役割設定なし</option><option value="トップ">トップ</option><option value="サイド">サイド</option><option value="中盤">中盤</option><option value="その他">その他</option></select></label><label class="label">想定した相手のプレス<select id="tacticalTrainingPressure"><option value="強いプレスなし">強いプレスなし</option><option value="前からプレス">前からプレス</option><option value="横から寄せ">横から寄せ</option><option value="後ろから追われる">後ろから追われる</option><option value="複数人に囲まれる">複数人に囲まれる</option><option value="状況設定なし">状況設定なし</option></select></label><label class="label">想定したプレー位置<select id="tacticalTrainingZone"><option value="自陣">自陣</option><option value="中盤">中盤</option><option value="敵陣">敵陣</option><option value="ペナルティエリア付近">ペナルティエリア付近</option><option value="状況設定なし">状況設定なし</option></select></label><label class="label">想定した試合状況<select id="tacticalTrainingScoreState"><option value="リード">リード</option><option value="同点">同点</option><option value="ビハインド">ビハインド</option><option value="状況設定なし">状況設定なし</option></select></label><label class="label">ひとことメモ（任意）<input id="tacticalTrainingNote" maxlength="180" placeholder="例：右を閉じられたので左へパス"></label><button id="tacticalTrainingSave">この練習結果を記録</button><div class="tiny muted">記録者が実施を確認して保存してください。タイム計測が難しい場合は体感で選択できます。本人の記録だけを集計します。</div></div><div class="card"><h3>実施結果から見た傾向</h3><div class="tiny muted">集計対象：直近5回まで／評価開始：3回以上</div>'+metrics+priority+'<div class="tiny muted">これは練習記録の振り返りであり、医学的・競技能力の確定評価ではありません。</div></div><div class="card"><h3>最近の実施記録</h3>'+(summary.rows.length?summary.rows.slice(-8).reverse().map(x=>'<div class="listitem"><div class="grow"><b>'+escT(x.date)+'｜'+escT(x.scenarioTitle)+'</b><div class="tiny muted">速さ：'+escT(x.responseSpeed)+'｜選択肢：'+escT(x.optionsFound)+'｜状況対応：'+escT(x.adapted)+'</div></div></div>').join(''):'<div class="tiny muted">まだ実施記録はありません。</div>')+'</div>';
  document.getElementById('tacticalTrainingSave').onclick=()=>{
   const scenarioIndex=Number(document.getElementById('tacticalTrainingScenario').value)||0;
   const scenario=available[scenarioIndex]||available[0];
@@ -448,7 +450,7 @@ function renderTacticalTrainingLog(){
   const adapted=document.getElementById('tacticalTrainingAdapt').value;
   if(!responseSpeed||!optionsFound||!adapted){alert('3項目を選択してください。');return;}
   if(!Array.isArray(state.tacticalDecisionTrainingRecords))state.tacticalDecisionTrainingRecords=[];
-  state.tacticalDecisionTrainingRecords.push({id:'tdt-'+Date.now()+'-'+Math.random().toString(36).slice(2,7),player:'陸玖',completed:true,date:typeof today==='function'?today():new Date().toISOString().slice(0,10),scenarioTitle:scenario.title,scenarioPersonalized:!!scenario.personalized,responseSpeed,optionsFound,adapted,pressure:document.getElementById('tacticalTrainingPressure').value,zone:document.getElementById('tacticalTrainingZone').value,scoreState:document.getElementById('tacticalTrainingScoreState').value,note:(document.getElementById('tacticalTrainingNote').value||'').trim().slice(0,180)});
+  state.tacticalDecisionTrainingRecords.push({id:'tdt-'+Date.now()+'-'+Math.random().toString(36).slice(2,7),player:'陸玖',completed:true,date:typeof today==='function'?today():new Date().toISOString().slice(0,10),scenarioTitle:scenario.title,scenarioPersonalized:!!scenario.personalized,responseSpeed,optionsFound,adapted,pressure:document.getElementById('tacticalTrainingPressure').value,zone:document.getElementById('tacticalTrainingZone').value,scoreState:document.getElementById('tacticalTrainingScoreState').value,role:document.getElementById('tacticalTrainingRole').value,note:(document.getElementById('tacticalTrainingNote').value||'').trim().slice(0,180)});
   if(typeof persist==='function')persist();
   renderTacticalTrainingLog();
   alert('陸玖の判断トレーニング実施結果を保存しました。');
@@ -616,7 +618,7 @@ function renderTacticalPracticePatternCoach(){
  const groups=getTacticalPracticePatternGroups();
  const cards=groups.map(g=>{
   const insight=getTacticalPracticePatternInsight(g);
-  const heading=escT(g.pressure)+'｜'+escT(g.zone)+'｜'+escT(g.scoreState);
+  const heading=escT(g.role)+'｜'+escT(g.pressure)+'｜'+escT(g.zone)+'｜'+escT(g.scoreState);
   if(!insight.ready)return '<div class="card"><h3>'+heading+'</h3><div class="note">評価保留：'+escT(insight.reason)+' 現在の記録：試合 '+g.matches.length+'場面／練習 '+g.training.length+'回。</div></div>';
   const strength=insight.strengths.length?insight.strengths.map(x=>'<div class="tiny">・'+escT(x.label)+'：確認できた記録 '+x.good+'/'+x.total+'件</div>').join(''):'<div class="tiny muted">得意な判断パターンは、まだ明確に特定できません。</div>';
   const weakness=insight.weaknesses.length?insight.weaknesses.map(x=>'<div class="tiny">・'+escT(x.label)+'：改善テーマ候補 '+x.weak+'/'+x.total+'件</div>').join(''):'<div class="tiny muted">試合記録から繰り返す課題はまだ特定できません。</div>';
@@ -645,15 +647,16 @@ function getTacticalPracticeTransferGroups(){
   const matchDate=String(match.date||review.reviewedAt||'').slice(0,10);
   if(!training||!matchDate||matchDate<String(training.date||''))return;
   const f=review.fields;
-  const context={pressure:training.pressure,zone:training.zone,scoreState:training.scoreState};
+  const context={pressure:training.pressure,zone:training.zone,scoreState:training.scoreState,role:training.role};
   if(!['強いプレスなし','前からプレス','横から寄せ','後ろから追われる','複数人に囲まれる'].includes(context.pressure)||
      !['自陣','中盤','敵陣','ペナルティエリア付近'].includes(context.zone)||
      !['リード','同点','ビハインド'].includes(context.scoreState))return;
+  if(!['トップ','サイド','中盤','その他'].includes(context.role)||review.context?.role!==context.role)return;
   if(f.pressure!==context.pressure||f.zone!==context.zone||f.scoreState!==context.scoreState)return;
-  const key=[context.pressure,context.zone,context.scoreState].join('|');
+  const key=[context.role,context.pressure,context.zone,context.scoreState].join('|');
   const g=groups[key]||(groups[key]={...context,training:new Map(),matches:[]});
   g.training.set(String(training.id),training);
-  g.matches.push({date:String(review.reviewedAt).slice(0,10),matchTitle:match.title||'試合',fields:f,trainingId:String(training.id),trainingTitle:training.scenarioTitle||'判断練習'});
+  g.matches.push({date:String(review.reviewedAt).slice(0,10),matchTitle:match.title||'試合',fields:f,trainingId:String(training.id),trainingTitle:training.scenarioTitle||'判断練習',role:context.role});
  }));
  return Object.values(groups).sort((a,b)=>b.matches.length-a.matches.length);
 }
@@ -725,9 +728,9 @@ function syncTacticalTransferHistory(){
    const notYet=actions.filter(x=>x.bad>=2&&x.bad>=x.good);
    const trainingCount=new Set(scenes.map(x=>x.trainingId)).size;
    const matchCount=scenes.length;
-   const contextKey=[group.pressure,group.zone,group.scoreState].join('|');
+   const contextKey=[group.role,group.pressure,group.zone,group.scoreState].join('|');
    snapshots.push({
-    id:contextKey+'|'+date,contextKey,pressure:group.pressure,zone:group.zone,scoreState:group.scoreState,date,
+    id:contextKey+'|'+date,contextKey,role:group.role,pressure:group.pressure,zone:group.zone,scoreState:group.scoreState,date,
     trainingCount,matchCount,actions,repeated:repeated.map(x=>x.key),notYet:notYet.map(x=>x.key),
     nextMatchGoals:repeated.map(x=>x.label),nextTrainingThemes:notYet.map(x=>x.label)
    });
@@ -755,9 +758,9 @@ function renderTacticalTransferGrowthHistory(){
   const actions=x.actions.map(a=>'<div class="tiny">・'+escT(a.label)+'：再現 '+a.good+'/'+a.observed+'場面／未再現 '+a.bad+'場面</div>').join('');
   const match=x.nextMatchGoals.length?x.nextMatchGoals.map(escT).join('、'):'継続目標は評価保留';
   const practice=x.nextTrainingThemes.length?x.nextTrainingThemes.map(escT).join('、'):'追加の練習テーマは評価保留';
-  return '<div class="card"><h3>'+escT(x.pressure)+'｜'+escT(x.zone)+'｜'+escT(x.scoreState)+'</h3><div class="tiny muted">最新確認 '+escT(x.date)+'｜本人の練習 '+x.trainingCount+'回／試合手動確認 '+x.matchCount+'場面</div>'+actions+'<div class="divider"></div><b>次の試合の継続目標</b><div class="tiny">'+match+'</div><b>次の練習テーマ</b><div class="tiny">'+practice+'</div></div>';
+  return '<div class="card"><h3>'+escT(x.role||'役割未確認')+'｜'+escT(x.pressure)+'｜'+escT(x.zone)+'｜'+escT(x.scoreState)+'</h3><div class="tiny muted">最新確認 '+escT(x.date)+'｜本人の練習 '+x.trainingCount+'回／試合手動確認 '+x.matchCount+'場面</div>'+actions+'<div class="divider"></div><b>次の試合の継続目標</b><div class="tiny">'+match+'</div><b>次の練習テーマ</b><div class="tiny">'+practice+'</div></div>';
  }).join('');
- const timeline=history.slice(-30).reverse().map(x=>'<div class="listitem"><div class="grow"><b>'+escT(x.date)+'｜'+escT(x.pressure)+'・'+escT(x.zone)+'・'+escT(x.scoreState)+'</b><div class="tiny muted">練習 '+x.trainingCount+'回／試合 '+x.matchCount+'場面｜継続目標 '+x.nextMatchGoals.length+'件／練習テーマ '+x.nextTrainingThemes.length+'件</div></div></div>').join('');
+ const timeline=history.slice(-30).reverse().map(x=>'<div class="listitem"><div class="grow"><b>'+escT(x.date)+'｜'+escT(x.role||'役割未確認')+'・'+escT(x.pressure)+'・'+escT(x.zone)+'・'+escT(x.scoreState)+'</b><div class="tiny muted">練習 '+x.trainingCount+'回／試合 '+x.matchCount+'場面｜継続目標 '+x.nextMatchGoals.length+'件／練習テーマ '+x.nextTrainingThemes.length+'件</div></div></div>').join('');
  host.innerHTML='<h2>⑯ 試合再現の成長履歴・次の目標</h2><p class="tiny muted">評価条件を満たした状況ごとに、試合日を基準とした時系列スナップショットを保存します。試合の手動確認と本人の練習実施記録は別の件数として保持します。</p>'+(cards||'<div class="note">評価保留：同じ状況で本人の練習3回以上と、その後の試合手動確認3場面以上がそろうと履歴を作成します。</div>')+'<div class="divider"></div><b>保存された成長履歴（新しい順）</b>'+(timeline||'<div class="tiny muted">まだ保存された履歴はありません。</div>')+'<div class="tiny muted">継続目標は試合で3場面以上観察され、良い行動が3回以上かつ課題より多い場合のみ。練習テーマは試合で同じ課題が2回以上、かつ良い行動以上の場合のみ表示します。各行動の観察数が3未満なら評価対象外です。</div>';
  const prior=document.getElementById('tacticalPracticeTransferReport');
  if(prior)prior.insertAdjacentElement('afterend',host);else videoView.appendChild(host);
@@ -783,7 +786,7 @@ function applyTacticalTransferGoalsToPlan(plans){
    '立ち位置':{title:'相手の間・背後・外側を見つける',note:'味方と重ならず、相手の間・背後・外側の空いたレーンで受ける。'}
   };
   const t=templates[priority.label];
-  if(t){const index=Math.min(1,plans.length-1);plans[index]={...plans[index],title:t.title,category:'試合判断の再現',minutes:12,note:t.note+'\\n\\n【試合再現トラッキング】'+priority.context.pressure+'・'+priority.context.zone+'・'+priority.context.scoreState,why:'同じ状況の試合手動確認で繰り返し見られた課題を練習テーマに反映'};}
+  if(t){const index=Math.min(1,plans.length-1);plans[index]={...plans[index],title:t.title,category:'試合判断の再現',minutes:12,note:t.note+'\\n\\n【試合再現トラッキング】'+priority.context.role+'｜'+priority.context.pressure+'・'+priority.context.zone+'・'+priority.context.scoreState,why:'同じ状況の試合手動確認で繰り返し見られた課題を練習テーマに反映'};}
  }
  return plans;
 }
@@ -824,7 +827,7 @@ function renderTacticalTransferGrowthCharts(){
    return '<div class="card"><b>'+escT(action.label)+'</b><div class="tiny muted">最新 '+action.latest.score+'%｜確認 '+action.latest.good+'/'+action.latest.observed+'場面</div><svg viewBox="0 0 '+width+' '+height+'" role="img" aria-label="'+escT(action.label)+'の成長グラフ" style="width:100%;max-width:560px;height:auto;display:block">'+grid+'<path d="'+path+'" fill="none" stroke="'+colors[action.key]+'" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>'+dots+dateLabels+'</svg><div class="tiny">'+change+'｜'+stability+'</div></div>';
   }).join('');
   const priority=summary.priority?'<div class="note"><b>次に伸ばす優先順位：</b>'+escT(summary.priority.label)+'（現在 '+summary.priority.latest.score+'%）。同じ状況で手動確認できた行動のうち、良い行動の割合が最も低い項目です。</div>':'<div class="note">優先順位：評価保留。各行動で手動確認済み3場面以上が必要です。</div>';
-  return '<div class="card"><h3>'+escT(latest.pressure)+'｜'+escT(latest.zone)+'｜'+escT(latest.scoreState)+'</h3><div class="tiny muted">本人の練習 '+latest.trainingCount+'回／試合手動確認 '+latest.matchCount+'場面。グラフは試合の手動確認結果のみを表示します。</div>'+(actionHtml||'<div class="note">評価保留：行動ごとに手動確認済み3場面以上が必要です。</div>')+priority+'</div>';
+  return '<div class="card"><h3>'+escT(latest.role||'役割未確認')+'｜'+escT(latest.pressure)+'｜'+escT(latest.zone)+'｜'+escT(latest.scoreState)+'</h3><div class="tiny muted">本人の練習 '+latest.trainingCount+'回／試合手動確認 '+latest.matchCount+'場面。グラフは試合の手動確認結果のみを表示します。</div>'+(actionHtml||'<div class="note">評価保留：行動ごとに手動確認済み3場面以上が必要です。</div>')+priority+'</div>';
  }).join('');
  host.innerHTML='<h2>⑰ 状況別・行動別の成長グラフ</h2><p class="tiny muted">状況ごとに、受ける前の周囲確認・スペースへの動き出し・サポート角度・立ち位置を時系列で表示します。直近変化は直前の別日との比較、安定度は直近3時点の幅で確認します。</p>'+(cards||'<div class="note">評価保留：同じ状況の練習3回以上と、その後の試合手動確認3場面以上がそろうとグラフを表示します。</div>')+'<div class="tiny muted">割合は手動確認できた場面内での良い行動の比率で、総合能力点ではありません。安定度は直近3時点の差が20ポイント以内なら「比較的安定」と表示します。試合の観察値と練習実施値は合算していません。</div>';
  const prior=document.getElementById('tacticalTransferGrowthHistory');if(prior)prior.insertAdjacentElement('afterend',host);else videoView.appendChild(host);
