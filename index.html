@@ -49,6 +49,7 @@ button,.button{border:0;border-radius:12px;padding:12px 14px;font-weight:800;fon
  <div class="card"><h2>陸玖専用・月間成長レポート</h2><p class="tiny muted">保存された練習・試合評価・測定記録から、その月の取り組みと次の重点を自動でまとめます。</p><label class="label" for="growthReportMonth">対象月</label><select id="growthReportMonth" onchange="renderMonthlyGrowthReport()"></select><div id="monthlyGrowthReport"></div></div>
  <div class="card"><h2>練習の積み重ね</h2><div id="growthTrainingChart"></div><div class="tiny muted">月ごとの練習記録数です。回数の増加は技術向上そのものを意味しません。</div></div>
  <div class="card"><h2>試合での評価推移</h2><div id="growthMatchChart"></div><div class="tiny muted">本人確認済みの陸玖の試合場面について、「良かった」の割合を月ごとに表示。評価件数も併記します。</div></div>
+ <div class="card"><h2>繰り返し見つかった判断課題と別メニュー</h2><div id="growthRepeatedDecisionIssue"></div></div>
  <div class="card"><h2>練習前後の判断力の変化（月別）</h2><div id="growthTrainingDecisionChange"></div><div class="tiny muted">練習日を基準に、同じテーマの練習前後の試合評価を照合。月ごとに変化率の平均を表示します。比較できるデータがない月は無理に補完しません。</div></div>
  <div class="card"><h2>判断力の成長グラフ</h2><div id="growthDecisionChart"></div><div class="tiny muted">月ごとの「判断の質」と「周囲の確認」を可視化します。本人確認済みの陸玖の場面だけを集計し、未評価は割合に含めません。</div></div>
  <div class="card"><h2>ポジション別の判断分析</h2><p class="tiny muted">各場面で実際に担当していた役割（GK・DF・MF・FW）を選ぶと、判断の質・周囲の確認・プレー選択を役割別に集計します。ポジションは映像から自動推定せず、確認した内容だけを使います。</p><div id="growthPositionDecision"></div></div>
@@ -1084,10 +1085,66 @@ function renderMonthlyTrainingDecisionChange(){
  const totalPairs=rows.reduce((n,r)=>n+r.pairs,0);
  host.innerHTML='<div class="tiny muted">各月に行った練習について、同じテーマの練習前後の試合評価率の差を平均しています。プラスは改善方向、マイナスは再確認ポイントです。</div><div class="listitem"><b>良い判断率の変化（練習後 − 練習前）</b><div class="tiny muted">「最適な選択」「良い選択」の割合の差</div>'+renderGrowthLineChart('月別・良い判断率の変化',qPoints,'pt',{decimals:0,empty:'比較できる判断評価がまだありません。'})+'</div><div class="listitem"><b>周囲確認率の変化（練習後 − 練習前）</b><div class="tiny muted">「周囲を確認できた」の割合の差</div>'+renderGrowthLineChart('月別・周囲確認率の変化',sPoints,'pt',{decimals:0,empty:'比較できる周囲確認の評価がまだありません。'})+'</div><div class="tiny muted">比較できた練習テーマ・試合ペア：'+totalPairs+'組｜月ごとの値は重複する同一テーマ・同一試合ペアを1回として集計。練習の効果を断定するものではなく、試合評価の変化を示します。</div>';
 }
+function getRepeatedDecisionIssue(){
+ const groups={};
+ (state.trainings||[]).filter(t=>t?.date).forEach(training=>{
+  const result=getTrainingDecisionComparison(training);
+  if(!result?.after)return;
+  const events=result.after.events||[];
+  const assessed=events.filter(e=>['最適な選択','良い選択','別の選択肢もあった','判断が遅れた'].includes(e.decisionQuality)||['周囲を確認できた','ボールだけを見ていた','味方・相手の位置を確認できなかった'].includes(e.decisionScan));
+  if(!assessed.length)return;
+  const issueTypes=[];
+  if(assessed.some(e=>e.decisionQuality==='判断が遅れた'))issueTypes.push('判断が遅れる');
+  if(assessed.some(e=>e.decisionQuality==='別の選択肢もあった'))issueTypes.push('選択肢を比較できていない');
+  if(assessed.some(e=>e.decisionScan==='ボールだけを見ていた'))issueTypes.push('ボールだけを見てしまう');
+  if(assessed.some(e=>e.decisionScan==='味方・相手の位置を確認できなかった'))issueTypes.push('味方・相手の位置を把握できていない');
+  issueTypes.forEach(issue=>{
+   const key=result.focus+'|'+issue;
+   const row=groups[key]||(groups[key]={focus:result.focus,issue,attempts:[],matches:new Set(),bad:0,assessed:0,trainingIds:new Set()});
+   const matchId=String(result.after.match.id);
+   if(row.matches.has(matchId))return;
+   row.matches.add(matchId);row.trainingIds.add(String(training.id));
+   row.attempts.push({training,match:result.after.match,events:assessed});
+   row.assessed+=assessed.length;
+   row.bad+=assessed.filter(e=>issue==='判断が遅れる'?e.decisionQuality==='判断が遅れた':issue==='選択肢を比較できていない'?e.decisionQuality==='別の選択肢もあった':issue==='ボールだけを見てしまう'?e.decisionScan==='ボールだけを見ていた':e.decisionScan==='味方・相手の位置を確認できなかった').length;
+  });
+ });
+ const candidates=Object.values(groups).filter(r=>r.matches.size>=2&&r.assessed>=2&&r.bad/r.assessed>=.5)
+  .map(r=>({...r,rate:Math.round(r.bad/r.assessed*100)}))
+  .sort((a,b)=>b.matches.size-a.matches.size||b.rate-a.rate);
+ return candidates[0]||null;
+}
+function getAlternativeDecisionPractice(issue){
+ const plans={
+  '判断が遅れる':{title:'判断スピード｜見る→決める→実行',minutes:12,note:'親が左右どちらかにコーン・ゲートを指す。パスが来る前に周囲を確認し、ボールが届く前に「右・左・戻す」を決めて声に出す。最初は合図を早めに出し、慣れたら合図を遅らせる。最後は親子1対1で同じ判断を試す。',steps:['周囲を見て選択肢を声に出す 3分','合図を変えて判断してパス 4分','親子1対1で判断から実行 5分'],success:'ボールが届く前に選択を決め、迷わず実行できた回数を記録する。'},
+  '選択肢を比較できていない':{title:'2択・3択判断｜状況を見て選ぶ',minutes:12,note:'親が守備役と味方役を兼ね、前進・横パス・キープの選択肢を作る。毎回配置を変え、受ける前に周囲を見て最適な選択を声に出してからプレー。正解を先に教えず、終わった後に別案も一緒に振り返る。',steps:['止まった状態で3つの選択肢を確認 3分','配置を変えて選択する 4分','親子1対1で自由に選ぶ 5分'],success:'状況に合う選択を自分で説明し、プレーに移せたかを確認する。'},
+  'ボールだけを見てしまう':{title:'首振りリセット｜見る情報を増やす',minutes:10,note:'パスが出る前に左右・背後を一度ずつ確認。親が指で数字や色を示し、陸玖は見た情報を答えてからボールを受ける。慣れたら守備役を加え、確認した情報を使って前を向くか落とすか選ぶ。',steps:['左右を見て数字・色を答える 3分','首振りしてからパスを受ける 3分','守備役を加えて選択する 4分'],success:'ボールを見る前後に周囲を確認し、その情報をプレーに使えた回数を数える。'},
+  '味方・相手の位置を把握できていない':{title:'周囲把握｜味方・相手・スペース確認',minutes:12,note:'親が味方役・相手役の位置を毎回変える。受ける前に「味方はどこ・相手はどこ・空きスペースはどこ」を確認し、前進・パス・キープを選ぶ。最初はゆっくり、最後は動きながら行う。',steps:['配置を見て位置を答える 3分','動く相手を見て選ぶ 4分','親子1対1で実戦形式 5分'],success:'味方・相手・スペースの位置を把握し、選択に反映できたかを確認する。'}
+ };
+ return plans[issue]||plans['選択肢を比較できていない'];
+}
+function applyAlternativeDecisionPractice(){
+ const issue=getRepeatedDecisionIssue();if(!issue)return;
+ const plan=getAlternativeDecisionPractice(issue.issue);
+ const title='再発課題｜'+plan.title;
+ if(!(state.menus||[]).some(m=>m.name===title)){state.menus.unshift({name:title,category:'判断力・別メニュー',minutes:plan.minutes});persist();}
+ trainMenu.value=title;trainDate.value=today();trainMinutes.value=plan.minutes;trainFocus.value=issue.focus;
+ trainNote.value='【繰り返し確認された課題】'+issue.issue+'（別々の試合 '+issue.matches.size+'試合／評価 '+issue.bad+'/'+issue.assessed+'場面）\\n【別アプローチ】'+plan.note+'\\n【練習ステップ】'+plan.steps.join('／')+'\\n【成功基準】'+plan.success+'\\n※試合評価の記録から提案。本人の能力を断定するものではありません。';
+ showView('training');
+}
+function renderRepeatedDecisionIssue(){
+ const host=document.getElementById('growthRepeatedDecisionIssue');if(!host)return;
+ const issue=getRepeatedDecisionIssue();
+ if(!issue){host.innerHTML='<div class="empty">同じ判断課題が複数の別試合で繰り返し確認されると、ここに課題と別メニューを表示します。最低2試合分の練習後評価が必要です。</div>';return;}
+ const plan=getAlternativeDecisionPractice(issue.issue);
+ const samples=issue.attempts.slice().sort((a,b)=>String(a.match.date).localeCompare(String(b.match.date))).map(x=>'<div class="tiny muted">・'+esc(x.match.date)+' '+esc(x.match.title||'試合')+'｜練習日 '+esc(x.training.date)+'</div>').join('');
+ host.innerHTML='<div class="note"><b>繰り返し見つかった判断課題：'+esc(issue.issue)+'</b><div class="tiny">テーマ：'+esc(issue.focus)+'｜別々の試合 '+issue.matches.size+'試合｜該当 '+issue.bad+'/'+issue.assessed+'評価場面（'+issue.rate+'%）</div><div class="tiny muted">照合した記録</div>'+samples+'<div class="divider"></div><b>別アプローチの練習案：'+esc(plan.title)+'</b><div class="tiny muted">約'+plan.minutes+'分</div><div class="tiny" style="white-space:pre-line;margin:6px 0">'+esc(plan.note)+'</div><div class="tiny muted">成功基準：'+esc(plan.success)+'</div><button class="secondary small" onclick="applyAlternativeDecisionPractice()">この別メニューで練習を作成</button><div class="tiny muted" style="margin-top:6px">※最低2試合で同じ課題が確認された場合のみ表示。試合の映像・評価の記録に基づく提案で、能力や原因を断定しません。</div></div>';
+}
 function renderGrowthDashboard(){
  renderMonthlyGrowthReport();
  renderDecisionGrowthChart();
  renderMonthlyTrainingDecisionChange();
+ renderRepeatedDecisionIssue();
  renderPositionDecisionAnalysis();
  renderPositionDecisionTraining();
  const months=[];const now=new Date();for(let offset=5;offset>=0;offset--){const d=new Date(now.getFullYear(),now.getMonth()-offset,1);months.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));}
