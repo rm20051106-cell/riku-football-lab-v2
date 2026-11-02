@@ -26,7 +26,7 @@ function sameConditions(a,b){
  const x=a.physicalConditions,y=b.physicalConditions;
  const keys=o=>Object.keys(o).filter(k=>k!=='note').sort();
  const kx=keys(x),ky=keys(y);
- return kx.length>0&&kx.join('|')===ky.join('|')&&kx.every(k=>String(x[k]??'')===String(y[k]??''))&&String(a.unit||'')===String(b.unit||'');
+ return kx.length>0&&kx.join('|')===ky.join('|')&&kx.every(k=>{const v=String(x[k]??'');return v===String(y[k]??'')&&v!==''&&!['未記録','不明','未確認','映像で確認できない'].includes(v);})&&String(a.unit||'')===String(b.unit||'');
 }
 function physicalComparisons(current,previous){
  const all=[...(current||[]),...(previous||[])].filter(x=>x&&x.type&&Number.isFinite(Number(x.value)));
@@ -52,7 +52,7 @@ function getData(s,p){
  const matches=rowsIn(s.matchAnalyses,p),prevMatches=rowsIn(s.matchAnalyses,previous);
  const confirmed=matches.flatMap(m=>(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖').map(e=>({...e,date:m.date||e.date||'',matchTitle:m.title||'試合'})));
  const prevConfirmed=prevMatches.flatMap(m=>(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖').map(e=>({...e,date:m.date||e.date||''})));
- const clips=rowsIn(s.clips,p),forms=rowsIn(s.forms,p);
+ const clips=rowsIn(s.clips,p),forms=rowsIn(s.forms,p),aiForms=rowsIn(s.aiFormAnalyses,p);
  const shooting=rowsIn(s.shootingSpecialistRecords,p),firstTouch=rowsIn(s.firstTouchRecords,p),transition=rowsIn(s.transitionAnalysisRecords,p);
  const tactical=rowsIn(s.tacticalDecisionTrainingRecords,p),measures=rowsIn(s.measures,p);
  const prevMeasures=rowsIn(s.measures,previous);
@@ -75,7 +75,7 @@ function getData(s,p){
   if(!measures.length)nextChecks.push('フィジカル測定を行う場合は路面・計測方法・準備運動・試行回数も一緒に記録する');
  }
  const allAnalyses=shooting.length+firstTouch.length+transition.length;
- return {previous,trainings,prevTrainings,matches,prevMatches,confirmed,prevConfirmed,clips,forms,shooting,firstTouch,transition,tactical,measures,prevMeasures,good,improve,recurring,nextChecks,allAnalyses,physical:physicalComparisons(measures,prevMeasures)};
+ return {previous,trainings,prevTrainings,matches,prevMatches,confirmed,prevConfirmed,clips,forms,aiForms,shooting,firstTouch,transition,tactical,measures,prevMeasures,good,improve,recurring,nextChecks,allAnalyses,physical:physicalComparisons(measures,prevMeasures)};
 }
 function render(){
  const s=getState(),anchor=document.getElementById('dailyPlan');if(!s||!anchor)return;
@@ -93,12 +93,12 @@ function render(){
  const recurringHtml=d.recurring.length?d.recurring.slice(0,5).map(x=>'<div class="tiny">・'+esc(x[0])+'：改善したい／難しかった '+x[1]+'件</div>').join(''):'<div class="tiny muted">同じプレー種別で繰り返し確認された課題はありません。記録不足の場合は課題なしと断定しません。</div>';
  const checksHtml=d.nextChecks.length?d.nextChecks.slice(0,4).map(x=>'<div class="tiny">・'+esc(x)+'</div>').join(''):'<div class="tiny muted">次の確認項目は、次回の練習・試合記録が保存されると表示します。</div>';
  const special=d.shooting.length+d.firstTouch.length+d.transition.length;
- body.innerHTML='<div class="btnrow" style="align-items:center;margin-top:4px"><button type="button" class="'+(mode==='week'?'':'secondary')+' small" id="rgrWeek">週間</button><button type="button" class="'+(mode==='month'?'':'secondary')+' small" id="rgrMonth">月間</button><button type="button" class="secondary small" id="rgrPrev">◀ '+prevLabel+'</button><button type="button" class="secondary small" id="rgrNext">次 '+(mode==='week'?'週':'月')+' ▶</button><button type="button" class="secondary small" id="rgrNow">今に戻る</button></div><h3 style="margin-top:12px">'+esc(p.label)+'</h3><div class="tiny muted">集計対象：'+esc(iso(p.start))+' 〜 '+esc(iso(addDays(p.end,-1)))+'。前期間との比較は同じ長さの期間で行います。</div>'+
+ body.innerHTML='<div class="btnrow" style="align-items:center;margin-top:4px"><button type="button" class="'+(mode==='week'?'':'secondary')+' small" id="rgrWeek">週間</button><button type="button" class="'+(mode==='month'?'':'secondary')+' small" id="rgrMonth">月間</button><button type="button" class="secondary small" id="rgrPrev">◀ '+prevLabel+'</button><button type="button" class="secondary small" id="rgrNext"'+(offset>=0?' disabled':'')+'>次 '+(mode==='week'?'週':'月')+' ▶</button><button type="button" class="secondary small" id="rgrNow">今に戻る</button></div><h3 style="margin-top:12px">'+esc(p.label)+'</h3><div class="tiny muted">集計対象：'+esc(iso(p.start))+' 〜 '+esc(iso(addDays(p.end,-1)))+'。前期間との比較は同じ長さの期間で行います。</div>'+
  '<div class="grid" style="margin-top:12px"><div class="card"><div class="tiny muted">練習記録</div><b>'+trainingText+'</b><div class="tiny muted">'+trainingCompare+'</div></div><div class="card"><div class="tiny muted">本人確認済み試合場面</div><b>'+d.confirmed.length+'場面</b><div class="tiny muted">前期間 '+d.prevConfirmed.length+'場面（差 '+(matchDelta>0?'+':'')+matchDelta+'）</div></div><div class="card"><div class="tiny muted">保存動画・フォーム</div><b>'+d.clips.length+'プレー記録／'+d.forms.length+'フォーム記録</b><div class="tiny muted">AI試合スキャン '+d.matches.length+'件</div></div><div class="card"><div class="tiny muted">専門分析</div><b>'+special+'件</b><div class="tiny muted">シュート '+d.shooting.length+'／ファーストタッチ '+d.firstTouch.length+'／切り替え '+d.transition.length+'</div></div><div class="card"><div class="tiny muted">フィジカル測定</div><b>'+d.measures.length+'件</b><div class="tiny muted">測定種目を混ぜずに集計</div></div><div class="card"><div class="tiny muted">試合の手動評価</div><b>'+assessmentText+'</b><div class="tiny muted">評価未選択は含めません</div></div></div>'+
  '<div class="divider"></div><h3>確認できた成長・良かった記録</h3><div class="note">この期間に「良かった」と手動で記録された場面：'+d.good.length+'件。これは記録された評価件数であり、能力全体の成長率を意味しません。</div>'+eventHtml+
  '<div class="divider"></div><h3>フィジカルの同条件比較</h3>'+physHtml+'<div class="tiny muted">比較は同じ種目・単位・記録された全計測条件が一致する前期間データだけを使用。条件未記録・条件不一致の測定値は比較しません。</div>'+
  '<div class="divider"></div><h3>継続して確認したい課題</h3>'+recurringHtml+
- '<div class="divider"></div><h3>動画・分析の記録内訳</h3><div class="tiny">保存プレー分析 '+d.clips.length+'件／フォーム記録 '+d.forms.length+'件／シュート・FK '+d.shooting.length+'件／ファーストタッチ '+d.firstTouch.length+'件／攻守切り替え '+d.transition.length+'件／判断トレーニング '+d.tactical.length+'件</div><div class="tiny muted">動画ファイルの有無や、AIによる本人特定・プレー自動判定を意味する集計ではありません。保存された記録数のみ表示しています。</div>'+
+ '<div class="divider"></div><h3>動画・分析の記録内訳</h3><div class="tiny">保存プレー分析 '+d.clips.length+'件／フォーム記録 '+d.forms.length+'件／AIフォーム解析 '+d.aiForms.length+'件／シュート・FK '+d.shooting.length+'件／ファーストタッチ '+d.firstTouch.length+'件／攻守切り替え '+d.transition.length+'件／判断トレーニング '+d.tactical.length+'件</div><div class="tiny muted">動画ファイルの有無や、AIによる本人特定・プレー自動判定を意味する集計ではありません。保存された記録数のみ表示しています。</div>'+
  '<div class="divider"></div><h3>次回の確認項目</h3>'+checksHtml+
  '<div class="note">記録がない項目は評価しません。練習回数の増減は練習量の記録であり、技術向上の証明ではありません。映像で確認できない内容や未測定の数値は補完していません。</div>';
  panel.querySelector('#rgrWeek').addEventListener('click',()=>{mode='week';offset=0;render();});
