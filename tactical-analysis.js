@@ -53,6 +53,7 @@ function render(){
  renderTacticalDecisionScenarios();
  renderTacticalTrainingLog();
  renderTacticalDecisionGrowthReport();
+ renderTacticalPracticePatternCoach();
  let host=document.getElementById(PANEL_ID);
  if(!host){
   const history=document.getElementById('matchScanRecords');
@@ -527,6 +528,95 @@ function renderTacticalDecisionGrowthReport(){
  if(log)log.replaceWith(host);
  const training=document.getElementById('tacticalTrainingLog');
  if(training)training.insertAdjacentElement('afterend',host);else videoView.appendChild(host);
+}
+
+
+function getTacticalPracticePatternGroups(){
+ const matches=(typeof state!=='undefined'&&Array.isArray(state.matchAnalyses))?state.matchAnalyses:[];
+ const matchRows=[];
+ matches.forEach(match=>(match.candidateEvents||[]).forEach(ev=>{
+  const review=ev.tacticalReview;
+  if(ev.reviewLabel!=='陸玖'||!review?.reviewedAt||!review.fields)return;
+  const f=review.fields;
+  const pressure=f.pressure,zone=f.zone,scoreState=f.scoreState;
+  if(!['強いプレスなし','前からプレス','横から寄せ','後ろから追われる','複数人に囲まれる'].includes(pressure))return;
+  if(!['自陣','中盤','敵陣','ペナルティエリア付近'].includes(zone))return;
+  if(!['リード','同点','ビハインド'].includes(scoreState))return;
+  matchRows.push({date:String(review.reviewedAt).slice(0,10),pressure,zone,scoreState,fields:f});
+ }));
+ const trainingRows=getTacticalTrainingRecords().filter(x=>
+  ['強いプレスなし','前からプレス','横から寄せ','後ろから追われる','複数人に囲まれる'].includes(x.pressure)&&
+  ['自陣','中盤','敵陣','ペナルティエリア付近'].includes(x.zone)&&
+  ['リード','同点','ビハインド'].includes(x.scoreState)
+ );
+ const groups={};
+ const keyOf=x=>[x.pressure,x.zone,x.scoreState].join('|');
+ matchRows.forEach(x=>{const k=keyOf(x);(groups[k]||(groups[k]={pressure:x.pressure,zone:x.zone,scoreState:x.scoreState,matches:[],training:[]})).matches.push(x);});
+ trainingRows.forEach(x=>{const k=keyOf(x);(groups[k]||(groups[k]={pressure:x.pressure,zone:x.zone,scoreState:x.scoreState,matches:[],training:[]})).training.push(x);});
+ return Object.values(groups).sort((a,b)=>b.matches.length+b.training.length-a.matches.length-a.training.length);
+}
+function getTacticalPracticePatternInsight(group){
+ const mr=group.matches,tr=group.training;
+ if(mr.length<3||tr.length<3)return {ready:false,reason:'同じ状況の試合手動確認3場面以上と、本人の練習実施3回以上が必要です。'};
+ const known=(key,values)=>mr.filter(x=>values.includes(x.fields[key]));
+ const scan=known('scan',['左右を確認','前方を確認','複数方向を確認','確認したが首振りなし']);
+ const scanGood=scan.filter(x=>['左右を確認','前方を確認','複数方向を確認'].includes(x.fields.scan)).length;
+ const moves=known('movement',['スペースへ動いた','相手を引きつけた','動き出しなし','足元に受けに来た']);
+ const moveGood=moves.filter(x=>['スペースへ動いた','相手を引きつけた'].includes(x.fields.movement)).length;
+ const support=known('support',['前方斜め','後方斜め','横方向','真後ろ','パスコースを作れていない']);
+ const supportGood=support.filter(x=>['前方斜め','後方斜め'].includes(x.fields.support)).length;
+ const position=known('position',['相手と相手の間','相手の背後','相手の前','外側のスペース','味方と位置が重なる']);
+ const positionGood=position.filter(x=>['相手と相手の間','相手の背後','外側のスペース'].includes(x.fields.position)).length;
+ const patterns=[
+  {key:'scan',label:'受ける前の周囲確認',good:scanGood,total:scan.length,weak:scan.length-scanGood},
+  {key:'movement',label:'スペースへの動き出し',good:moveGood,total:moves.length,weak:moves.length-moveGood},
+  {key:'support',label:'サポート角度',good:supportGood,total:support.length,weak:support.length-supportGood},
+  {key:'position',label:'立ち位置',good:positionGood,total:position.length,weak:position.length-positionGood}
+ ].filter(x=>x.total>=3);
+ const strengths=patterns.filter(x=>x.good>=3&&x.good>x.weak).sort((a,b)=>b.good-a.good);
+ const weaknesses=patterns.filter(x=>x.weak>=2&&x.weak>=x.good).sort((a,b)=>b.weak-a.weak);
+ const successOutcomes=['前進できた','味方につながった','シュートにつながった','チャンスを作れた'];
+ const success={};
+ mr.forEach(x=>{const f=x.fields;if(successOutcomes.includes(f.outcome)&&['パス','ドリブル','シュート','キープ','その他'].includes(f.decision)){success[f.decision]=(success[f.decision]||0)+1;}});
+ const successfulChoices=Object.entries(success).filter(x=>x[1]>=3).sort((a,b)=>b[1]-a[1]);
+ const trainingMetrics=[
+  {key:'speed',label:'判断の速さ',good:x=>x.responseSpeed==='2秒以内',bad:x=>x.responseSpeed==='3秒以上'||x.responseSpeed==='判断できなかった'},
+  {key:'options',label:'選択肢の発見',good:x=>x.optionsFound==='3つ以上',bad:x=>x.optionsFound==='1つ'||x.optionsFound==='数えられなかった'},
+  {key:'adapt',label:'状況変化への対応',good:x=>x.adapted==='状況に合わせて変えられた',bad:x=>x.adapted==='状況が変わっても同じ選択だった'||x.adapted==='同じ選択を続けた'||x.adapted==='判断できなかった'}
+ ];
+ const trainingWeak=trainingMetrics.map(m=>({key:m.key,label:m.label,good:tr.filter(m.good).length,bad:tr.filter(m.bad).length})).sort((a,b)=>b.bad-a.bad);
+ const weak=weaknesses[0]||null;
+ const priority=trainingWeak[0];
+ const focus=weak?.key||({speed:'scan',options:'scan',adapt:'movement'}[priority.key]);
+ const drills={
+  scan:{title:'首振り→半身→前進の再現',setup:'親が守備役、味方役を斜め前に置く。開始前に左右どちらかのコーンを指す。',task:'パスが出る前に左右・前方を確認。半身で受け、見えた空き側へファーストタッチ。閉じられたら味方役へつなぐ。',goal:'受ける前の確認を行い、空き側か味方への次のプレーを選ぶ'},
+  movement:{title:'足元と背後を使い分ける動き出し',setup:'親がボール保持者、コーンで相手DFと背後のスペースを作る。',task:'親が顔を上げた合図で、足元・斜め・背後のいずれかへ動く。守備役の位置を変え、動き出しを選び直す。',goal:'相手の位置を見て受ける場所とタイミングを変える'},
+  support:{title:'斜めのサポート角度づくり',setup:'親をボール保持者、コーンを相手役にして前後左右に配置。',task:'保持者の真後ろに立たず、斜め前・斜め後ろへ移動してパスコースを作る。守備役が動いたら角度を作り直す。',goal:'パスコースが見える斜めの位置を取り直す'},
+  position:{title:'相手の間・背後・外側を見つける',setup:'コーン2〜3個を相手役、親を味方役にして中盤または敵陣を再現。',task:'相手役の間、背後、外側の3か所を確認。守備役の立ち位置を変え、空いた場所へ移動して受ける。',goal:'味方と重ならず、空いたレーンで受ける'}
+ };
+ const drill=drills[focus]||drills.scan;
+ return {ready:true,strengths,weaknesses,successfulChoices,trainingWeak,drill,matchCount:mr.length,trainingCount:tr.length,patterns};
+}
+function renderTacticalPracticePatternCoach(){
+ const videoView=document.getElementById('video');if(!videoView)return;
+ let host=document.getElementById('tacticalPracticePatternCoach');
+ if(!host){host=document.createElement('section');host.id='tacticalPracticePatternCoach';host.className='card';}
+ const groups=getTacticalPracticePatternGroups();
+ const cards=groups.map(g=>{
+  const insight=getTacticalPracticePatternInsight(g);
+  const heading=escT(g.pressure)+'｜'+escT(g.zone)+'｜'+escT(g.scoreState);
+  if(!insight.ready)return '<div class="card"><h3>'+heading+'</h3><div class="note">評価保留：'+escT(insight.reason)+' 現在の記録：試合 '+g.matches.length+'場面／練習 '+g.training.length+'回。</div></div>';
+  const strength=insight.strengths.length?insight.strengths.map(x=>'<div class="tiny">・'+escT(x.label)+'：確認できた記録 '+x.good+'/'+x.total+'件</div>').join(''):'<div class="tiny muted">得意な判断パターンは、まだ明確に特定できません。</div>';
+  const weakness=insight.weaknesses.length?insight.weaknesses.map(x=>'<div class="tiny">・'+escT(x.label)+'：改善テーマ候補 '+x.weak+'/'+x.total+'件</div>').join(''):'<div class="tiny muted">試合記録から繰り返す課題はまだ特定できません。</div>';
+  const choices=insight.successfulChoices.length?insight.successfulChoices.map(x=>'<div class="tiny">・'+escT(x[0])+'：良い結果と同じ場面で手動記録 '+x[1]+'件</div>').join(''):'<div class="tiny muted">良い結果と同じ場面で3件以上確認できたプレー選択はありません。</div>';
+  const tw=insight.trainingWeak;
+  const training='<div class="tiny muted">本人の練習実施記録（'+insight.trainingCount+'回）：'+tw.map(x=>escT(x.label)+' 改善テーマ候補 '+x.bad+'回／良い傾向 '+x.good+'回').join('、')+'</div>';
+  const d=insight.drill;
+  return '<div class="card"><h3>'+heading+'</h3><div class="tiny muted">試合の手動確認 '+insight.matchCount+'場面／本人の練習実施 '+insight.trainingCount+'回（別集計）</div><b>得意な判断パターン候補｜試合記録</b>'+strength+'<div class="divider"></div><b>苦手になりやすい状況候補｜試合記録</b>'+weakness+'<div class="divider"></div><b>良い結果と同時に記録されたプレー選択</b>'+choices+'<div class="tiny muted">これは同じ場面で記録された選択と結果の組み合わせです。選択が結果を生んだという因果関係や、未記録の選択肢数は推定しません。</div><div class="divider"></div><b>本人の練習記録から見た次の重点</b>'+training+'<div class="divider"></div><b>自動作成｜試合再現型トレーニング</b><div class="tiny"><b>'+escT(d.title)+'</b></div><div class="tiny"><b>準備：</b>'+escT(d.setup)+'</div><div class="tiny"><b>実施：</b>'+escT(d.task)+'</div><div class="tiny"><b>できた目安：</b>'+escT(d.goal)+'</div><div class="tiny muted">約8〜10分・低〜中強度。接触や強い競り合いは避け、状況を変えながら安全に実施。</div></div>';
+ }).join('');
+ host.innerHTML='<h2>⑭ 得意・苦手パターン分析と実戦型トレーニング</h2><p class="tiny muted">相手のプレス・プレー位置・試合状況の組み合わせごとに分析。試合の手動確認記録と本人の練習実施記録は分けて表示し、両方が各3件以上そろった状況だけ個別の傾向と練習を作成します。</p>'+(cards||'<div class="note">まだ状況が明示された記録がありません。試合場面を手動確認し、同じ状況を練習して実施結果を保存すると分析できます。</div>')+'<div class="tiny muted">映像で確認できない項目は除外します。記録から確かめられない能力・成功理由は推測しません。</div>';
+ const prior=document.getElementById('tacticalDecisionGrowthReport');
+ if(prior)prior.insertAdjacentElement('afterend',host);else videoView.appendChild(host);
 }
 
 function install(){
