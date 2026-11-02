@@ -57,6 +57,7 @@ button,.button{border:0;border-radius:12px;padding:12px 14px;font-weight:800;fon
  <div class="card"><h2>ポジション別の判断分析</h2><p class="tiny muted">各場面で実際に担当していた役割（GK・DF・MF・FW）を選ぶと、判断の質・周囲の確認・プレー選択を役割別に集計します。ポジションは映像から自動推定せず、確認した内容だけを使います。</p><div id="growthPositionDecision"></div></div>
  <div class="card"><h2>陸玖専用・判断力トレーニング自動作成</h2><p class="tiny muted">ポジション別の試合評価から、改善優先度が最も高い役割を自動で選び、その場面に合った練習メニューを作ります。評価データが少ない場合は、記録を増やしてから自動作成します。</p><div id="positionDecisionTrainingPlan"></div></div>
  <div class="card"><h2>陸玖専用・判断力トレーニング</h2><p class="tiny muted">ポジション別の試合評価から、優先して伸ばす判断を選び、今日の練習メニューを自動作成します。</p><div id="positionDecisionTraining"></div></div>
+ <div class="card"><h2>能力の月別成長履歴</h2><div id="growthSkillHistory"></div><div class="tiny muted">前月比は同じテーマの保存済み月次スナップショットで比較。データがない月を推測で補完しません。</div></div>
  <div class="card"><h2>陸玖の得意・課題ランキング｜次週の重点</h2><div id="growthSkillProfile"></div><div class="tiny muted">本人確認済みの試合評価と練習後の振り返りから算出。評価件数が少ない場合は参考順位として表示します。</div></div>
  <div class="card"><h2>試合→練習→次の試合｜テーマ別の改善率</h2><div id="growthImprovementSummary"></div><div class="tiny muted">改善率＝次の試合で「良かった」と確認できた件数 ÷ 評価済み件数。練習達成率＝練習チェック完了数 ÷ 全チェック数。評価待ちは分母に含めません。</div></div>
  <div class="card"><h2>身体測定の推移</h2><p class="tiny muted">種目ごとに別々のグラフで表示します。30m走・アジリティは短いほど、立ち幅跳びは長いほど良い方向です。</p><div id="growthMeasureCharts"></div></div>
@@ -1340,7 +1341,9 @@ function renderGrowthDashboard(){
  renderDecisionPracticeMethodStats();
  renderPositionDecisionAnalysis();
  renderPositionDecisionTraining();
+ syncMonthlySkillSnapshot();
  renderPlayerSkillProfile();
+ renderSkillTrendHistory();
  const months=[];const now=new Date();for(let offset=5;offset>=0;offset--){const d=new Date(now.getFullYear(),now.getMonth()-offset,1);months.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));}
  const trainings=state.trainings||[],matches=state.matchAnalyses||[],measures=state.measures||[];
  const trainingPoints=months.map(m=>({label:m.slice(5)+'月',value:trainings.filter(t=>String(t.date||'').slice(0,7)===m).length}));
@@ -1467,6 +1470,52 @@ function getPlayerSkillProfile(){
  const weaknesses=rankable.slice().sort((a,b)=>(b.weaknessScore??-1)-(a.weaknessScore??-1)||b.improve-a.improve).slice(0,3);
  const priority=weaknesses.find(x=>x.assessed>=2||x.reviewed>=2||x.transfer>=2)||null;
  return {rows,strengths,weaknesses,priority};
+}
+function syncMonthlySkillSnapshot(){
+ const profile=getPlayerSkillProfile(),month=today().slice(0,7);
+ if(!profile.rows.length)return;
+ state.skillHistory=Array.isArray(state.skillHistory)?state.skillHistory:[];
+ const snapshot={month,updatedAt:today(),skills:profile.rows.map(r=>({focus:r.focus,score:r.strengthScore,evidence:r.evidence,assessed:r.assessed,reviewed:r.reviewed,transfer:r.transfer}))};
+ const index=state.skillHistory.findIndex(x=>x.month===month);
+ if(index>=0)state.skillHistory[index]=snapshot;else state.skillHistory.push(snapshot);
+ state.skillHistory.sort((a,b)=>String(a.month).localeCompare(String(b.month)));
+ state.skillHistory=state.skillHistory.slice(-18);
+ try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){console.warn('月別能力履歴の保存に失敗',e);}
+}
+function getSkillTrendSummary(){
+ const history=(Array.isArray(state.skillHistory)?state.skillHistory:[]).slice().sort((a,b)=>String(a.month).localeCompare(String(b.month)));
+ const profile=getPlayerSkillProfile();
+ const focuses=[...new Set([...history.flatMap(h=>(h.skills||[]).map(x=>x.focus)),...profile.rows.map(x=>x.focus)])];
+ const trends=focuses.map(focus=>{
+  const points=history.map(h=>({month:h.month,...(h.skills||[]).find(x=>x.focus===focus)})).filter(p=>Number.isFinite(Number(p.score))&&p.evidence>=2);
+  const current=profile.rows.find(x=>x.focus===focus);
+  if(current&&points.length&&points[points.length-1].month===today().slice(0,7))points[points.length-1]={...points[points.length-1],score:current.strengthScore,evidence:current.evidence};
+  const last=points[points.length-1],prev=points[points.length-2],before=points[points.length-3];
+  const delta=last&&prev?last.score-prev.score:null;
+  const previousDelta=prev&&before?prev.score-before.score:null;
+  const stagnant=points.length>=3&&delta!==null&&previousDelta!==null&&delta<=2&&previousDelta<=2;
+  const declined=stagnant&&(delta<=-5||previousDelta<=-5);
+  return {focus,points,score:last?.score??current?.strengthScore??null,delta,previousDelta,stagnant,declined,evidence:last?.evidence??current?.evidence??0,months:points.length};
+ }).filter(x=>x.months||x.score!==null);
+ const improved=trends.filter(x=>x.delta!==null&&x.delta>=3).sort((a,b)=>b.delta-a.delta);
+ const stagnant=trends.filter(x=>x.stagnant).sort((a,b)=>(a.score??100)-(b.score??100));
+ const priority=stagnant.find(x=>x.evidence>=3)||null;
+ return {trends,improved,stagnant,priority,historyCount:history.length};
+}
+function renderSkillTrendHistory(){
+ const host=document.getElementById('growthSkillHistory');if(!host)return;
+ const summary=getSkillTrendSummary();
+ if(!summary.historyCount){host.innerHTML='<div class="empty">能力履歴はまだありません。試合・練習の記録がある状態で成長画面を開くと、今月分の基準スナップショットを保存します。</div>';return;}
+ const cards=summary.trends.map(t=>{
+  const points=t.points.map(p=>({date:p.month,value:p.score}));
+  const chart=points.length?renderGrowthLineChart(t.focus+'｜月別能力スコア',points,'点',{decimals:0,empty:'月別データがまだありません。'}):'';
+  const change=t.delta===null?'前月比較待ち':(t.delta>0?'+':'')+t.delta+'点';
+  return '<div class="listitem" style="display:block"><div class="brand"><b>'+esc(t.focus)+'</b><b>'+(t.score===null?'—':t.score+'点')+'</b></div><div class="tiny">'+(t.stagnant?(t.declined?'低下傾向・重点確認':'改善が停滞'):'直近の変化 '+change)+'</div>'+chart+'</div>';
+ }).join('');
+ const improved=summary.improved.length?summary.improved.map(x=>'<span class="pill">'+esc(x.focus)+' '+(x.delta>0?'+':'')+x.delta+'点</span>').join(' '):'<div class="tiny muted">前月より3点以上伸びたテーマは、まだありません。比較できる月が増えると表示されます。</div>';
+ const stagnant=summary.stagnant.length?summary.stagnant.map(x=>'<span class="pill">'+esc(x.focus)+' '+(x.declined?'低下傾向':'停滞')+'</span>').join(' '):'<div class="tiny muted">2か月連続の停滞はまだ検出されていません。3か月分以上の履歴で確認します。</div>';
+ const priority=summary.priority?'<div class="note" style="margin-top:10px"><b>月別推移からの重点候補：'+esc(summary.priority.focus)+'</b><div class="tiny">直近2回の月次変化がどちらも+2点以下です。次週の練習優先順位に反映します。</div></div>':'';
+ host.innerHTML='<div class="tiny muted">月ごとに能力スコアのスナップショットを保存。今月分は新しい記録に合わせて更新し、過去18か月分を保持します。月ごとの評価件数が2件未満のテーマは推移判定から除外します。</div><h3 style="margin:12px 0 4px">前月から伸びた能力</h3>'+improved+'<h3 style="margin:12px 0 4px">改善が停滞している能力</h3>'+stagnant+priority+'<div style="margin-top:10px">'+cards+'</div>';
 }
 function renderPlayerSkillProfile(){
  const host=document.getElementById('growthSkillProfile');if(!host)return;
@@ -1653,7 +1702,7 @@ function getWeeklyCoachPlan(){
  const start=new Date(today()+'T00:00:00');start.setDate(start.getDate()+mondayOffset+(weekday>=4||weekday===0?7:0));
  const dateAt=(offset)=>{const d=new Date(start);d.setDate(d.getDate()+offset);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
  const fmtWeekStart=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
- const trainingFeedback=getPreviousWeekTrainingAdjustment(fmtWeekStart(start)),matchFeedback=getPreviousWeekMatchAdjustment(fmtWeekStart(start)),growth=getDecisionGrowthLevel(),repeated=getRepeatedDecisionIssue(),preferred=repeated?getPreferredDecisionPracticePlan(repeated.issue):null,goal=growth.goal,skillPriority=getPlayerSkillProfile().priority;
+ const trainingFeedback=getPreviousWeekTrainingAdjustment(fmtWeekStart(start)),matchFeedback=getPreviousWeekMatchAdjustment(fmtWeekStart(start)),growth=getDecisionGrowthLevel(),repeated=getRepeatedDecisionIssue(),preferred=repeated?getPreferredDecisionPracticePlan(repeated.issue):null,goal=growth.goal,skillTrends=getSkillTrendSummary(),skillPriority=skillTrends.priority||getPlayerSkillProfile().priority;
  const combinedLevel=matchFeedback.assessed&&matchFeedback.level===1?1:matchFeedback.assessed&&matchFeedback.level===3&&(!trainingFeedback.assessed||trainingFeedback.level!==1)?3:trainingFeedback.level;
  const feedback={...trainingFeedback,level:combinedLevel,assessed:trainingFeedback.assessed||matchFeedback.assessed,weakFocus:matchFeedback.weakFocus||trainingFeedback.weakFocus,reason:matchFeedback.assessed?matchFeedback.reason+(trainingFeedback.assessed?'。'+trainingFeedback.reason:''):trainingFeedback.reason,matchFeedback};
  const focusMap={'判断の質':'ボールを受ける','周囲の確認':'ボールを受ける','練習実行':'ドリブル','試合への転移':'ドリブル'};
