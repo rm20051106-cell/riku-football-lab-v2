@@ -903,7 +903,7 @@ function getWeeklyCoachPlan(){
   {day:'水曜',date:dateAt(2),title:'首振り＋前向きファーストタッチ',minutes:12,category:'受ける動き',focus:'ボールを受ける',note:'パスが来る前に左右を確認。半身で受けて前へ運ぶ。最後に練習した動きを使うミニゲーム形式で確認。',why:'試合でボールを受ける準備を整える'}
  ];
  return plans.map(plan=>{
-  const adjusted=adaptTrainingPlanFromReflection(plan);
+  const adjusted=plan.difficultyLevel?plan:adaptTrainingPlanFromReflection(plan);
   return {...adjusted,note:adjusted.note+'\n\n'+getTrainingSessionGuide(adjusted.focus,adjusted.difficultyLevel),why:adjusted.why};
  });
 }
