@@ -487,13 +487,53 @@ function filterMatchTimeline(matchId){
 }
 function jumpToMatchEvent(matchId,eventId){const filter=document.getElementById('match-event-filter-'+matchId),search=document.getElementById('match-event-search-'+matchId);if(filter)filter.value='all';if(search)search.value='';filterMatchTimeline(matchId);const root=document.getElementById('match-event-timeline-'+matchId);const article=root?[...root.querySelectorAll('article[data-event-id]')].find(el=>el.dataset.eventId===String(eventId)):null;if(article)article.scrollIntoView({behavior:'smooth',block:'center'});}
 function renderMatchGoodImproveCompare(events,matchId){const confirmed=(events||[]).filter(e=>e.reviewLabel==='陸玖'&&['良かった','改善したい'].includes(e.assessment)).slice().sort((a,b)=>(Number(a.time)||0)-(Number(b.time)||0));const good=confirmed.filter(e=>e.assessment==='良かった'),improve=confirmed.filter(e=>e.assessment==='改善したい');const card=(title,items)=>'<div class="card" style="margin:0;min-width:0"><b>'+title+'（'+items.length+'）</b>'+(items.length?items.map(ev=>'<div style="padding:8px 0;border-bottom:1px solid var(--line)"><div class="tiny muted">'+formatMatchTime(ev.time)+'</div><div class="tiny">'+esc(ev.actionType||'分類未設定')+'｜'+esc(ev.label||ev.reason||'場面候補')+'</div><button class="secondary small" style="margin-top:5px" onclick="jumpToMatchEvent('+Number(matchId)+','+Number(ev.id)+')">この場面へ移動</button></div>').join(''):'<div class="tiny muted">まだありません。映像を確認して評価を付けると表示されます。</div>')+'</div>';return '<div class="card"><h3>良かった場面・改善したい場面の比較</h3><div class="tiny muted">陸玖本人として確認し、評価を保存した場面だけを表示。時刻順に並べています。</div><div class="grid" style="grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px">'+card('👍 良かった',good)+card('🎯 改善したい',improve)+'</div><div class="tiny muted">映像を見て手動確認した記録です。AIが成功・失敗を判定したものではありません。</div></div>';}
+
+function updateMatchPositioning(matchId,eventId,field,value){
+ const match=(state.matchAnalyses||[]).find(x=>String(x.id)===String(matchId));
+ const ev=(match?.candidateEvents||[]).find(x=>String(x.id)===String(eventId));
+ const allowed=['scanBeforeReceive','positioning','supportAngle','spaceMovement','decisionOptions'];
+ if(!match||!ev||ev.reviewLabel!=='陸玖'){alert('陸玖本人として確認済みの場面だけを評価できます。');return}
+ if(!allowed.includes(field)||!['良かった','改善したい','映像で確認できない'].includes(value))return;
+ ev.positioningReview=ev.positioningReview||{};ev.positioningReview[field]=value;ev.positioningReviewedAt=today();persist();renderMatchLibrary();
+}
+function getMatchPositioningAnalysis(){
+ const fields=[
+  {key:'scanBeforeReceive',label:'受ける前の首振り',focus:'ボールを受ける',drill:'親が左右・背後から合図を出し、受ける前に首を振ってから前向きに受ける'},
+  {key:'positioning',label:'立ち位置',focus:'オフザボール',drill:'味方役・相手役・ボール役を置き、相手の影から外れてパスコースに立つ'},
+  {key:'supportAngle',label:'サポートの角度',focus:'ボールを受ける',drill:'ボール保持者に対して斜めの位置へ動き、前進できるパス角度を作る'},
+  {key:'spaceMovement',label:'スペースへの動き出し',focus:'オフザボール',drill:'空いたスペースを見つけ、味方が顔を上げたタイミングで動き出す'},
+  {key:'decisionOptions',label:'判断の選択肢',focus:'ボールを受ける',drill:'受ける前に前進・パス・キープの選択肢を確認し、相手の位置で選ぶ'}
+ ];
+ const events=(state.matchAnalyses||[]).flatMap(m=>(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖').map(e=>({event:e,matchId:m.id})));
+ const rows=fields.map(f=>{
+  const assessed=events.filter(x=>['良かった','改善したい'].includes(x.event.positioningReview?.[f.key]));
+  const good=assessed.filter(x=>x.event.positioningReview[f.key]==='良かった').length;
+  const improve=assessed.filter(x=>x.event.positioningReview[f.key]==='改善したい').length;
+  const matchCount=new Set(assessed.map(x=>String(x.matchId))).size;
+  return {...f,assessed:assessed.length,good,improve,matchCount,rate:assessed.length?Math.round(good/assessed.length*100):null,enough:assessed.length>=3&&matchCount>=2};
+ });
+ const priority=rows.filter(x=>x.enough&&x.improve>0).sort((a,b)=>b.improve-a.improve||a.rate-b.rate||b.assessed-a.assessed)[0]||null;
+ return {rows,priority,confirmedScenes:events.filter(x=>Object.values(x.event.positioningReview||{}).some(v=>['良かった','改善したい'].includes(v))).length};
+}
+function renderMatchPositioningPanel(matchId){
+ const match=(state.matchAnalyses||[]).find(x=>String(x.id)===String(matchId));if(!match)return '';
+ const fields=[{key:'scanBeforeReceive',label:'受ける前の首振り'},{key:'positioning',label:'立ち位置'},{key:'supportAngle',label:'サポートの角度'},{key:'spaceMovement',label:'スペースへの動き出し'},{key:'decisionOptions',label:'判断の選択肢'}];
+ const rows=(match.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖');
+ if(!rows.length)return '<div class="empty">陸玖本人として確認した場面がありません。本人確認後に評価できます。</div>';
+ const options=selected=>'<option value="">未評価</option>'+['良かった','改善したい','映像で確認できない'].map(v=>'<option value="'+v+'"'+(selected===v?' selected':'')+'>'+v+'</option>').join('');
+ return '<div class="card" style="margin:10px 0"><b>プレー判断・ポジショニング確認</b><div class="tiny muted">陸玖本人と確認した場面だけが対象です。動画を再生し、見えた項目だけ選択してください。「映像で確認できない」は評価集計に含めません。</div>'+rows.map(e=>'<div class="listitem" style="display:block"><b>'+formatMatchTime(e.time)+'｜'+esc(e.actionType||'プレー未分類')+'</b>'+fields.map(f=>'<label class="tiny" style="display:block;margin-top:7px">'+f.label+'<select style="display:block;width:100%;margin-top:3px;padding:8px" onchange="updateMatchPositioning('+Number(matchId)+','+JSON.stringify(String(e.id))+','+JSON.stringify(f.key)+',this.value)">'+options(e.positioningReview?.[f.key])+'</select></label>').join('')+'</div>').join('')+'</div>';
+}
+function renderMatchPositioningSummary(){
+ const a=getMatchPositioningAnalysis();
+ return '<div class="card" style="margin:10px 0"><b>試合中の判断・ポジショニング分析</b><div class="tiny muted">陸玖本人として確認済みの場面 '+a.confirmedScenes+'件。評価は手動入力のみで、動画から自動推測しません。</div>'+a.rows.map(r=>'<div class="listitem"><div class="grow"><b>'+r.label+'</b><div class="tiny muted">'+(r.assessed?r.good+'良かった／'+r.improve+'改善したい・'+r.matchCount+'試合':'評価記録なし')+'</div><div class="tiny">'+(r.enough?'比較可能：良かった '+r.rate+'%':'記録不足：3場面以上かつ2試合以上の評価が必要')+'</div></div></div>').join('')+(a.priority?'<div class="note"><b>次週の重点候補：'+a.priority.label+'</b><div class="tiny">'+a.priority.drill+'</div></div>':'<div class="tiny muted">複数試合の評価がそろうまで、次週の重点は決めません。</div>')+'</div>';
+}
 function renderMatchEventTimeline(events,matchId){
  const sorted=(events||[]).slice().sort((a,b)=>(Number(a.time)||0)-(Number(b.time)||0));
  const match=(state.matchAnalyses||[]).find(x=>Number(x.id)===Number(matchId));
  if(!sorted.length)return '<div class="empty">動きの変化候補はありません。動画の撮影条件や検出状況によって候補数は変わります。</div>';
  const riku=sorted.filter(e=>e.reviewLabel==='陸玖').length,unconfirmed=sorted.filter(e=>!e.reviewLabel||e.reviewLabel==='未確認').length,improve=sorted.filter(e=>e.reviewLabel==='陸玖'&&e.assessment==='改善したい').length;
  const controls='<div class="card" style="margin:10px 0"><b>場面を絞り込む</b><div class="tiny muted">陸玖確認済み '+riku+' ／ 未確認 '+unconfirmed+' ／ 改善したい '+improve+'</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><select id="match-event-filter-'+matchId+'" onchange="filterMatchTimeline('+Number(matchId)+')" style="flex:1;min-width:150px;padding:9px;border:1px solid var(--line,#ccd3dc);border-radius:8px;background:var(--card,#fff);color:inherit"><option value="all">すべての場面</option><option value="riku">陸玖本人として確認済み</option><option value="unconfirmed">本人未確認</option><option value="improve">陸玖・改善したい</option><option value="good">陸玖・良かった</option></select><input id="match-event-search-'+matchId+'" type="search" placeholder="プレー分類・メモで検索" oninput="filterMatchTimeline('+Number(matchId)+')" style="flex:1;min-width:150px;padding:9px;border:1px solid var(--line,#ccd3dc);border-radius:8px;background:var(--card,#fff);color:inherit"></div><div class="tiny muted" id="match-event-visible-'+matchId+'" style="margin-top:6px">表示 '+sorted.length+' / '+sorted.length+'場面</div></div>';
- return renderMatchGoodImproveCompare(sorted,matchId)+controls+'<div id="match-event-timeline-'+matchId+'" class="match-event-timeline" style="position:relative;margin:12px 0 8px;padding-left:18px;border-left:2px solid var(--line,#ccd3dc)">'+sorted.map((ev,i)=>{
+ return renderMatchGoodImproveCompare(sorted,matchId)+renderMatchPositioningPanel(matchId)+renderMatchPositioningSummary()+controls+'<div id="match-event-timeline-'+matchId+'" class="match-event-timeline" style="position:relative;margin:12px 0 8px;padding-left:18px;border-left:2px solid var(--line,#ccd3dc)">'+sorted.map((ev,i)=>{
   const time=formatMatchTime(ev.time),person=ev.reviewLabel||'未確認',action=ev.actionType||'未選択',assessment=ev.assessment||'未選択';
   const status=person==='陸玖'?'本人確認済み':person==='別の選手'?'別の選手':'本人未確認';
   const eventIdArg=Number.isFinite(Number(ev.id))?String(Number(ev.id)):"'"+String(ev.id).replace(/\\/g,"\\\\").replace(/'/g,"\\'")+"'";
@@ -1885,6 +1925,13 @@ function getWeeklyCoachPlan(){
  if(weaponPatterns.hasEvidence){const pattern=weaponPatterns.patterns[0];primary.note+='\n【確認済みの武器パターン】'+pattern.actions.join(' → ')+'（異なる試合 '+pattern.matches+'試合・連続場面 '+pattern.count+'組）。この流れを練習で再現する。';primary.why+='／複数試合で再現されたプレー連係を反映';}
  if(positionProfile.best){const topStyle=positionProfile.best.styles[0];primary.note+='\n【ポジション別分析】評価が比較可能な位置の中で「'+positionProfile.best.label+'」の良かった率が高い（'+positionProfile.best.good+'/'+positionProfile.best.total+'場面）。'+(topStyle?'この位置で多く記録された動きは「'+topStyle.style+'」（'+topStyle.good+'/'+topStyle.total+'場面）。':'');primary.why+='／ポジション別の確認済み記録を反映';}
  if(skillPriority){primary.note+='\n【能力分析からの重点】'+skillPriority.focus+'。試合・練習の保存記録をもとに優先候補として選択。';primary.why+='／能力分析の優先テーマを反映';}
+ const positioningAnalysis=getMatchPositioningAnalysis();
+ if(positioningAnalysis.priority){
+  const p=positioningAnalysis.priority;primary.focus=p.focus;primary.title='試合判断改善｜'+p.label;primary.category='試合判断・ポジショニング';primary.minutes=Math.min(primary.minutes||12,12);
+  primary.note+='\n【複数試合で確認した改善課題】'+p.label+'（改善したい '+p.improve+'/'+p.assessed+'場面・'+p.matchCount+'試合）。\n【親子練習】'+p.drill+'。\n映像で確認できた陸玖本人の記録だけを使用。';
+  primary.why+='／本人確認済みの複数試合で同じ課題を確認';
+  primary.sourceMatch={...(primary.sourceMatch||{}),positioningDecisionPractice:true,positioningIssue:p.key,positioningLabel:p.label,positioningEvidence:p.assessed,positioningMatches:p.matchCount};
+ }
  if(feedback.assessed){primary.minutes=Math.max(8,primary.minutes+(feedback.level===1?-3:feedback.level===3?2:0));primary.title=(feedback.level===1?'基礎から再調整｜':feedback.level===3?'応用へステップアップ｜':'継続・安定｜')+primary.title;primary.note+='\n【前週の結果】'+feedback.reason+'。'+(feedback.avgCompletion===null?'':'平均チェック達成 '+feedback.avgCompletion+'%。');primary.why+='／前週の振り返り '+feedback.assessed+'件を反映';}
  const days=[
  {...primary,day:'月曜',date:dateAt(0),note:primary.note+'\n【今日の狙い】ゆっくり正確に行い、成功パターンを3回作る。',why:primary.why+'／基礎確認'},
