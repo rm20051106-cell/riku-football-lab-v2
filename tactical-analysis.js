@@ -43,6 +43,7 @@ function selectHtml(f,v){
  return '<label class="label">'+escT(f.label)+'<select data-tactical-field="'+f.id+'">'+f.options.map(x=>'<option value="'+escT(x)+'"'+(x===v?' selected':'')+'>'+escT(x)+'</option>').join('')+'</select></label>';
 }
 function render(){
+ renderTacticalGrowthGraph();
  let host=document.getElementById(PANEL_ID);
  if(!host){
   const history=document.getElementById('matchScanRecords');
@@ -146,6 +147,57 @@ function installWeeklyCoach(){
   wrapped.__tacticalWeekRenderWrapped=true;window.renderAll=wrapped;
  }
  renderTacticalWeeklyEvidence();
+}
+
+
+function renderTacticalGrowthGraph(){
+ const videoView=document.getElementById('video');if(!videoView)return;
+ let host=document.getElementById('tacticalGrowthGraph');
+ if(!host){host=document.createElement('section');host.id='tacticalGrowthGraph';host.className='card';}
+ const matches=(typeof state!=='undefined'&&Array.isArray(state.matchAnalyses))?state.matchAnalyses:[];
+ const dates={};
+ const metrics=[
+  {id:'scan',label:'周囲の確認',color:'#78c8ff',score:v=>({'確認したが首振りなし':0,'左右を確認':60,'前方を確認':60,'複数方向を確認':100}[v]??null)},
+  {id:'position',label:'立ち位置',color:'#c8f169',score:v=>({'味方と位置が重なる':0,'相手の前':50,'相手と相手の間':100,'相手の背後':100,'外側のスペース':100}[v]??null)},
+  {id:'support',label:'サポート角度',color:'#ffbd69',score:v=>({'パスコースを作れていない':0,'真後ろ':0,'横方向':50,'前方斜め':100,'後方斜め':100}[v]??null)},
+  {id:'movement',label:'スペースへの動き',color:'#d6a8ff',score:v=>({'動き出しなし':0,'足元に受けに来た':50,'スペースへ動いた':100,'相手を引きつけた':100}[v]??null)}
+ ];
+ const choices=['パス','ドリブル','シュート','キープ','その他'];
+ matches.forEach(match=>(match.candidateEvents||[]).forEach(ev=>{
+  if(ev.reviewLabel!=='陸玖'||!ev.tacticalReview?.fields)return;
+  const f=ev.tacticalReview.fields;
+  const date=String(ev.tacticalReview.reviewedAt||match.date||'日付不明').slice(0,10);
+  const row=dates[date]||(dates[date]={date,values:{},counts:{},decision:{}});
+  metrics.forEach(m=>{const score=m.score(f[m.id]);if(score===null)return;const a=row.values[m.id]||(row.values[m.id]=[]);a.push(score);row.counts[m.id]=(row.counts[m.id]||0)+1;});
+  if(choices.includes(f.decision))row.decision[f.decision]=(row.decision[f.decision]||0)+1;
+ }));
+ const rows=Object.values(dates).sort((a,b)=>a.date.localeCompare(b.date));
+ const decisionRows=rows.filter(r=>Object.values(r.decision).some(Boolean));
+ const decisionHtml=decisionRows.length?'<div class="tiny muted" style="margin-top:12px"><b>プレー選択の記録数（評価点ではありません）</b></div>'+decisionRows.map(r=>'<div class="tiny">'+escT(r.date)+'：'+choices.filter(c=>r.decision[c]).map(c=>c+' '+r.decision[c]+'件').join(' ／ ')+'</div>').join(''):'<div class="tiny muted">プレー選択の記録はまだありません。</div>';
+ const eligible=metrics.map(m=>({metric:m,points:rows.map(r=>({date:r.date,score:r.values[m.id]?.length?r.values[m.id].reduce((a,b)=>a+b,0)/r.values[m.id].length:null,count:r.counts[m.id]||0})).filter(p=>p.score!==null)}));
+ const width=720,height=270,left=48,right=18,top=18,bottom=48,plotW=width-left-right,plotH=height-top-bottom;
+ const x=i=>left+(rows.length<=1?plotW/2:i*plotW/(rows.length-1));
+ const y=v=>top+(100-v)*plotH/100;
+ const grid=[0,25,50,75,100].map(v=>'<line x1="'+left+'" y1="'+y(v)+'" x2="'+(width-right)+'" y2="'+y(v)+'" stroke="#34475f" stroke-width="1"/><text x="'+(left-10)+'" y="'+(y(v)+4)+'" fill="#9fb0c5" font-size="11" text-anchor="end">'+v+'</text>').join('');
+ const lineSeries=eligible.map(({metric,points})=>{
+  if(points.length<3||new Set(points.map(p=>p.date)).size<2)return '';
+  const path=points.map(p=>{const idx=rows.findIndex(r=>r.date===p.date);return (idx===0?'M':'L')+x(idx).toFixed(1)+','+y(p.score).toFixed(1)}).join(' ');
+  return '<path d="'+path+'" fill="none" stroke="'+metric.color+'" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>'+points.map(p=>{const idx=rows.findIndex(r=>r.date===p.date);return '<circle cx="'+x(idx)+'" cy="'+y(p.score)+'" r="5" fill="'+metric.color+'"><title>'+escT(metric.label)+' '+escT(p.date)+'：'+p.score.toFixed(0)+'点（'+p.count+'件）</title></circle>'}).join('');
+ }).join('');
+ const xLabels=rows.map((r,i)=>'<text x="'+x(i)+'" y="'+(height-18)+'" fill="#9fb0c5" font-size="10" text-anchor="middle">'+escT(r.date.length>5?r.date.slice(5):r.date)+'</text>').join('');
+ const legend=eligible.map(({metric,points})=>{
+  const ok=points.length>=3&&new Set(points.map(p=>p.date)).size>=2;
+  return '<div class="tiny" style="display:inline-flex;align-items:center;gap:5px;margin:3px 12px 3px 0"><span style="display:inline-block;width:15px;height:4px;background:'+metric.color+';border-radius:4px"></span>'+escT(metric.label)+'：'+(ok?'評価中':'評価保留（'+points.length+'件）')+'</div>';
+ }).join('');
+ const detail=eligible.map(({metric,points})=>{
+  const ok=points.length>=3&&new Set(points.map(p=>p.date)).size>=2;
+  if(!ok)return '<div class="listitem"><div class="grow"><b>'+escT(metric.label)+'</b><div class="tiny muted">評価保留：有効な手動確認が3件以上、かつ2日以上の記録が必要です。現在 '+points.length+'件／'+new Set(points.map(p=>p.date)).size+'日</div></div></div>';
+  const first=points[0],last=points[points.length-1],diff=last.score-first.score;
+  return '<div class="listitem"><div class="grow"><b>'+escT(metric.label)+'</b><div class="tiny muted">初回 '+first.score.toFixed(0)+'点 → 最新 '+last.score.toFixed(0)+'点（'+(diff>0?'+':'')+diff.toFixed(0)+'点）・最新 '+last.count+'場面</div></div></div>';
+ }).join('');
+ host.innerHTML='<h2>⑦ 陸玖の判断力・ポジショニング成長グラフ</h2><p class="tiny muted">陸玖本人として確認し、手動保存した場面だけを集計。日ごとの平均を時系列で比較します。映像で確認できない項目・未選択項目は除外します。</p><div class="tiny muted">点数は記録上の行動を見える化する目安（0〜100）で、プレーの正解率や選手としての総合評価ではありません。</div><div style="overflow-x:auto;margin-top:10px"><svg viewBox="0 0 '+width+' '+height+'" role="img" aria-label="周囲の確認、立ち位置、サポート角度、スペースへの動きの時系列グラフ" style="width:100%;min-width:320px;height:auto">'+grid+lineSeries+xLabels+'</svg></div><div>'+legend+'</div>'+detail+decisionHtml+'<div class="tiny muted" style="margin-top:10px">評価開始条件：各項目で有効な確認が3場面以上、かつ2日以上。プレー選択は状況や味方・相手の位置で正解が変わるため、選択肢の件数だけを表示し、良否の点数にはしません。</div>';
+ const tactical=document.getElementById(PANEL_ID);
+ if(tactical)tactical.insertAdjacentElement('afterend',host);else videoView.appendChild(host);
 }
 
 function install(){
