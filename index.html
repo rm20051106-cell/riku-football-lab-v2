@@ -495,7 +495,12 @@ function filterMatchTimeline(matchId){
   const matchesQuery=!query||hay.includes(query);
   article.hidden=!(matchesFilter&&matchesQuery);if(!article.hidden)shown++;
  });
- const count=document.getElementById('match-event-visible-'+matchId);if(count)count.textContent='表示 '+shown+' / '+root.querySelectorAll('article[data-event-id]').length+'場面';
+ const total=root.querySelectorAll('article[data-event-id]').length;
+ const count=document.getElementById('match-event-visible-'+matchId);if(count)count.textContent='表示 '+shown+' / '+total+'場面';
+ let empty=root.querySelector('[data-match-filter-empty]');
+ if(!empty){empty=document.createElement('div');empty.dataset.matchFilterEmpty='true';empty.className='empty';empty.style.margin='12px 0';root.appendChild(empty);}
+ empty.textContent='条件に一致する場面はありません。絞り込みを解除するか、検索語を変更してください。';
+ empty.hidden=shown>0;
 }
 function resetMatchTimelineFilters(matchId){
  const filter=document.getElementById('match-event-filter-'+matchId),search=document.getElementById('match-event-search-'+matchId);
