@@ -48,6 +48,7 @@ button,.button{border:0;border-radius:12px;padding:12px 14px;font-weight:800;fon
  <h1 class="section-title">陸玖の成長グラフ</h1>
  <p class="section-desc">保存された練習・試合評価・測定記録を時系列で表示。記録が増えるほど変化が見やすくなります。</p>
  <div class="card"><h2>陸玖専用・月間成長レポート</h2><p class="tiny muted">保存された練習・試合評価・測定記録から、その月の取り組みと次の重点を自動でまとめます。</p><label class="label" for="growthReportMonth">対象月</label><select id="growthReportMonth" onchange="renderMonthlyGrowthReport()"></select><div id="monthlyGrowthReport"></div></div>
+ <div class="card"><h2>総合成長レポート</h2><p class="tiny muted">測定値・練習実績・本人確認済みの試合評価を一緒に確認します。記録がない項目は推測しません。</p><div id="integratedGrowthReport"></div></div>
  <div class="card"><h2>練習の積み重ね</h2><div id="growthTrainingChart"></div><div class="tiny muted">月ごとの練習記録数です。回数の増加は技術向上そのものを意味しません。</div></div>
  <div class="card"><h2>試合での評価推移</h2><div id="growthMatchChart"></div><div class="tiny muted">本人確認済みの陸玖の試合場面について、「良かった」の割合を月ごとに表示。評価件数も併記します。</div></div>
  <div class="card"><h2>練習方法別・判断力改善の成功率</h2><div id="growthDecisionPracticeMethodStats"></div></div>
@@ -94,7 +95,7 @@ button,.button{border:0;border-radius:12px;padding:12px 14px;font-weight:800;fon
 <section class="view" id="records">
  <h1 class="section-title">記録・測定</h1><p class="section-desc">測定結果と分析履歴をまとめて確認できます。</p>
  <div class="card"><h2>測定値を追加</h2><div class="two"><div><label class="label">測定日</label><input type="date" id="measureDate"></div><div><label class="label">項目</label><select id="measureType"><option value="30m走">30m走</option><option value="アジリティ">アジリティ</option><option value="立ち幅跳び">立ち幅跳び</option><option value="100m走">100m走</option><option value="その他">その他</option></select></div></div><div class="two"><div><label class="label">数値</label><input type="number" id="measureValue" step="0.01" placeholder="例：5.07"></div><div><label class="label">単位</label><select id="measureUnit"><option value="秒">秒</option><option value="cm">cm</option><option value="回">回</option><option value="点">点</option><option value="kg">kg</option></select></div></div><label class="label">メモ</label><input id="measureNote" placeholder="計測方法など"><div class="btnrow"><button onclick="saveMeasure()">測定値を保存</button></div></div>
- <div class="card"><h2>測定記録</h2><div id="measureRecords"></div></div><div class="card"><h2>分析履歴</h2><div id="allAnalysisRecords"></div></div>
+ <div class="card"><h2>測定記録</h2><div id="measureRecords"></div></div><div class="card"><h2>分析履歴</h2><div id="allAnalysisRecords"></div></div><div class="card"><h2>分析履歴を検索・比較</h2><div class="two"><div><label class="label">キーワード</label><input id="historySearchText" placeholder="タイトル・メモ・テーマ" oninput="renderAnalysisHistoryTools()"></div><div><label class="label">種類</label><select id="historySearchType" onchange="renderAnalysisHistoryTools()"><option value="all">すべて</option><option value="match">試合動画</option><option value="form">フォーム</option><option value="decision">試合判断</option><option value="aiForm">AIフォーム</option></select></div></div><div id="analysisHistorySearchResults"></div><div class="divider"></div><b>同条件のフォーム数値比較</b><div id="sameConditionAnalysisCompare"></div></div>
 </section>
 
 <section class="view" id="settings">
@@ -1494,6 +1495,7 @@ function renderGrowthDashboard(){
  growthMatchChart.innerHTML=matchPoints.length?renderGrowthLineChart('良かった評価の割合（%）',matchPoints.map(p=>({date:p.month,value:p.value})), '%',{decimals:0,empty:'評価済みの試合場面がまだありません。'}):'<div class="empty">評価済みの試合場面がまだありません。陸玖本人として確認し、良かった／改善したいを入力すると推移が表示されます。</div>';
  const types=[{type:'30m走',unit:'秒',decimals:2},{type:'アジリティ',unit:'秒',decimals:2},{type:'立ち幅跳び',unit:'cm',decimals:1}];
  growthMeasureCharts.innerHTML=types.map(item=>renderGrowthLineChart(item.type,measures.filter(m=>m.type===item.type).map(m=>({date:m.date,value:Number(m.value)})),item.unit,{decimals:item.decimals})).join('');
+ renderIntegratedGrowthReport();
 }
 function renderIntegratedDevelopmentBrief(){
  const matches=(state.matchAnalyses||[]).flatMap(m=>(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖').map(e=>({...e,matchDate:m.date,matchTitle:m.title})));
@@ -2994,7 +2996,35 @@ formRecords.innerHTML=state.forms.length?state.forms.map(x=>`<div class="listite
  aiFormRecords.innerHTML=state.aiFormAnalyses.length?state.aiFormAnalyses.map(x=>`<div class="listitem"><div class="grow"><b>${esc(x.title)}｜${esc(x.kind)}</b><div class="tiny muted">${esc(x.date)}・${esc(x.foot)}・撮影：${esc(x.cameraAngle||"未選択")}・姿勢フレーム ${x.frames??'—'}</div><div class="tiny">膝 ${x.knee??'—'}°　股関節 ${x.hip??'—'}°　体幹傾き ${x.trunk??'—'}°</div><div class="tiny muted" style="margin-top:10px"><b>時間ごとの姿勢変化（最大8地点）</b></div><div class="tiny muted">※動画全体から等間隔に抜き出した参考値。インパクト時刻を自動特定したものではありません。</div><div style="overflow-x:auto"><table class="table"><thead><tr><th>時刻</th><th>左膝</th><th>右膝</th><th>左股</th><th>右股</th><th>体幹</th><th>左足先移動</th><th>右足先移動</th></tr></thead><tbody>${(x.timeline||[]).map(t=>`<tr><td>${t.time==null?'—':Number(t.time).toFixed(1)+'秒'}</td><td>${t.leftKnee??'—'}</td><td>${t.rightKnee??'—'}</td><td>${t.leftHip??'—'}</td><td>${t.rightHip??'—'}</td><td>${t.trunk??'—'}°</td><td>${t.leftFootMotion??'—'}</td><td>${t.rightFootMotion??'—'}</td></tr>`).join('')}</tbody></table></div><div class="tiny muted" style="margin-top:8px"><b>8項目チェック（計測値と未判定を区別）</b></div>${(x.items||[]).map((it,i)=>`<div class="listitem"><div class="grow"><b>${i+1}. ${esc(it.name)}</b><div class="tiny">${esc(it.status)}：${esc(it.detail)}</div><div class="tiny muted">${esc(it.source)}</div></div></div>`).join('')||'<div class="tiny muted">この過去記録には8項目の詳細はありません。再解析すると表示されます。</div>'}${(x.cameraGuidance||[]).map(t=>`<div class="tiny" style="margin-top:4px">📷 ${esc(t)}</div>`).join('')}${(x.feedback||[]).map(t=>`<div class="tiny muted">${esc(t)}</div>`).join('')}</div><button class="danger small" onclick="deleteAiFormAnalysis(${x.id})">削除</button></div>`).join(''):'<div class="empty">AI解析の履歴はまだありません</div>';
 measureRecords.innerHTML=state.measures.length?state.measures.map(x=>`<div class="listitem"><div class="grow"><b>${esc(x.type)}：${esc(x.value)} ${esc(x.unit)}</b><div class="tiny muted">${x.date} ${esc(x.note||'')}</div></div><button class="danger small" onclick="deleteMeasure('${x.date}','${esc(x.type)}',${x.value})">削除</button></div>`).join(''):'<div class="empty">測定記録はありません</div>';
 allAnalysisRecords.innerHTML=(state.clips.length+state.forms.length)?[...state.clips.map(x=>({date:x.date,title:'動画：'+x.title,score:x.score+'点'})),...state.forms.map(x=>({date:x.date,title:'フォーム：'+x.title,score:x.score+'%'}))].sort((a,b)=>b.date.localeCompare(a.date)).map(x=>`<div class="listitem"><div class="grow"><b>${esc(x.title)}</b><div class="tiny muted">${x.date}</div></div><span class="tag">${esc(x.score)}</span></div>`).join(''):'<div class="empty">分析履歴はありません</div>';
+renderAnalysisHistoryTools();
 renderCalendar();
+}
+function renderAnalysisHistoryTools(){
+ const q=(document.getElementById('historySearchText')?.value||'').trim().toLowerCase(),type=document.getElementById('historySearchType')?.value||'all',host=document.getElementById('analysisHistorySearchResults'),compare=document.getElementById('sameConditionAnalysisCompare');if(!host||!compare)return;
+ const rows=[];
+ if(type==='all'||type==='match') (state.clips||[]).forEach(x=>rows.push({kind:'試合動画',date:x.date,title:x.title,detail:[x.good,x.improve,x.type].filter(Boolean).join(' / '),id:x.id,score:(x.score??'—')+'点',video:!!x.hasVideo}));
+ if(type==='all'||type==='form') (state.forms||[]).forEach(x=>rows.push({kind:'フォーム',date:x.date,title:x.title,detail:[x.kind,x.foot,x.note].filter(Boolean).join(' / '),id:x.id,score:(x.score??'—')+'%',video:!!x.hasVideo}));
+ if(type==='all'||type==='decision') (state.matchAnalyses||[]).forEach(x=>rows.push({kind:'試合判断',date:x.date,title:x.title,detail:(x.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖').map(e=>[e.actionType,e.assessment,e.decisionQuality,e.note].filter(Boolean).join(' ')).join(' / '),id:x.id,score:(x.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖').length+'場面',video:false}));
+ if(type==='all'||type==='aiForm') (state.aiFormAnalyses||[]).forEach(x=>rows.push({kind:'AIフォーム',date:x.date,title:x.title||x.kind||'フォーム解析',detail:[x.kind,x.foot,x.cameraAngle].filter(Boolean).join(' / '),id:x.id,score:Number.isFinite(x.knee)?'膝 '+x.knee+'°':'数値記録',video:false}));
+ const filtered=rows.filter(x=>!q||[x.kind,x.date,x.title,x.detail].join(' ').toLowerCase().includes(q)).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+ host.innerHTML=filtered.length?'<div class="tiny muted">該当 '+filtered.length+'件</div>'+filtered.slice(0,80).map(x=>'<div class="listitem"><div class="grow"><b>'+esc(x.kind)+'｜'+esc(x.title)+'</b><div class="tiny muted">'+esc(x.date||'日付なし')+'・'+esc(x.detail)+'</div></div><span class="tag">'+esc(x.score)+'</span></div>').join(''):'<div class="empty">一致する履歴はありません。</div>';
+ const ai=(state.aiFormAnalyses||[]).slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))),latest=ai[0];
+ if(!latest){compare.innerHTML='<div class="empty">AIフォーム解析が2件以上保存されると、同条件で比較します。</div>';return}
+ const same=ai.filter(x=>(x.kind||'シュート')===(latest.kind||'シュート')&&(x.foot||'右足')===(latest.foot||'右足')&&(x.cameraAngle||'未選択')===(latest.cameraAngle||'未選択'));
+ if(same.length<2){compare.innerHTML='<div class="empty">同じ種類・利き足・撮影角度の比較対象がまだありません。</div>';return}
+ const prev=same[1],metrics=[['膝',latest.knee,prev.knee],['股関節',latest.hip,prev.hip],['体幹',latest.trunk,prev.trunk]];
+ compare.innerHTML='<div class="tiny muted">条件：'+esc(latest.kind||'シュート')+'・'+esc(latest.foot||'右足')+'・'+esc(latest.cameraAngle||'未選択')+'。最新 '+esc(latest.date)+' ／ 前回 '+esc(prev.date)+'</div>'+metrics.map(([n,a,b])=>'<div class="listitem"><div class="grow">'+n+'</div><b>'+(Number.isFinite(Number(a))?Number(a).toFixed(1)+'°':'—')+' → '+(Number.isFinite(Number(b))?Number(b).toFixed(1)+'°':'—')+'</b><span class="tag">'+(Number.isFinite(Number(a))&&Number.isFinite(Number(b))?((Number(a)-Number(b)>0?'+':'')+(Number(a)-Number(b)).toFixed(1)+'°'):'比較不可')+'</span></div>').join('')+'<div class="tiny muted">角度差のみを表示。改善・悪化の自動判定はしません。</div>';
+}
+function renderIntegratedGrowthReport(){
+ const host=document.getElementById('integratedGrowthReport');if(!host)return;
+ const trainings=state.trainings||[],matches=state.matchAnalyses||[],measures=state.measures||[];
+ const assessed=matches.flatMap(m=>(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖'&&['良かった','改善したい'].includes(e.assessment)).map(e=>({...e,date:m.date,title:m.title})));
+ const completed=trainings.filter(t=>Array.isArray(t.steps)&&t.steps.length).map(t=>({total:t.steps.length,done:Array.isArray(t.stepsDone)?t.stepsDone.length:0}));
+ const completion=completed.length?Math.round(completed.reduce((n,x)=>n+x.done,0)/completed.reduce((n,x)=>n+x.total,0)*100):null;
+ const good=assessed.filter(e=>e.assessment==='良かった').length;
+ const metricTypes=['30m走','アジリティ','立ち幅跳び'];
+ const metrics=metricTypes.map(type=>{const a=measures.filter(x=>x.type===type&&Number.isFinite(Number(x.value))).sort((x,y)=>String(y.date).localeCompare(String(x.date)));return {type,latest:a[0],previous:a[1]};});
+ host.innerHTML='<div class="grid3"><div class="stat"><b>'+trainings.length+'</b><span>練習記録</span></div><div class="stat"><b>'+assessed.length+'</b><span>本人確認済み評価場面</span></div><div class="stat"><b>'+(completion===null?'—':completion+'%')+'</b><span>練習チェック完了率</span></div></div><div class="tiny muted" style="margin:8px 0">試合評価：良かった '+good+'場面／改善したい '+(assessed.length-good)+'場面。評価対象 '+assessed.length+'場面。</div><h3>測定値の最新比較</h3>'+metrics.map(x=>'<div class="listitem"><div class="grow"><b>'+x.type+'</b><div class="tiny muted">'+(x.latest?esc(x.latest.date)+' 最新':'記録なし')+'</div></div><b>'+(x.latest?esc(x.latest.value)+' '+esc(x.latest.unit):'—')+'</b><span class="tiny muted">'+(x.previous?'前回 '+esc(x.previous.value)+' '+esc(x.previous.unit):'比較対象なし')+'</span></div>').join('')+'<div class="note">測定値は同じ項目の記録を日付順に比較。練習回数や試合評価は取り組みの記録であり、単独で技術向上を断定しません。</div>';
 }
 function renderAiFormPracticePlan(){
  const el=document.getElementById('aiFormPracticePlan');if(!el)return;
