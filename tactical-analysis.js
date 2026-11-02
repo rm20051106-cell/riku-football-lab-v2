@@ -822,7 +822,7 @@ function getTacticalMatchContextGroups(){
   const trainingId=c.linkedTrainingRecordId;
   const training=trainingId?trainingById.get(String(trainingId)):null;
   if(training&&String(training.date||'')<=String(match.date||review.reviewedAt).slice(0,10)&&
-     training.role===role&&training.opponentDefense===defense&&training.scoreState===score){
+     training.role===role&&training.opponentDefense===defense&&training.matchPeriod===period&&training.scoreState===score){
    g.training.set(String(training.id),training);
   }
   g.matches.push({date:String(match.date||review.reviewedAt).slice(0,10),matchTitle:match.title||'試合',fields:f,trainingId:training?String(training.id):''});
@@ -853,6 +853,33 @@ function getTacticalMatchContextInsight(group){
  const priorities=actions.filter(x=>x.badCount>=2&&x.badCount>=x.commonCount/2).sort((a,b)=>b.badCount-a.badCount);
  return {ready:true,sceneCount:scenes.length,trainingCount:group.training.size,actions,priorities,decisionCounts,outcomeCounts,decisionCount:decisionRows.length,outcomeCount:outcomeRows.length};
 }
+
+function getTacticalMatchPeriodComparisons(groups){
+ const order=['前半序盤','前半中盤','前半終盤','後半序盤','後半中盤','後半終盤','延長'];
+ const buckets={};
+ (groups||[]).forEach(group=>{
+  const insight=getTacticalMatchContextInsight(group);if(!insight.ready)return;
+  const key=[group.role,group.defense,group.score].join('|');
+  (buckets[key]||(buckets[key]=[])).push({group,insight});
+ });
+ return Object.values(buckets).filter(rows=>rows.length>=2).map(rows=>{
+  rows.sort((a,b)=>order.indexOf(a.group.period)-order.indexOf(b.group.period));
+  const first=rows[0],last=rows[rows.length-1];
+  const choiceKeys=['パス','ドリブル','シュート','キープ','その他'];
+  const decisions=choiceKeys.map(choice=>{
+   const rate=x=>x.insight.decisionCount?Math.round((x.insight.decisionCounts[choice]||0)/x.insight.decisionCount*100):null;
+   const before=rate(first),after=rate(last);
+   return {choice,before,after,delta:before===null||after===null?null:after-before};
+  }).filter(x=>x.delta!==null);
+  const actions=['scan','orientation','position','support','movement'].map(key=>{
+   const before=first.insight.actions.find(x=>x.key===key&&x.observed>=3);
+   const after=last.insight.actions.find(x=>x.key===key&&x.observed>=3);
+   return before&&after?{label:before.label,before:before.badRate,after:after.badRate,delta:after.badRate-before.badRate}:null;
+  }).filter(Boolean);
+  return {role:first.group.role,defense:first.group.defense,score:first.group.score,from:first.group.period,to:last.group.period,decisions,actions,fromCount:first.insight.sceneCount,toCount:last.insight.sceneCount};
+ });
+}
+
 function getTacticalMatchContextPriority(){
  const rows=getTacticalMatchContextGroups().map(group=>({group,insight:getTacticalMatchContextInsight(group)})).filter(x=>x.insight.ready&&x.insight.priorities.length);
  rows.sort((a,b)=>b.insight.priorities[0].badCount-a.insight.priorities[0].badCount||b.insight.sceneCount-a.insight.sceneCount);
@@ -884,6 +911,8 @@ function renderTacticalMatchContextDevelopment(){
  let host=document.getElementById('tacticalMatchContextDevelopment');
  if(!host){host=document.createElement('section');host.id='tacticalMatchContextDevelopment';host.className='card';}
  const groups=getTacticalMatchContextGroups();
+ const comparisons=getTacticalMatchPeriodComparisons(groups);
+ const comparisonHtml=comparisons.map(x=>'<div class="card"><b>'+escT(x.role)+'｜'+escT(x.defense)+'｜'+escT(x.score)+'</b><div class="tiny muted">'+escT(x.from)+'（'+x.fromCount+'場面）→ '+escT(x.to)+'（'+x.toCount+'場面）</div><div class="tiny"><b>プレー選択の構成変化：</b>'+x.decisions.map(d=>escT(d.choice)+' '+d.before+'%→'+d.after+'%（'+(d.delta>0?'+':'')+d.deltaポイント）').join('／')+'</div><div class="tiny"><b>課題行動率の変化：</b>'+(x.actions.map(a=>escT(a.label)+' '+a.before+'%→'+a.after+'%（'+(a.delta>0?'+':'')+a.delta+'ポイント）').join('／')||'両時間帯で観察数3件以上の共通項目なし')+'</div><div class="tiny muted">時間帯間の記録構成の差です。時間経過による能力変化や因果関係を断定しません。</div></div>').join('');
  const cards=groups.map(group=>{
   const insight=getTacticalMatchContextInsight(group);
   const heading=[group.role,group.defense,group.period,group.score].map(escT).join('｜');
@@ -895,7 +924,7 @@ function renderTacticalMatchContextDevelopment(){
   const history=group.matches.slice().sort((a,b)=>a.date.localeCompare(b.date)).slice(-8).map(x=>'<div class="tiny">'+escT(x.date)+'｜プレー選択 '+escT(x.fields.decision||'未記録')+'｜結果 '+escT(x.fields.outcome||'未記録')+'</div>').join('');
   return '<div class="card"><h3>'+heading+'</h3><div class="tiny muted">試合の手動確認 '+insight.sceneCount+'場面｜本人の練習実施 '+insight.trainingCount+'回（紐づき記録のみ・別集計）</div>'+actions+'<div class="divider"></div><b>プレー選択の内訳</b><div class="tiny">'+decisions+'</div><b>プレー結果の内訳</b><div class="tiny">'+outcomes+'</div><div class="divider"></div><b>継続目標・次の練習テーマ</b>'+goals+'<div class="divider"></div><b>最近の場面</b>'+history+'</div>';
  }).join('');
- host.innerHTML='<h2>⑱ 守備タイプ・試合時間帯・展開別の成長分析</h2><p class="tiny muted">相手守備・時間帯・役割・スコア状況は手動確認で入力した情報のみ使用。プレー選択と結果は映像で確認できた記録だけを集計します。練習記録は試合観察と合算せず、紐づいた実施回数として別表示します。</p>'+(cards||'<div class="note">評価保留：相手守備タイプ・時間帯・役割・試合展開の4項目を手動確認して保存した場面がありません。</div>')+'<div class="tiny muted">同じ条件の試合場面が3件未満の場合は傾向・目標の自動調整を行いません。練習回数は試合場面の評価点には加算しません。</div>';
+ host.innerHTML='<h2>⑱ 守備タイプ・試合時間帯・展開別の成長分析</h2><p class="tiny muted">相手守備・時間帯・役割・スコア状況は手動確認で入力した情報のみ使用。プレー選択と結果は映像で確認できた記録だけを集計します。練習記録は試合観察と合算せず、紐づいた実施回数として別表示します。</p>'+'<h3>試合時間帯による比較</h3>'+(comparisonHtml||'<div class="tiny muted">評価保留：同じ役割・守備タイプ・試合展開で、異なる時間帯それぞれ3場面以上の記録が必要です。</div>')+'<h3>条件別の詳細</h3>'+(cards||'<div class="note">評価保留：相手守備タイプ・時間帯・役割・試合展開の4項目を手動確認して保存した場面がありません。</div>')+'<div class="tiny muted">同じ条件の試合場面が3件未満の場合は傾向・目標の自動調整を行いません。練習回数は試合場面の評価点には加算しません。</div>';
  const prior=document.getElementById('tacticalTransferGrowthCharts');
  if(prior)prior.insertAdjacentElement('afterend',host);else videoView.appendChild(host);
 }
