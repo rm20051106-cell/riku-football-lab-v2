@@ -6,7 +6,7 @@ on:
 
 concurrency:
   group: validate-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   syntax-and-container:
@@ -46,6 +46,9 @@ jobs:
           for file in /tmp/riku-inline-scripts/*.js; do
             node --check "$file"
           done
+
+      - name: Run frontend data-flow regression tests
+        run: python -m unittest discover -s tests -v
 
       - name: Build backend Docker image
         run: docker build -t riku-football-lab-ai ./backend
