@@ -11,7 +11,11 @@ const fields=[
  {id:'support',label:'味方を助けるサポート角度',options:['映像で確認できない','前方斜め','横方向','後方斜め','真後ろ','パスコースを作れていない']},
  {id:'movement',label:'スペースへの動き出し',options:['映像で確認できない','スペースへ動いた','足元に受けに来た','相手を引きつけた','動き出しなし']},
  {id:'decision',label:'その場面で選べたプレー',options:['映像で確認できない','パス','ドリブル','シュート','キープ','その他']},
- {id:'outcome',label:'実際のプレー結果',options:['映像で確認できない','前進できた','味方につながった','シュートにつながった','ボールを失った','チャンスを作れた']}
+ {id:'outcome',label:'実際のプレー結果',options:['映像で確認できない','前進できた','味方につながった','シュートにつながった','ボールを失った','チャンスを作れた']},
+ {id:'opponentDefense',label:'相手の守備の特徴',options:['映像で確認できない','高い位置から守備','中央を固める守備','サイドへ誘導する守備','最終ラインが低い','1人が対応','複数人で囲む','その他']},
+ {id:'pressure',label:'ボールを持った時の相手のプレス',options:['映像で確認できない','強いプレスなし','前からプレス','横から寄せ','後ろから追われる','複数人に囲まれる']},
+ {id:'zone',label:'プレーした場所',options:['映像で確認できない','自陣','中盤','敵陣','ペナルティエリア付近']},
+ {id:'scoreState',label:'その時の試合状況',options:['映像で確認できない','リード','同点','ビハインド']}
 ];
 function getData(){
  const matches=(typeof state!=='undefined'&&Array.isArray(state.matchAnalyses))?state.matchAnalyses:[];
@@ -45,6 +49,7 @@ function selectHtml(f,v){
 function render(){
  renderTacticalGrowthGraph();
  renderTacticalMatchReports();
+ renderTacticalSituationAnalysis();
  let host=document.getElementById(PANEL_ID);
  if(!host){
   const history=document.getElementById('matchScanRecords');
@@ -69,7 +74,7 @@ function render(){
  const reviewHtml=fields.map(x=>selectHtml(x,f[x.id]||'映像で確認できない')).join('');
  const notes=adviceFor(f);
  const saved=review.reviewedAt?'<div class="note success">保存済み：'+escT(review.reviewedAt)+'｜この内容は手動確認した記録です。</div>':'<div class="tiny muted">まだ分析内容は保存されていません。</div>';
- host.innerHTML='<h2>⑥ 試合中の判断・ポジショニング分析</h2><p class="tiny muted">本人確認済みの場面を使い、受ける前→受ける瞬間→次のプレーまでを確認。映像で見えない項目は「映像で確認できない」のまま保存できます。</p><label class="label">試合を選択<select id="tacticalMatchSelect">'+matchOptions+'</select></label><label class="label">陸玖本人として確認した場面<select id="tacticalEventSelect">'+eventOptions+'</select></label><div class="tiny muted">場面時刻：'+escT(typeof formatMatchTime==='function'?formatMatchTime(ev.time):ev.time)+'｜'+escT(ev.label||ev.reason||'動きの変化候補')+'</div><div class="divider"></div>'+reviewHtml+'<label class="label">映像で確認した状況・味方や相手の位置など<textarea id="tacticalNote" maxlength="600" rows="3" placeholder="例：左前方に味方、正面に相手。右側に空いたスペースがあった">'+escT(review.note||'')+'</textarea></label><div class="btnrow"><button id="tacticalSaveButton">この場面の分析を保存</button><button type="button" class="secondary" id="tacticalClearButton">入力をリセット</button></div><div id="tacticalSavedState">'+saved+'</div><div id="tacticalAdvice" class="card" style="margin-top:12px"><h3>確認内容からの次の意識</h3>'+notes.map(x=>'<div class="listitem"><div class="grow">'+escT(x)+'</div></div>').join('')+'<div class="tiny muted">これは入力した手動確認内容に基づく練習候補です。AIが映像から首振り・味方や相手の位置・最適判断を自動認識した結果ではありません。</div></div>';
+ host.innerHTML='<h2>⑥ 試合中の判断・ポジショニング分析</h2><p class="tiny muted">本人確認済みの場面を使い、受ける前→受ける瞬間→次のプレーまでを確認。映像で見えない項目は「映像で確認できない」のまま保存できます。</p><label class="label">試合を選択<select id="tacticalMatchSelect">'+matchOptions+'</select></label><label class="label">陸玖本人として確認した場面<select id="tacticalEventSelect">'+eventOptions+'</select></label><div class="tiny muted">場面時刻：'+escT(typeof formatMatchTime==='function'?formatMatchTime(ev.time):ev.time)+'｜'+escT(ev.label||ev.reason||'動きの変化候補')+'</div><div class="divider"></div>'+reviewHtml+'<label class="label">相手チーム名（任意）<input id="tacticalOpponentTeam" maxlength="80" value="'+escT(review.context?.opponentTeam||'')+'" placeholder="例：FC〇〇"></label><label class="label">映像で確認した状況・味方や相手の位置など<textarea id="tacticalNote" maxlength="600" rows="3" placeholder="例：左前方に味方、正面に相手。右側に空いたスペースがあった">'+escT(review.note||'')+'</textarea></label><div class="btnrow"><button id="tacticalSaveButton">この場面の分析を保存</button><button type="button" class="secondary" id="tacticalClearButton">入力をリセット</button></div><div id="tacticalSavedState">'+saved+'</div><div id="tacticalAdvice" class="card" style="margin-top:12px"><h3>確認内容からの次の意識</h3>'+notes.map(x=>'<div class="listitem"><div class="grow">'+escT(x)+'</div></div>').join('')+'<div class="tiny muted">これは入力した手動確認内容に基づく練習候補です。AIが映像から首振り・味方や相手の位置・最適判断を自動認識した結果ではありません。</div></div>';
  const matchSelect=document.getElementById('tacticalMatchSelect');
  const eventSelect=document.getElementById('tacticalEventSelect');
  matchSelect.onchange=()=>{selectedMatchId=matchSelect.value;selectedEventId='';render();};
@@ -77,7 +82,9 @@ function render(){
  document.getElementById('tacticalSaveButton').onclick=()=>{
   const current=getSelected();if(!current.match||!current.ev||current.ev.reviewLabel!=='陸玖'){alert('陸玖本人として確認済みの場面だけ保存できます。');return;}
   const values={};fields.forEach(x=>{values[x.id]=host.querySelector('[data-tactical-field="'+x.id+'"]')?.value||'映像で確認できない';});
-  current.ev.tacticalReview={version:1,reviewedAt:typeof today==='function'?today():new Date().toISOString().slice(0,10),fields:values,note:document.getElementById('tacticalNote').value.trim().slice(0,600)};
+  const previousContext=current.ev.tacticalReview?.context||{};
+  const opponentTeam=(document.getElementById('tacticalOpponentTeam')?.value||'').trim().slice(0,80);
+  current.ev.tacticalReview={version:2,reviewedAt:typeof today==='function'?today():new Date().toISOString().slice(0,10),fields:values,context:{...previousContext,opponentTeam},note:document.getElementById('tacticalNote').value.trim().slice(0,600)};
   if(typeof persist==='function')persist();
   render();
   alert('試合中の判断・ポジショニング分析を保存しました。');
@@ -260,6 +267,65 @@ function renderTacticalMatchReports(){
  const graph=document.getElementById('tacticalGrowthGraph');
  const tactical=document.getElementById(PANEL_ID);
  if(graph)graph.insertAdjacentElement('afterend',host);else if(tactical)tactical.insertAdjacentElement('afterend',host);else videoView.appendChild(host);
+}
+
+
+function renderTacticalSituationAnalysis(){
+ const videoView=document.getElementById('video');if(!videoView)return;
+ let host=document.getElementById('tacticalSituationAnalysis');
+ if(!host){host=document.createElement('section');host.id='tacticalSituationAnalysis';host.className='card';}
+ const matches=(typeof state!=='undefined'&&Array.isArray(state.matchAnalyses))?state.matchAnalyses:[];
+ const scenes=[];
+ matches.forEach(match=>(match.candidateEvents||[]).forEach(ev=>{
+  const review=ev.tacticalReview;
+  if(ev.reviewLabel!=='陸玖'||!review?.reviewedAt||!review.fields)return;
+  scenes.push({match,ev,review,fields:review.fields,opponent:String(review.context?.opponentTeam||'').trim()});
+ }));
+ const dimensions=[
+  {id:'opponentDefense',title:'相手の守備別',values:['高い位置から守備','中央を固める守備','サイドへ誘導する守備','最終ラインが低い','1人が対応','複数人で囲む','その他']},
+  {id:'pressure',title:'プレスの強さ・方向別',values:['強いプレスなし','前からプレス','横から寄せ','後ろから追われる','複数人に囲まれる']},
+  {id:'zone',title:'ピッチ上の場所別',values:['自陣','中盤','敵陣','ペナルティエリア付近']},
+  {id:'scoreState',title:'試合状況別',values:['リード','同点','ビハインド']}
+ ];
+ const actionKeys=['scan','orientation','position','support','movement'];
+ const actionLabels={scan:'周囲確認',orientation:'身体の向き',position:'立ち位置',support:'サポート角度',movement:'動き出し'};
+ const choiceKeys=['パス','ドリブル','シュート','キープ','その他'];
+ const valid=v=>v&&v!=='映像で確認できない'&&!String(v).includes('不明');
+ const grouped=dimensions.map(dim=>{
+  const groups=dim.values.map(value=>{
+   const subset=scenes.filter(x=>x.fields[dim.id]===value);
+   const counts={};
+   subset.forEach(x=>{const f=x.fields;if(valid(f.decision))counts[f.decision]=(counts[f.decision]||0)+1;});
+   const outcomes={};
+   subset.forEach(x=>{const f=x.fields;if(valid(f.outcome))outcomes[f.outcome]=(outcomes[f.outcome]||0)+1;});
+   const actions=actionKeys.map(key=>{
+    const rows=subset.filter(x=>valid(x.fields[key]));
+    const tally={};rows.forEach(x=>{const v=x.fields[key];tally[v]=(tally[v]||0)+1;});
+    const top=Object.entries(tally).sort((a,b)=>b[1]-a[1])[0];
+    return {key,label:actionLabels[key],count:rows.length,top:top?.[0]||'',topCount:top?.[1]||0};
+   }).filter(x=>x.count);
+   return {value,subset,counts,outcomes,actions};
+  }).filter(g=>g.subset.length);
+  return {dim,groups};
+ });
+ const opponentGroups={};
+ scenes.forEach(x=>{const key=x.opponent||'相手チーム未入力';(opponentGroups[key]||(opponentGroups[key]=[])).push(x);});
+ const opponentHtml=Object.entries(opponentGroups).sort((a,b)=>b[1].length-a[1].length).map(([name,rows])=>'<div class="listitem"><div class="grow"><b>'+escT(name)+'</b><div class="tiny muted">'+rows.length+'場面｜'+(rows.length>=3?'状況別の傾向を比較できます':'評価保留：3場面以上必要')+'</div></div></div>').join('');
+ const html=grouped.map(({dim,groups})=>{
+  const cards=groups.map(g=>{
+   const n=g.subset.length,ready=n>=3;
+   const decisions=choiceKeys.filter(k=>g.counts[k]).map(k=>k+' '+g.counts[k]+'件').join('／');
+   const results=Object.entries(g.outcomes).sort((a,b)=>b[1]-a[1]).map(([k,v])=>k+' '+v+'件').join('／');
+   const actionSummary=ready?g.actions.map(a=>'<div class="tiny">'+escT(a.label)+'：最多「'+escT(a.top)+'」'+a.topCount+'/'+a.count+'件</div>').join(''):'<div class="tiny muted">行動傾向は評価保留（3場面以上必要）</div>';
+   return '<div class="card" style="margin-top:8px"><b>'+escT(g.value)+'</b><div class="tiny muted">'+n+'場面'+(ready?'':'｜評価保留')+'</div>'+actionSummary+'<div class="tiny" style="margin-top:6px">プレー選択：'+escT(decisions||'記録なし')+'</div><div class="tiny">プレー結果：'+escT(results||'記録なし')+'</div></div>';
+  }).join('');
+  return '<div style="margin-top:12px"><h3>'+escT(dim.title)+'</h3>'+(cards||'<div class="tiny muted">該当する手動確認済み場面がありません。</div>')+'</div>';
+ }).join('');
+ const content=scenes.length?'<div><h3>相手チーム別の記録</h3>'+opponentHtml+'</div>'+html:'<div class="empty">手動確認済みの場面がありません。試合分析で相手チーム・守備・プレス・場所・試合状況を入力して保存してください。</div>';
+ host.innerHTML='<h2>⑨ 相手チーム・試合状況別の判断分析</h2><p class="tiny muted">陸玖本人として確認し、手動保存した場面だけを集計。相手の守備、プレス、プレー位置、リード・同点・ビハインド別に、行動・選択・結果の記録を整理します。</p>'+content+'<div class="tiny muted" style="margin-top:10px">各状況で3場面未満の場合は判断傾向を評価保留にします。プレー選択や結果だけで正解・不正解を決めません。相手チーム名が未入力の記録は「相手チーム未入力」にまとめます。</div>';
+ const report=document.getElementById('tacticalMatchReports');
+ const graph=document.getElementById('tacticalGrowthGraph');
+ if(report)report.insertAdjacentElement('afterend',host);else if(graph)graph.insertAdjacentElement('afterend',host);else videoView.appendChild(host);
 }
 
 function install(){
