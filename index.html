@@ -3167,6 +3167,85 @@ function renderAnalysisHistoryTools(){
  const validAngle=v=>v!==null&&v!==undefined&&v!==''&&Number.isFinite(Number(v));
  compare.innerHTML='<div class="tiny muted">条件：'+esc(latest.kind||'シュート')+'・'+esc(latest.foot||'右足')+'・'+esc(latest.cameraAngle||'未選択')+'。最新 '+esc(latest.date)+' ／ 前回 '+esc(prev.date)+'</div>'+metrics.map(([n,a,b])=>'<div class="listitem"><div class="grow">'+n+'</div><b>'+(validAngle(a)?Number(a).toFixed(1)+'°':'—')+' → '+(validAngle(b)?Number(b).toFixed(1)+'°':'—')+'</b><span class="tag">'+(validAngle(a)&&validAngle(b)?((Number(a)-Number(b)>0?'+':'')+(Number(a)-Number(b)).toFixed(1)+'°'):'比較不可')+'</span></div>').join('')+'<div class="tiny muted">角度差のみを表示。改善・悪化の自動判定はしません。</div>';
 }
+
+function getMatchGrowthCategories(){
+ return [
+  {key:'加速ドリブル',trainingFocus:'ドリブル',description:'ボールを持って加速し、相手を抜いた後も前進できたか'},
+  {key:'切り返し',trainingFocus:'ドリブル',description:'相手の位置を見て方向を変え、次の一歩につなげられたか'},
+  {key:'判断力',trainingFocus:'ボールを受ける',description:'映像で確認した選択肢・実際の選択・判断の質'},
+  {key:'ポジショニング',trainingFocus:'オフザボール',description:'立ち位置・サポート角度・スペースへの動き出し'}
+ ];
+}
+function getMatchGrowthTimelineData(){
+ const categories=getMatchGrowthCategories();
+ const matches=(state.matchAnalyses||[]).slice().filter(m=>m.date).sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.id).localeCompare(String(b.id)));
+ return categories.map(category=>{
+  const rows=matches.map(match=>{
+   const events=(match.candidateEvents||[]).filter(ev=>isManuallyReviewedMatchEvent(ev)&&ev.manualGrowthSource==='manual'&&ev.manualGrowthFocus===category.key);
+   const rated=events.filter(ev=>ev.assessmentSource==='manual'&&['良かった','改善したい'].includes(ev.assessment));
+   const good=rated.filter(ev=>ev.assessment==='良かった').length,improve=rated.filter(ev=>ev.assessment==='改善したい').length;
+   const issues={};
+   rated.filter(ev=>ev.manualGrowthIssue).forEach(ev=>{const key=ev.manualGrowthIssue.trim();if(!issues[key])issues[key]={key,total:0,good:0,improve:0,events:[]};const issue=issues[key];issue.total++;if(ev.assessment==='良かった')issue.good++;else issue.improve++;issue.events.push(ev);});
+   return {match,date:match.date,title:match.title||'試合',events,rated,good,improve,total:rated.length,rate:rated.length?Math.round(good/rated.length*100):null,issues};
+  }).filter(row=>row.events.length);
+  const training=(state.trainings||[]).filter(t=>(t.focus||inferTrainingFocus(t.menu,t.category))===category.trainingFocus);
+  const enriched=rows.map((row,index)=>{
+   const previousDate=rows[index-1]?.date||'';
+   const sessions=training.filter(t=>String(t.date||'')>previousDate&&String(t.date||'')<String(row.date||''));
+   const completed=sessions.filter(t=>t.reviewStatus==='できた'||t.matchTransferStatus==='できた').length;
+   const difficult=sessions.filter(t=>['難しかった','まだ試せていない'].includes(t.reviewStatus)||t.matchTransferStatus==='まだ'||t.effort==='きつめ').length;
+   return {...row,trainingSessions:sessions.length,trainingCompleted:completed,trainingDifficult:difficult,trainingMinutes:sessions.reduce((n,t)=>n+(Number(t.minutes)||0),0),trainingNotes:sessions.map(t=>({date:t.date,review:t.reviewStatus||'未入力',transfer:t.matchTransferStatus||'未入力',completion:Array.isArray(t.steps)&&t.steps.length?Math.round((t.stepsDone||[]).length/t.steps.length*100):null}))};
+  });
+  const issueKeys=[...new Set(enriched.flatMap(row=>Object.keys(row.issues)))];
+  const repeatedIssues=issueKeys.map(key=>{
+   const sequence=enriched.map(row=>({row,issue:row.issues[key]})).filter(x=>x.issue);
+   if(sequence.length<2)return null;
+   const first=sequence[0],last=sequence[sequence.length-1];
+   const firstRate=Math.round(first.issue.good/first.issue.total*100),lastRate=Math.round(last.issue.good/last.issue.total*100);
+   const enough=first.issue.total>=2&&last.issue.total>=2;
+   const delta=enough?lastRate-firstRate:null;
+   return {key,first:first.row.date,last:last.row.date,firstRate,lastRate,delta,firstCount:first.issue.total,lastCount:last.issue.total,status:!enough?'比較データ蓄積中':delta>=25?'改善傾向':delta<=-25?'再確認が必要':'大きな変化は未確認'};
+  }).filter(Boolean).sort((a,b)=>String(b.last).localeCompare(String(a.last)));
+  return {...category,rows:enriched,repeatedIssues,latest:enriched[enriched.length-1]||null,previous:enriched[enriched.length-2]||null};
+ });
+}
+function getMatchGrowthRecommendations(){
+ return getMatchGrowthTimelineData().map(item=>{
+  const latest=item.latest,repeated=item.repeatedIssues[0];
+  let priority=0,reason='試合評価がまだありません。';
+  if(repeated&&repeated.status==='再確認が必要'){priority=5;reason='同じ課題タグ「'+repeated.key+'」の評価が前回より低下。映像を再確認し、基礎練習を見直す候補。';}
+  else if(latest&&latest.improve>latest.good){priority=4;reason='直近試合で「改善したい」の手動評価が多い。';}
+  else if(latest&&latest.total>=2&&latest.good===latest.total){priority=1;reason='直近試合では手動評価がすべて「良かった」。別の条件でも再現できるか確認。';}
+  else if(latest){priority=2;reason='記録された場面を次の試合でもう一度確認。';}
+  return {...item,priority,reason,goal:item.key==='加速ドリブル'?'相手の位置を見て加速し、抜いた後の2〜3歩も前へ運ぶ':item.key==='切り返し'?'相手の重心を見て方向を選び、切り返した直後に加速する':item.key==='判断力'?'受ける前に周囲を確認し、前進・パス・キープから選んだ理由を試合後に振り返る':'味方と相手の位置を見て、受けられる角度とスペースを作る'};
+ }).sort((a,b)=>b.priority-a.priority||String(b.latest?.date||'').localeCompare(String(a.latest?.date||'')));
+}
+function renderMatchGrowthTimeline(){
+ const data=getMatchGrowthTimelineData();
+ const cards=data.map(item=>{
+  const rows=item.rows.slice(-6).reverse();
+  const trend=rows.length?rows.map(row=>{
+   const training=row.trainingSessions+'回・'+row.trainingMinutes+'分（できた '+row.trainingCompleted+'／難しさ '+row.trainingDifficult+'）';
+   const rating=row.total?'良 '+row.good+'／改善 '+row.improve+'／評価 '+row.total+'場面':'手動評価なし';
+   const rate=row.total>=2?'良かった割合 '+row.rate+'%':'割合比較保留（評価2場面未満）';
+   const scenes=row.rated.slice(0,3).map(ev=>'<button class="secondary small" onclick="openMatchEventInHistory('+Number(row.match.id)+','+JSON.stringify(String(ev.id))+')">'+formatMatchTime(ev.time)+' '+(ev.assessment==='良かった'?'良':'改善')+'</button>').join(' ');
+   const trainingNotes=row.trainingNotes.slice(0,2).map(t=>'<div class="tiny muted">練習 '+esc(t.date)+'：振り返り '+esc(t.review)+'／試合再現 '+esc(t.transfer)+(t.completion===null?'':'／完了 '+t.completion+'%')+'</div>').join('');
+   return '<div class="listitem" style="display:block"><b>'+esc(row.date)+'｜'+esc(row.title)+'</b><div class="tiny muted">'+rating+'｜'+rate+'</div><div class="tiny muted">前回試合後〜今回試合前の練習：'+training+'</div>'+trainingNotes+(scenes?'<div class="tiny">確認済み場面：'+scenes+'</div>':'')+'</div>';
+  }).join(''):'<div class="empty">この分類の成長比較はまだありません。試合場面を手動確認し、成長比較の分類を選んで保存してください。</div>';
+  const previous=item.previous,latest=item.latest;
+  const compare=previous&&latest&&previous.total>=2&&latest.total>=2?'<div class="tiny">直近比較：'+previous.rate+'% → '+latest.rate+'%（'+(latest.rate-previous.rate>0?'+':'')+(latest.rate-previous.rate)+'ポイント）</div>':'<div class="tiny muted">直近2試合の比較は、各試合2場面以上の手動評価がそろうまで保留。</div>';
+  const issues=item.repeatedIssues.length?item.repeatedIssues.slice(0,3).map(x=>'<div class="tiny muted">同じ課題「'+esc(x.key)+'」：'+esc(x.first)+' '+x.firstRate+'% → '+esc(x.last)+' '+x.lastRate+'%｜'+esc(x.status)+(x.delta===null?'':'（'+(x.delta>0?'+':'')+x.delta+'pt）')+'</div>').join(''):'<div class="tiny muted">同じ課題タグを付けた複数試合の比較はまだありません。</div>';
+  return '<div class="card" style="margin-top:8px"><div class="brand"><b>'+esc(item.key)+'</b><span class="tiny muted">'+item.rows.length+'試合記録</span></div><div class="tiny muted">'+esc(item.description)+'</div>'+compare+issues+'<div style="margin-top:8px"><b class="tiny">試合ごとの推移（最新6試合）</b>'+trend+'</div><div class="tiny muted" style="margin-top:7px">分類・課題タグ・評価は陸玖本人として確認した映像を見て手動入力したものだけ。練習回数やチェック数は取り組み記録であり、上達の原因や技術レベルを証明するものではありません。</div></div>';
+ }).join('');
+ const recommendations=getMatchGrowthRecommendations().filter(x=>x.latest).slice(0,2);
+ const goals=recommendations.map((item,index)=>'<div class="listitem" style="display:block"><b>目標候補 '+(index+1)+'｜'+esc(item.key)+'</b><div class="tiny">'+esc(item.goal)+'</div><div class="tiny muted">'+esc(item.reason)+'</div><button class="secondary small" onclick="applyMatchGrowthGoal('+JSON.stringify(item.key)+')">次の試合の目標に設定</button></div>').join('');
+ return '<h3 style="margin-top:14px">試合ごとの成長タイムライン</h3><div class="tiny muted">加速ドリブル・切り返し・判断力・ポジショニングを分けて比較。本人確認済み映像に対して手動で選んだ分類・課題タグ・評価だけを集計します。AI候補のラベルや未確認映像は成長評価に含めません。</div>'+cards+'<h3 style="margin-top:14px">次の試合で試す目標候補</h3>'+(goals||'<div class="empty">手動確認済みの試合評価が蓄積されると、次の目標候補を表示します。</div>');
+}
+function applyMatchGrowthGoal(focus){
+ const item=getMatchGrowthRecommendations().find(x=>x.key===focus);if(!item)return;
+ state.settings=state.settings||{};state.settings.nextMatchGoal={focus:item.trainingFocus,note:item.goal,date:today(),source:'manual-reviewed-match-growth',growthFocus:item.key};
+ persist();renderAll();
+}
 function renderIntegratedGrowthReport(){
  const host=document.getElementById('integratedGrowthReport');if(!host)return;
  const trainings=state.trainings||[],matches=state.matchAnalyses||[],measures=state.measures||[];
@@ -3176,7 +3255,7 @@ function renderIntegratedGrowthReport(){
  const good=assessed.filter(e=>e.assessment==='良かった').length;
  const metricTypes=['30m走','アジリティ','立ち幅跳び'];
  const metrics=metricTypes.map(type=>{const a=measures.filter(x=>x.type===type&&x.value!==null&&x.value!==undefined&&x.value!==''&&Number.isFinite(Number(x.value))).sort((x,y)=>String(y.date||'').localeCompare(String(x.date||'')));return {type,latest:a[0],previous:a[1]};});
- host.innerHTML='<div class="grid3"><div class="stat"><b>'+trainings.length+'</b><span>練習記録</span></div><div class="stat"><b>'+assessed.length+'</b><span>本人確認済み評価場面</span></div><div class="stat"><b>'+(completion===null?'—':completion+'%')+'</b><span>練習チェック完了率</span></div></div><div class="tiny muted" style="margin:8px 0">試合評価：良かった '+good+'場面／改善したい '+(assessed.length-good)+'場面。評価対象 '+assessed.length+'場面。</div><h3>測定値の最新比較</h3>'+metrics.map(x=>{const delta=x.latest&&x.previous?Number(x.latest.value)-Number(x.previous.value):null;const unit=x.latest?.unit||x.previous?.unit||'';return '<div class="listitem"><div class="grow"><b>'+x.type+'</b><div class="tiny muted">'+(x.latest?esc(x.latest.date)+' 最新':'記録なし')+'</div></div><b>'+(x.latest?esc(x.latest.value)+' '+esc(x.latest.unit):'—')+'</b><span class="tiny muted">'+(x.previous?'前回 '+esc(x.previous.value)+' '+esc(x.previous.unit)+(delta===null?'':'／差 '+(delta>0?'+':'')+delta.toFixed(2)+' '+esc(unit)):'比較対象なし')+'</span></div>'}).join('')+'<div class="note">測定値の差は数値の変化のみを表示します。30m走・アジリティは短いほど、立ち幅跳びは長いほど良い方向ですが、測定条件が異なる場合は単純比較できません。練習回数や試合評価だけで技術向上を断定しません。</div>';
+ host.innerHTML=renderMatchGrowthTimeline()+'<div class="grid3"><div class="stat"><b>'+trainings.length+'</b><span>練習記録</span></div><div class="stat"><b>'+assessed.length+'</b><span>本人確認済み評価場面</span></div><div class="stat"><b>'+(completion===null?'—':completion+'%')+'</b><span>練習チェック完了率</span></div></div><div class="tiny muted" style="margin:8px 0">試合評価：良かった '+good+'場面／改善したい '+(assessed.length-good)+'場面。評価対象 '+assessed.length+'場面。</div><h3>測定値の最新比較</h3>'+metrics.map(x=>{const delta=x.latest&&x.previous?Number(x.latest.value)-Number(x.previous.value):null;const unit=x.latest?.unit||x.previous?.unit||'';return '<div class="listitem"><div class="grow"><b>'+x.type+'</b><div class="tiny muted">'+(x.latest?esc(x.latest.date)+' 最新':'記録なし')+'</div></div><b>'+(x.latest?esc(x.latest.value)+' '+esc(x.latest.unit):'—')+'</b><span class="tiny muted">'+(x.previous?'前回 '+esc(x.previous.value)+' '+esc(x.previous.unit)+(delta===null?'':'／差 '+(delta>0?'+':'')+delta.toFixed(2)+' '+esc(unit)):'比較対象なし')+'</span></div>'}).join('')+'<div class="note">測定値の差は数値の変化のみを表示します。30m走・アジリティは短いほど、立ち幅跳びは長いほど良い方向ですが、測定条件が異なる場合は単純比較できません。練習回数や試合評価だけで技術向上を断定しません。</div>';
 }
 function renderAiFormPracticePlan(){
  const el=document.getElementById('aiFormPracticePlan');if(!el)return;
