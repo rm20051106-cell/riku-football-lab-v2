@@ -1392,7 +1392,7 @@ function renderMonthlyGrowthTrajectory(){
  const previousEvents=events.filter(e=>inRange(e.date,previousStart,currentStart));
  const assessed=list=>list.filter(e=>e.assessment==='良かった'||e.assessment==='改善したい');
  const curAssessed=assessed(currentEvents),prevAssessed=assessed(previousEvents);
- const trainings=(state.trainings||[]);
+ const trainings=(state.trainings||[]).filter(t=>!asOfDate||String(t.date||'')<=asOfDate);
  const currentTraining=trainings.filter(t=>inRange(t.date,currentStart,now.getTime()));
  const previousTraining=trainings.filter(t=>inRange(t.date,previousStart,currentStart));
  const forms=(state.aiFormAnalyses||[]);
@@ -1433,9 +1433,9 @@ function renderCoachOverallAssessment(){
  const detail=top.length?top.map(x=>'<div class="listitem"><div class="grow"><b>'+esc(x.skill)+'</b><div class="tiny muted">評価 '+x.total+'場面・良 '+x.good+'・改善 '+x.improve+(x.rate===null?'':'・良かった割合 '+x.rate+'%')+' ／ 練習 '+x.sessions+'回'+(x.transfer?'・試合で試せた '+x.transferDone+'/'+x.transfer+'回':'')+'</div></div></div>').join(''):'<div class="empty">試合で陸玖として確認し、評価を入力するとプレー別に分析します。</div>';
  return '<section class="note" style="margin-top:14px"><h3 style="margin-top:0">専属AIコーチ｜総合評価</h3>'+renderRecentMatchCoachInsight()+'<div class="tiny muted">根拠：本人確認済み試合場面 '+a.allReviews+'件・練習記録 '+a.totalTraining+'件</div><div class="listitem"><div class="grow"><b>今の強み候補</b><div class="tiny">'+esc(strengthText)+'</div></div></div><div class="listitem"><div class="grow"><b>次に伸ばすテーマ</b><div class="tiny">'+esc(focusText)+'</div><div class="tiny muted">'+esc(focusReason)+'</div></div></div><div class="tiny muted">コーチの練習提案：'+esc(drills[focus?.skill]||'基本技術をバランスよく練習し、試合後に一つ振り返る')+'</div><h4>プレー別の評価</h4>'+detail+'<div class="tiny muted">評価の確かさ：'+esc(a.confidence)+'。3場面未満の項目は強み・課題として断定しません。試合数、出場時間、相手、ポジションの違いも影響します。これは映像AIによる自動判定ではなく、入力された記録の整理です。</div></section>';
 }
-function getPlayerSkillProfile(){
+function getPlayerSkillProfile(asOfDate=null){
  const skills=['ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール','その他'];
- const matches=(state.matchAnalyses||[]).slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+ const matches=(state.matchAnalyses||[]).filter(m=>!asOfDate||String(m.date||'')<=asOfDate).slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
  const allEvents=matches.flatMap(m=>(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖'&&e.actionType&&e.actionType!=='未選択').map(e=>({...e,matchDate:m.date||''})));
  const trainings=(state.trainings||[]);
  const rows=skills.map(focus=>{
@@ -1472,27 +1472,33 @@ function getPlayerSkillProfile(){
  return {rows,strengths,weaknesses,priority};
 }
 function syncMonthlySkillSnapshot(){
- const profile=getPlayerSkillProfile(),month=today().slice(0,7);
- if(!profile.rows.length)return;
- state.skillHistory=Array.isArray(state.skillHistory)?state.skillHistory:[];
- const snapshot={month,updatedAt:today(),skills:profile.rows.map(r=>({focus:r.focus,score:r.strengthScore,evidence:r.evidence,assessed:r.assessed,reviewed:r.reviewed,transfer:r.transfer}))};
- const index=state.skillHistory.findIndex(x=>x.month===month);
- if(index>=0)state.skillHistory[index]=snapshot;else state.skillHistory.push(snapshot);
- state.skillHistory.sort((a,b)=>String(a.month).localeCompare(String(b.month)));
- state.skillHistory=state.skillHistory.slice(-18);
+ const now=today(),currentMonth=now.slice(0,7),months=new Set();
+ (state.matchAnalyses||[]).forEach(m=>{if(/^\\d{4}-\\d{2}-\\d{2}$/.test(m.date||'')&&m.date.slice(0,7)<=currentMonth)months.add(m.date.slice(0,7));});
+ (state.trainings||[]).forEach(t=>{if(/^\\d{4}-\\d{2}-\\d{2}$/.test(t.date||'')&&t.date.slice(0,7)<=currentMonth)months.add(t.date.slice(0,7));});
+ months.add(currentMonth);
+ const history=[];
+ [...months].sort().slice(-18).forEach(month=>{
+  const [year,mon]=month.split('-').map(Number);
+  const lastDay=month===currentMonth?now:year+'-'+String(mon).padStart(2,'0')+'-'+String(new Date(year,mon,0).getDate()).padStart(2,'0');
+  const profile=getPlayerSkillProfile(lastDay);
+  if(!profile.rows.length)return;
+  history.push({month,updatedAt:now,skills:profile.rows.map(r=>({focus:r.focus,score:r.strengthScore,evidence:r.evidence,assessed:r.assessed,reviewed:r.reviewed,transfer:r.transfer}))});
+ });
+ state.skillHistory=history;
  try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){console.warn('月別能力履歴の保存に失敗',e);}
 }
 function getSkillTrendSummary(){
  const history=(Array.isArray(state.skillHistory)?state.skillHistory:[]).slice().sort((a,b)=>String(a.month).localeCompare(String(b.month)));
  const profile=getPlayerSkillProfile();
+ const monthGap=(a,b)=>{const [ay,am]=a.split('-').map(Number),[by,bm]=b.split('-').map(Number);return (by-ay)*12+(bm-am);};
  const focuses=[...new Set([...history.flatMap(h=>(h.skills||[]).map(x=>x.focus)),...profile.rows.map(x=>x.focus)])];
  const trends=focuses.map(focus=>{
   const points=history.map(h=>({month:h.month,...(h.skills||[]).find(x=>x.focus===focus)})).filter(p=>Number.isFinite(Number(p.score))&&p.evidence>=2);
   const current=profile.rows.find(x=>x.focus===focus);
   if(current&&points.length&&points[points.length-1].month===today().slice(0,7))points[points.length-1]={...points[points.length-1],score:current.strengthScore,evidence:current.evidence};
   const last=points[points.length-1],prev=points[points.length-2],before=points[points.length-3];
-  const delta=last&&prev?last.score-prev.score:null;
-  const previousDelta=prev&&before?prev.score-before.score:null;
+  const delta=last&&prev&&monthGap(prev.month,last.month)===1?last.score-prev.score:null;
+  const previousDelta=prev&&before&&monthGap(before.month,prev.month)===1?prev.score-before.score:null;
   const stagnant=points.length>=3&&delta!==null&&previousDelta!==null&&delta<=2&&previousDelta<=2;
   const declined=stagnant&&(delta<=-5||previousDelta<=-5);
   return {focus,points,score:last?.score??current?.strengthScore??null,delta,previousDelta,stagnant,declined,evidence:last?.evidence??current?.evidence??0,months:points.length};
