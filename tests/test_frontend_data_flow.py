@@ -49,6 +49,45 @@ class FrontendDataFlowContracts(unittest.TestCase):
         self.assertIn("if(!persist()){\n  state.trainings=state.trainings.filter", HTML)
         self.assertIn("pendingTrainingSource=source;renderAll();", HTML)
 
+    def test_match_evidence_keeps_match_identity_for_duplicate_event_ids(self):
+        self.assertIn("map(e=>({...e,matchId:m.id,matchDate:m.date,matchTitle:m.title}))", HTML)
+        self.assertIn("String(e.matchId)+'|'+String(e.id)", HTML)
+
+    def test_match_review_validation_precedes_mutation_and_save_rolls_back(self):
+        validation = HTML.index("if(actualChoice&&availableOptions.length&&!availableOptions.includes(actualChoice))")
+        mutation = HTML.index("markManualMatchReview(ev,review)", validation)
+        self.assertLess(validation, mutation)
+        self.assertIn("const originalEvent=JSON.parse(JSON.stringify(ev)),originalTrainings=JSON.parse(JSON.stringify(state.trainings||[]))", HTML)
+        self.assertIn("if(!persist()){\n  Object.keys(ev).forEach(key=>delete ev[key]);Object.assign(ev,originalEvent);state.trainings=originalTrainings", HTML)
+
+    def test_backup_integrity_and_separate_video_export_restore(self):
+        self.assertIn("backupFormat:'riku-football-lab',backupVersion:2", HTML)
+        self.assertIn("videoFilesIncluded:false", HTML)
+        self.assertIn("stateSha256", HTML)
+        self.assertIn("async function prepareVideoExport()", HTML)
+        self.assertIn("riku-video__'+encodeURIComponent(x.key)+'__'+encodeURIComponent(name)", HTML)
+        self.assertIn("if(actual.toLowerCase()!==String(parsed.stateSha256).toLowerCase())", HTML)
+        self.assertIn("const markedVideos=[...(imported.clips||[]),...(imported.forms||[])].filter(x=>x.hasVideo).length", HTML)
+
+    def test_restore_rejects_invalid_names_and_checks_storage_bytes(self):
+        self.assertIn("if(!key||key.startsWith('__pending_')||!name)", HTML)
+        self.assertIn("await compareVideoBlobs(existing.blob,restoredFile)", HTML)
+        self.assertIn("await compareVideoBlobs(verified.blob,restoredFile)", HTML)
+        self.assertIn("const incomingBytes=files.reduce((n,f)=>n+Number(f.size||0),0)", HTML)
+        self.assertIn("await scanSavedVideoIntegrity()", HTML)
+
+    def test_both_video_players_expose_error_load_play_and_end_states(self):
+        for event in ("onerror", "onloadeddata", "onplay", "onended"):
+            self.assertIn("matchVideo." + event, HTML)
+            self.assertIn("formVideo." + event, HTML)
+        self.assertIn("URL.createObjectURL(saved.blob)", HTML)
+        self.assertIn("URL.revokeObjectURL(matchVideo.dataset.objectUrl)", HTML)
+        self.assertIn("URL.revokeObjectURL(formVideo.dataset.objectUrl)", HTML)
+
+    def test_video_integrity_scan_detects_orphans_missing_and_duplicate_keys(self):
+        for token in ("const missing=records.filter", "const unlinked=records.filter", "const orphan=data.keys.map", "const duplicateRecordKeys=records.map", "const duplicateGroups=[]"):
+            self.assertIn(token, HTML)
+
 
 if __name__ == "__main__":
     unittest.main()
