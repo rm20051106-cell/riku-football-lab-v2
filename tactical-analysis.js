@@ -501,11 +501,11 @@ function renderTacticalDecisionGrowthReport(){
    const supportWeak=mr.filter(x=>x.fields.support==='真後ろ'||x.fields.support==='パスコースを作れていない').length;
    const decision=mr.filter(x=>['パス','ドリブル','シュート','キープ','その他'].includes(x.fields.decision)).length;
    return '<div class="tiny">周囲確認：'+scanOk+'/'+knownScan.length+'場面で確認あり（確認不能は除外）</div><div class="tiny">スペースへの動き：'+spaceMove+'場面／動き出しなし：'+noMove+'場面</div><div class="tiny">斜めのサポート：'+supportGood+'場面／角度を作れず：'+supportWeak+'場面</div><div class="tiny">プレー選択を手動確認：'+decision+'場面（選択肢の数ではありません）</div>';
-  })():'<div class="tiny muted">評価保留：手動確認済みの試合場面が3件未満です（'+mr.length+'件）。';
+  })():'<div class="tiny muted">評価保留：手動確認済みの試合場面が3件未満です（'+mr.length+'件）。</div>';
   const trainingStats=trainingReady?trainingMetrics.map(m=>{
    const g=tr.filter(m.good).length,b=tr.filter(m.bad).length;
    return '<div class="tiny">'+esc(m.label)+'：'+g+'回／'+b+'回 <span class="muted">（'+esc(m.desc)+'）</span></div>';
-  }).join(''):'<div class="tiny muted">評価保留：本人の実施記録が3回未満です（'+tr.length+'回）。';
+  }).join(''):'<div class="tiny muted">評価保留：本人の実施記録が3回未満です（'+tr.length+'回）。</div>';
   let recommendation='';
   if(matchReady&&trainingReady){
    const weak=trainingMetrics.map(m=>({m,delta:tr.filter(m.good).length-tr.filter(m.bad).length})).sort((a,b)=>a.delta-b.delta)[0];
