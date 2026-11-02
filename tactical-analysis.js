@@ -58,6 +58,7 @@ function render(){
  renderTacticalTransferGrowthHistory();
  renderTacticalTransferGrowthCharts();
  renderTacticalMatchContextDevelopment();
+ renderTacticalDribbleBreakthrough();
  let host=document.getElementById(PANEL_ID);
  if(!host){
   const history=document.getElementById('matchScanRecords');
@@ -152,7 +153,7 @@ function applyTacticalWeeklyPlan(plans){
   const base=plans[idx];
   plans[idx]={...base,title:template.title,category:template.category,focus:e.focus,minutes:template.minutes,note:template.note+'\\n\\n【試合映像からの改善テーマ】'+e.reason+'。'+e.drill,why:'本人確認済みの試合場面 '+e.count+'件を反映：'+e.reason};
  });
- return applyTacticalMatchContextPlan(applyTacticalTransferGoalsToPlan(applyTacticalDecisionTrainingPlan(plans)));
+ return applyTacticalDribblePlan(applyTacticalMatchContextPlan(applyTacticalTransferGoalsToPlan(applyTacticalDecisionTrainingPlan(plans))));
 }
 function renderTacticalWeeklyEvidence(){
  const host=typeof dailyPlan!=='undefined'?dailyPlan:null;if(!host)return;
@@ -968,6 +969,128 @@ function renderTacticalTransferGrowthCharts(){
  }).join('');
  host.innerHTML='<h2>⑰ 状況別・行動別の成長グラフ</h2><p class="tiny muted">状況ごとに、受ける前の周囲確認・スペースへの動き出し・サポート角度・立ち位置を時系列で表示します。直近変化は直前の別日との比較、安定度は直近3時点の幅で確認します。</p>'+(cards||'<div class="note">評価保留：同じ状況の練習3回以上と、その後の試合手動確認3場面以上がそろうとグラフを表示します。</div>')+'<div class="tiny muted">割合は手動確認できた場面内での良い行動の比率で、総合能力点ではありません。安定度は直近3時点の差が20ポイント以内なら「比較的安定」と表示します。試合の観察値と練習実施値は合算していません。</div>';
  const prior=document.getElementById('tacticalTransferGrowthHistory');if(prior)prior.insertAdjacentElement('afterend',host);else videoView.appendChild(host);
+}
+
+
+function getTacticalDribbleRecords(){
+ const matches=(typeof state!=='undefined'&&Array.isArray(state.matchAnalyses))?state.matchAnalyses:[];
+ const rows=[];
+ matches.forEach(match=>(match.candidateEvents||[]).forEach(ev=>{
+  const review=ev.tacticalReview;
+  const drill=review?.dribbleBreakthrough;
+  if(ev.reviewLabel!=='陸玖'||!review?.reviewedAt||!drill?.reviewedAt||!drill.fields)return;
+  const f=drill.fields;
+  if(f.attempt!=='1対1の突破を仕掛けた')return;
+  rows.push({match,ev,review,drill,fields:f,date:String(drill.reviewedAt||match.date||'').slice(0,10)});
+ }));
+ return rows;
+}
+function getTacticalDribbleSummary(){
+ const rows=getTacticalDribbleRecords();
+ const valid=v=>v&&v!=='映像で確認できない'&&!String(v).includes('不明')&&v!=='未選択';
+ const outcomes=rows.filter(x=>valid(x.fields.outcome));
+ const complete=outcomes.filter(x=>x.fields.outcome==='相手を完全に抜いた').length;
+ const advanced=outcomes.filter(x=>x.fields.outcome==='相手を抜いて前進').length;
+ const lost=outcomes.filter(x=>x.fields.outcome==='ボールを失った').length;
+ const counts={approach:{},direction:{},technique:{},after:{},outcome:{}};
+ rows.forEach(x=>Object.keys(counts).forEach(key=>{
+  const value=x.fields[key];if(valid(value))counts[key][value]=(counts[key][value]||0)+1;
+ }));
+ const contexts={};
+ rows.forEach(x=>{
+  const f=x.fields;
+  if(!valid(f.zone)||!valid(f.pressure)||!valid(f.defense))return;
+  const key=[f.zone,f.pressure,f.defense,valid(f.space)?f.space:'スペース未確認',valid(f.scoreState)?f.scoreState:'試合状況未確認'].join('｜');
+  const g=contexts[key]||(contexts[key]={key,zone:f.zone,pressure:f.pressure,defense:f.defense,space:valid(f.space)?f.space:'スペース未確認',scoreState:valid(f.scoreState)?f.scoreState:'試合状況未確認',rows:[]});
+  g.rows.push(x);
+ });
+ const contextGroups=Object.values(contexts).map(g=>{
+  const known=g.rows.filter(x=>valid(x.fields.outcome));
+  const beaten=known.filter(x=>['相手を完全に抜いた','相手を抜いて前進'].includes(x.fields.outcome)).length;
+  const full=known.filter(x=>x.fields.outcome==='相手を完全に抜いた').length;
+  const progressed=known.filter(x=>x.fields.outcome==='相手を抜いて前進').length;
+  const lostCount=known.filter(x=>x.fields.outcome==='ボールを失った').length;
+  return {...g,knownCount:known.length,beaten,full,progressed,lostCount,beatRate:known.length?Math.round(beaten/known.length*100):null,fullRate:known.length?Math.round(full/known.length*100):null};
+ }).sort((a,b)=>b.rows.length-a.rows.length);
+ const failed=rows.filter(x=>['抜けず保持','ボールを失った'].includes(x.fields.outcome));
+ const issueCounts={
+  straightFailed:failed.filter(x=>x.fields.approach==='正面から').length,
+  noMoveFailed:failed.filter(x=>x.fields.technique==='使っていない').length,
+  lost:failed.filter(x=>x.fields.outcome==='ボールを失った').length
+ };
+ let priority=null;
+ if(rows.length>=3){
+  if(issueCounts.lost>=2)priority={key:'protect',title:'相手に奪われないタッチと次の選択',reason:'突破時にボールを失った記録が複数あります。相手から遠い足へ置き、難しい時は味方につなぐ選択も練習します。',drill:'親が片側から寄せる。相手と反対側へファーストタッチし、前進できなければ味方役へパス。左右各4回。'};
+  else if(issueCounts.straightFailed>=2)priority={key:'angle',title:'斜めの持ち出しと方向転換',reason:'正面から仕掛けて突破できなかった記録が複数あります。正面だけでなく斜めの角度を作る練習をします。',drill:'コーンを相手に見立て、正面から近づいて左右どちらかへ斜めに運ぶ。相手役の重心を見て方向を変える練習を左右各5回。'};
+  else if(issueCounts.noMoveFailed>=2)priority={key:'change',title:'フェイント・切り返し・緩急の使い分け',reason:'技術を使わずに仕掛けて突破できなかった記録が複数あります。相手の反応を見て動きを変える練習をします。',drill:'ゆっくり近づく→肩・目線のフェイント→逆方向へ加速。フェイントを決め打ちせず、相手役の反応を見て左右各4回。'};
+  else if(complete+advanced>=2)priority={key:'repeat',title:'成功した突破パターンの再現',reason:'成功または前進できた突破記録があります。同じ形を再現し、反対方向や別の守備にも広げます。',drill:'成功した仕掛け方を左右各3回再現し、その後は相手役の立ち位置を変えて別の選択肢も試す。'};
+ }
+ return {rows,attemptCount:rows.length,knownCount:outcomes.length,complete,advanced,lost,counts,contextGroups,issueCounts,priority,ready:rows.length>=3};
+}
+function getTacticalDribbleFieldOptions(){
+ return [
+  {id:'attempt',label:'この場面で1対1の突破を仕掛けたか',options:['映像で確認できない','1対1の突破を仕掛けた','1対1の突破場面ではない']},
+  {id:'approach',label:'相手への入り方',options:['映像で確認できない','正面から','斜め前から','外側から','内側から','相手の背後から']},
+  {id:'direction',label:'仕掛けた方向',options:['映像で確認できない','左へ','右へ','中央へ','外側へ','内側へ','途中で方向転換']},
+  {id:'technique',label:'使った技術',options:['映像で確認できない','フェイント','切り返し','スピード変化・緩急','タッチで相手をずらす','ボディフェイント','シンプルな加速','複数の技術を組み合わせた','使っていない']},
+  {id:'defender',label:'相手の対応',options:['映像で確認できない','正面で進路をふさいだ','横についてきた','後ろから追ってきた','逆方向へ重心が動いた','複数人で対応した']},
+  {id:'outcome',label:'突破の結果',options:['映像で確認できない','相手を完全に抜いた','相手を抜いて前進','抜けず保持','ボールを失った','ファウルを獲得','味方へパスして前進']},
+  {id:'after',label:'突破後のプレー',options:['映像で確認できない','そのまま前進','味方へパス','シュート','クロス','ボールをキープ','ボールを失った','プレーが途切れた']},
+  {id:'zone',label:'仕掛けた場所',options:['映像で確認できない','自陣','中盤','敵陣','ペナルティエリア付近']},
+  {id:'pressure',label:'相手の寄せ方',options:['映像で確認できない','強いプレスなし','前からプレス','横から寄せ','後ろから追われる','複数人に囲まれる']},
+  {id:'defense',label:'相手の守備タイプ',options:['映像で確認できない','高い位置から守備','中央を固める守備','サイドへ誘導する守備','最終ラインが低い','1人が対応','複数人で囲む','その他']},
+  {id:'space',label:'仕掛けた時のスペース',options:['映像で確認できない','前方に広いスペース','前方が狭い','外側にスペース','内側にスペース','背後にスペース']},
+  {id:'scoreState',label:'その時の試合状況',options:['映像で確認できない','リード','同点','ビハインド']}
+ ];
+}
+function renderTacticalDribbleBreakthrough(){
+ const videoView=document.getElementById('video');if(!videoView)return;
+ let host=document.getElementById('tacticalDribbleBreakthrough');
+ if(!host){host=document.createElement('section');host.id='tacticalDribbleBreakthrough';host.className='card';}
+ const chosen=getSelected();
+ const matches=getData();
+ const records=getTacticalDribbleRecords();
+ const summary=getTacticalDribbleSummary();
+ const options=getTacticalDribbleFieldOptions();
+ const match=chosen.match,ev=chosen.ev;
+ const previous=ev?.tacticalReview?.dribbleBreakthrough||{};
+ const fields=previous.fields||{};
+ const fieldHtml=options.map(x=>'<label class="label">'+escT(x.label)+'<select data-dribble-field="'+x.id+'">'+x.options.map(v=>'<option value="'+escT(v)+'"'+((fields[x.id]||'映像で確認できない')===v?' selected':'')+'>'+escT(v)+'</option>').join('')+'</select></label>').join('');
+ const contextCards=summary.contextGroups.filter(x=>x.rows.length>=3).map(x=>{
+  const details=x.knownCount?('突破・前進 '+x.beaten+'/'+x.knownCount+'件（'+x.beatRate+'%）｜完全突破 '+x.full+'/'+x.knownCount+'件（'+x.fullRate+'%）｜ボールロスト '+x.lostCount+'件'):'結果が分かる記録なし・評価保留';
+  return '<div class="card"><b>'+escT(x.zone)+'｜'+escT(x.pressure)+'｜'+escT(x.defense)+'</b><div class="tiny muted">'+escT(x.space)+'｜'+escT(x.scoreState)+'｜仕掛け '+x.rows.length+'回</div><div class="tiny">'+details+'</div></div>';
+ }).join('');
+ const breakdown=(key,label)=>Object.entries(summary.counts[key]).sort((a,b)=>b[1]-a[1]).map(([v,n])=>'<div class="tiny">・'+escT(v)+'：'+n+'回</div>').join('')||'<div class="tiny muted">確認できる記録なし</div>';
+ const priority=summary.priority?'<div class="note"><b>陸玖の次の練習候補：</b>'+escT(summary.priority.title)+'<div class="tiny">'+escT(summary.priority.reason)+'</div><div class="tiny"><b>練習：</b>'+escT(summary.priority.drill)+'</div></div>':'<div class="note">個別の改善テーマは評価保留。3回以上の突破記録が集まるまでは、弱点を決めつけず基本の1対1練習を行います。</div>';
+ const saved=previous.reviewedAt?'<div class="note success">この場面の突破記録を保存済み：'+escT(previous.reviewedAt)+'</div>':'<div class="tiny muted">この場面の突破記録はまだ保存されていません。</div>';
+ const editor=matches.length&&match&&ev&&ev.reviewLabel==='陸玖'&&ev.tacticalReview?.reviewedAt
+  ?'<div class="card"><b>手動確認する試合場面</b><div class="tiny muted">'+escT(match.date||'日付不明')+'｜'+escT(match.title||'試合動画')+'｜'+escT(typeof formatMatchTime==='function'?formatMatchTime(ev.time):ev.time)+'</div><p class="tiny muted">映像を見て確認できた項目だけ選択。分からない場合は「映像で確認できない」のまま保存します。「1対1の突破場面ではない」を選んだ場面は分析対象から除外します。</p>'+fieldHtml+'<label class="label">確認メモ（任意）<input id="tacticalDribbleNote" maxlength="240" value="'+escT(previous.note||'')+'" placeholder="例：相手が右を切ったので左へ持ち出した"></label><button id="tacticalDribbleSave">この場面の突破分析を保存</button><div id="tacticalDribbleSaved">'+saved+'</div></div>'
+  :'<div class="note">ドリブル突破分析を記録するには、先に試合スキャン履歴で場面を「陸玖本人」として確認し、試合中の判断・ポジショニング分析を保存してください。</div>';
+ const recordRows=records.slice().sort((a,b)=>String(b.date).localeCompare(String(a.date))).slice(0,8).map(x=>'<div class="listitem"><div class="grow"><b>'+escT(x.date)+'｜'+escT(x.match.title||'試合')+'</b><div class="tiny muted">'+escT(x.fields.approach||'入り方未確認')+'／'+escT(x.fields.direction||'方向未確認')+'／'+escT(x.fields.technique||'技術未確認')+'｜'+escT(x.fields.outcome||'結果未確認')+'｜後のプレー：'+escT(x.fields.after||'未確認')+'</div></div></div>').join('')||'<div class="tiny muted">まだ突破場面の記録はありません。</div>';
+ host.innerHTML='<h2>⑲ ドリブル突破・1対1分析</h2><p class="tiny muted">陸玖本人として確認済みの試合場面だけを対象に、入り方・方向・技術・相手の対応・突破結果・突破後のプレーを記録します。試合の手動確認記録であり、練習実施記録とは別です。</p>'+editor+'<div class="card"><h3>突破の集計</h3><div class="tiny muted">試合の仕掛け '+summary.attemptCount+'回｜結果が確認できた '+summary.knownCount+'回</div><div class="listitem"><div class="grow"><b>完全突破</b><div class="tiny muted">結果確認できた場面内</div></div><b>'+summary.complete+'/'+summary.knownCount+'</b></div><div class="listitem"><div class="grow"><b>突破して前進</b><div class="tiny muted">完全突破とは分けて表示</div></div><b>'+summary.advanced+'/'+summary.knownCount+'</b></div><div class="listitem"><div class="grow"><b>ボールを失った</b></div><b>'+summary.lost+'/'+summary.knownCount+'</b></div><div class="tiny muted">成功率ではなく、手動確認できた結果の内訳です。結果不明の場面は分母に含めません。</div></div><div class="card"><h3>仕掛け方の傾向</h3><b>相手への入り方</b>'+breakdown('approach','入り方')+'<b>仕掛けた方向</b>'+breakdown('direction','方向')+'<b>使った技術</b>'+breakdown('technique','技術')+'<b>突破後のプレー</b>'+breakdown('after','突破後')+'</div><div class="card"><h3>突破しやすい状況の候補</h3>'+(contextCards||'<div class="tiny muted">評価保留：同じ場所・プレス・守備タイプなどの条件で3回以上の突破記録が必要です。条件がそろわない記録から成功しやすさを推測しません。</div>')+'<div class="tiny muted">条件別の割合は記録された試合場面の内訳です。相手や味方の動き、撮影範囲の違いがあるため、今後も複数試合で確認してください。</div></div><div class="card"><h3>陸玖専用・次の改善練習</h3>'+priority+'<div class="tiny muted">練習候補は手動確認済みの突破記録から作成。実施したかどうかは練習記録側で別に保存します。</div></div><div class="card"><h3>最近の突破記録</h3>'+recordRows+'</div>';
+ const prior=document.getElementById('tacticalMatchContextDevelopment');
+ if(prior)prior.insertAdjacentElement('afterend',host);else videoView.appendChild(host);
+ const save=document.getElementById('tacticalDribbleSave');
+ if(save)save.onclick=()=>{
+  const current=getSelected();
+  if(!current.ev||current.ev.reviewLabel!=='陸玖'||!current.ev.tacticalReview?.reviewedAt){alert('陸玖本人として確認し、試合場面の分析を保存した後に記録してください。');return;}
+  const values={};options.forEach(x=>{values[x.id]=host.querySelector('[data-dribble-field="'+x.id+'"]')?.value||'映像で確認できない';});
+  if(values.attempt==='映像で確認できない'){alert('1対1の突破場面かどうかを確認してください。不明なら保存できますが分析対象には入りません。');}
+  const note=(document.getElementById('tacticalDribbleNote')?.value||'').trim().slice(0,240);
+  current.ev.tacticalReview.dribbleBreakthrough={version:1,reviewedAt:typeof today==='function'?today():new Date().toISOString().slice(0,10),fields:values,note};
+  if(typeof persist==='function')persist();
+  render();
+  alert('ドリブル突破分析を保存しました。');
+ };
+}
+function applyTacticalDribblePlan(plans){
+ if(!Array.isArray(plans)||!plans.length)return plans;
+ const summary=getTacticalDribbleSummary();
+ if(!summary.ready||!summary.priority)return plans;
+ const index=0,base=plans[index]||plans[0];
+ if(!base)return plans;
+ plans[index]={...base,title:summary.priority.title,category:'ドリブル突破',minutes:10,note:summary.priority.drill+'\\n\\n【試合の手動確認記録】突破の仕掛け '+summary.attemptCount+'回。練習実施回数は別に記録し、試合結果と合算しません。',why:summary.priority.reason+'。手動確認済み '+summary.attemptCount+'場面から作成。'};
+ return plans;
 }
 
 function install(){
