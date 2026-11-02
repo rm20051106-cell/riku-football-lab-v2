@@ -1518,7 +1518,7 @@ function getPreviousWeekTrainingAdjustment(weekStart){
  const fmt=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
  const from=fmt(start),to=fmt(end);
  const records=(state.trainings||[]).filter(t=>t.date>=from&&t.date<=to);
- const assessed=records.filter(t=>t.reviewStatus||t.matchTransferStatus||Array.isArray(t.stepsDone));
+ const assessed=records.filter(t=>t.reviewStatus||t.matchTransferStatus||(Array.isArray(t.stepsDone)&&t.stepsDone.length>0));
  const rate=t=>{const steps=Array.isArray(t.steps)&&t.steps.length?t.steps:getTrainingSteps(t.focus||inferTrainingFocus(t.menu,t.category));return steps.length?Math.round((Array.isArray(t.stepsDone)?t.stepsDone.length:0)/steps.length*100):null;};
  const rates=assessed.map(rate).filter(v=>v!==null);
  const avg=rates.length?Math.round(rates.reduce((a,b)=>a+b,0)/rates.length):null;
@@ -1544,7 +1544,7 @@ function getWeeklyCoachPlan(){
  const fmtWeekStart=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
  const feedback=getPreviousWeekTrainingAdjustment(fmtWeekStart(start)),growth=getDecisionGrowthLevel(),repeated=getRepeatedDecisionIssue(),preferred=repeated?getPreferredDecisionPracticePlan(repeated.issue):null,goal=growth.goal;
  const focusMap={'判断の質':'ボールを受ける','周囲の確認':'ボールを受ける','練習実行':'ドリブル','試合への転移':'ドリブル'};
- const focus=goal?focusMap[goal.key]||'ボールを受ける':'ボールを受ける',level=(growth.level||2)<=2?1:(growth.level||2)>=4?3:2;
+ const focus=(feedback.level===1&&feedback.weakFocus)|| (goal?focusMap[goal.key]||'ボールを受ける':'ボールを受ける'),level=feedback.assessed?feedback.level:((growth.level||2)<=2?1:(growth.level||2)>=4?3:2);
  const goalText=goal?.goal||'受ける前に周囲を確認し、相手を見てプレーを選ぶ';
  const primary=preferred?{title:'実績優先｜'+preferred.title,focus:repeated.focus,minutes:preferred.minutes,category:'判断力・実績優先',note:'【対象課題】'+repeated.issue+'\n【過去の比較】改善 '+preferred.stats.improved+'/'+preferred.stats.count+'件・成功率 '+preferred.stats.successRate+'%\n'+preferred.note+'\n【手順】'+preferred.steps.join('／'),why:'比較2件以上・改善2件以上・成功率50%以上の実績を優先',sourceMatch:{alternativeDecisionPractice:true,focus:repeated.focus,decisionIssue:repeated.issue,practiceMethod:preferred.title,preferredMethodApplied:true,methodEvidenceCount:preferred.stats.count,methodSuccessRate:preferred.stats.successRate}}:{title:focus==='ドリブル'?'加速ドリブル＋判断':'首振り＋前向きファーストタッチ',focus,minutes:focus==='ドリブル'?15:12,category:'判断力・次の目標',note:'【今週の最優先目標】'+goalText+'\n'+(focus==='ドリブル'?'マーカーで左右に運び、親子1対1で相手の重心を見て突破方向を選ぶ。':'受ける前に左右・背後を確認し、半身で受けて前進・パス・キープを選ぶ。'),why:'判断力レベルと次の目標「'+(goal?.key||'周囲の確認')+'」を反映'};
  if(feedback.assessed){primary.minutes=Math.max(8,primary.minutes+(feedback.level===1?-3:feedback.level===3?2:0));primary.title=(feedback.level===1?'基礎から再調整｜':feedback.level===3?'応用へステップアップ｜':'継続・安定｜')+primary.title;primary.note+='\n【前週の結果】'+feedback.reason+'。'+(feedback.avgCompletion===null?'':'平均チェック達成 '+feedback.avgCompletion+'%。');primary.why+='／前週の振り返り '+feedback.assessed+'件を反映';}
@@ -1557,7 +1557,7 @@ function getWeeklyCoachPlan(){
  {day:'土曜',date:dateAt(5),title:'チーム練習・試合｜判断を実戦で使う',minutes:0,category:'チーム活動',focus,team:true,note:'試合・チーム練習では「受ける前に見る→選ぶ→実行」を意識。終わったらできた場面を1つだけ記録。',why:'練習した判断を試合で試す'},
  {day:'日曜',date:dateAt(6),title:'チーム活動・振り返り',minutes:0,category:'チーム活動・休養',focus,team:true,note:'チーム活動を優先。活動がない場合は休養。週の最後に「できた判断」「次に試すこと」を親子で1つずつ振り返る。',why:'次週の目標につなげる'}
  ];
- return days.map(plan=>{const adjusted=plan.minutes?adaptTrainingPlanFromReflection(plan):plan;return {...adjusted,date:plan.date,day:plan.day,team:!!plan.team,rest:!!plan.rest,sourceMatch:plan.sourceMatch||null,note:plan.minutes?adjusted.note+'\n\n'+getTrainingSessionGuide(adjusted.focus,level):plan.note,why:plan.why};});
+ return days.map(plan=>{const adjusted=plan.minutes?adaptTrainingPlanFromReflection(plan):plan;return {...adjusted,date:plan.date,day:plan.day,team:!!plan.team,rest:!!plan.rest,sourceMatch:plan.sourceMatch||null,difficultyLevel:feedback.assessed?feedback.level:adjusted.difficultyLevel,note:plan.minutes?adjusted.note+'\n\n'+getTrainingSessionGuide(adjusted.focus,level):plan.note,why:plan.why};});
 }
 function applyWeeklyCoachSession(index){
  const plan=getWeeklyCoachPlan()[index];if(!plan||plan.team||plan.rest||!plan.minutes)return;
