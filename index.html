@@ -926,7 +926,7 @@ function renderMonthlyGrowthReport(){
 function getDecisionGrowthSeries(){
  const byMonth={};
  (state.matchAnalyses||[]).forEach(match=>{
-  const month=String(match.date||'').slice(0,7);if(!/^\\d{4}-\\d{2}$/.test(month))return;
+  const month=String(match.date||'').slice(0,7);if(month.length!==7||month[4]!=='-'||!Number.isFinite(Number(month.slice(0,4)))||Number(month.slice(5))<1||Number(month.slice(5))>12)return;
   (match.candidateEvents||[]).filter(ev=>ev.reviewLabel==='陸玖').forEach(ev=>{
    const q=ev.decisionQuality||'未評価',scan=ev.decisionScan||'未確認';
    const row=byMonth[month]||(byMonth[month]={month,total:0,qualityCount:0,good:0,scanCount:0,scanned:0,quality:{},scan:{}});
