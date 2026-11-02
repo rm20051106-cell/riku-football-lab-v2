@@ -1139,13 +1139,56 @@ function getAlternativeDecisionPracticeEffect(training){
  else if(after&&!before)status='練習前の比較データ不足';
  return {source,before,after,delta,status,comparison};
 }
+function getAlternativeDecisionRetryPlan(training,effect){
+ const steps=Array.isArray(training.steps)&&training.steps.length?training.steps:getTrainingSteps(training.focus);
+ const completion=steps.length?(training.stepsDone||[]).length/steps.length:0;
+ const review=training.reviewStatus||'未入力',transfer=training.matchTransferStatus||'未入力';
+ const easier=review==='難しかった'||review==='まだ試せていない'||training.effort==='きつめ'||completion<0.5||transfer==='まだ';
+ const level=easier?1:review==='できた'&&completion>=0.8&&transfer==='できた'?3:2;
+ const variants={
+ '判断が遅れる':[
+ '難易度を下げる：親の合図を早めに出し、止まった状態で「見る→選ぶ→声に出す」を練習。成功したらゆっくり動きながら行う。',
+ '方法を変える：色・数字の合図に変更し、受ける前に答えてからプレー。選択肢は2つに絞って反復する。',
+ '実戦負荷を上げる：合図をランダムにし、親が守備役として寄せる。ボールが届く前に決めて1対1で実行する。'],
+ '選択肢を比較できていない':[
+ '難易度を下げる：前進か戻すの2択だけにして、配置を止めて確認してから選ぶ。',
+ '方法を変える：味方役・相手役の位置を毎回変え、選んだ理由を一言で説明してからプレーする。',
+ '実戦負荷を上げる：3択を用意し、守備役が動く方向に応じて選択を変える。'],
+ 'ボールだけを見てしまう':[
+ '難易度を下げる：ボールなしで左右の数字・色を答える。次に止まったボールを受ける前に左右を見る。',
+ '方法を変える：親が背後や斜めに立ち、確認した情報を答えてからファーストタッチする。',
+ '実戦負荷を上げる：動く守備役を加え、首振りで得た情報を使って前向き・パス・キープを選ぶ。'],
+ '味方・相手の位置を把握できていない':[
+ '難易度を下げる：親とコーンを固定し、味方・相手・空きスペースを一つずつ指差して答える。',
+ '方法を変える：配置を毎回変え、受ける前に「味方・相手・空き」を声に出してからプレーする。',
+ '実戦負荷を上げる：親と守備役が動き、状況が変わる中で前進・パス・キープを判断する。']
+ };
+ const fallback=['動きを止めて状況を確認し、選択肢を一つずつ練習する。','配置や合図を変えて判断の反復を行う。','相手の動きを加えて実戦形式で判断する。'];
+ const note=(variants[effect.source.decisionIssue]||fallback)[level-1];
+ return {level,label:level===1?'難易度を下げて成功体験を増やす':level===3?'実戦に近づけて負荷を上げる':'練習方法を変えて再挑戦',note,reason:'練習チェック '+Math.round(completion*100)+'%・振り返り '+review+'・試合再現 '+transfer};
+}
+function applyAlternativeDecisionRetry(trainingId){
+ const training=(state.trainings||[]).find(t=>String(t.id)===String(trainingId));
+ if(!training)return;
+ const effect=getAlternativeDecisionPracticeEffect(training);
+ if(!effect||!effect.after||effect.delta===null||effect.delta<0){alert('練習後の比較が確定していないか、改善方向です。再調整はまだ必要ありません。');return;}
+ const retry=getAlternativeDecisionRetryPlan(training,effect);
+ const source=training.sourceMatch;
+ const title='再調整Lv'+retry.level+'｜'+(source.decisionIssue||'判断力')+'トレーニング';
+ const note='【前回の結果】'+source.decisionIssue+'｜課題率 '+effect.before?.rate+'% → '+effect.after.rate+'%（'+(effect.delta>0?'+':'')+effect.delta+'pt）\\n【自動再調整】'+retry.label+'\\n【調整理由】'+retry.reason+'\\n【新しい練習方法】'+retry.note+'\\n【今回の成功基準】同じ判断課題が出た場面を減らし、判断した理由を自分の言葉で説明できること。\\n※試合評価に基づく練習案です。痛みや疲労がある場合は中止し、無理に負荷を上げません。';
+ if(!(state.menus||[]).some(m=>m.name===title)){state.menus.unshift({name:title,category:'判断力・再調整',minutes:retry.level===1?8:12});persist();}
+ trainMenu.value=title;trainDate.value=today();trainMinutes.value=retry.level===1?8:12;trainFocus.value=source.focus||training.focus;trainNote.value=note;
+ pendingTrainingSource={alternativeDecisionPractice:true,focus:source.focus||training.focus,decisionIssue:source.decisionIssue,retryLevel:retry.level,retryFromTrainingId:training.id,retryFromMatchDate:effect.comparison.after.match.date,retryFromMatchId:effect.comparison.after.match.id,issueBaselineRate:effect.after.rate,issueBaselineMatchIds:[String(effect.comparison.after.match.id)]};
+ showView('training');
+}
 function renderAlternativeDecisionPracticeEffect(training){
  const r=getAlternativeDecisionPracticeEffect(training);if(!r)return '';
  const event=r.comparison?.after?.events?.[0];
  const eventArg=event?String(event.id).replace(/\\/g,'\\\\').replace(/'/g,"\\'"):'';
  const metric=(label,value)=>'<div class="tiny">'+label+'：'+(value?value.rate+'%（'+value.bad+'/'+value.total+'場面）':'評価データなし')+'</div>';
  const delta=r.delta===null?'':'<div class="tiny"><b>課題率の変化：'+(r.delta>0?'+':'')+r.delta+'ポイント</b></div>';
- return '<div class="note" style="margin-top:8px"><b>🔁 別メニューの試合効果チェック</b><div class="tiny"><b>'+esc(r.status)+'</b>｜対象課題：'+esc(r.source.decisionIssue||'判断課題')+'</div>'+(r.comparison?.before?'<div class="tiny muted">練習前：'+esc(r.comparison.before.match.date)+'｜'+esc(r.comparison.before.match.title||'試合')+'</div>':'<div class="tiny muted">練習前の同テーマ評価：記録なし</div>')+(r.comparison?.after?'<div class="tiny muted">練習後：'+esc(r.comparison.after.match.date)+'｜'+esc(r.comparison.after.match.title||'試合')+'</div>':'<div class="tiny muted">練習日より後の同テーマの試合評価を待っています。</div>')+metric('練習前の課題出現率',r.before)+metric('練習後の課題出現率',r.after)+delta+(r.after&&event?'<button class="secondary small" onclick="openMatchEventInHistory('+Number(r.comparison.after.match.id)+',\\''+eventArg+'\\')">練習後の試合場面を見る</button>':'')+'<div class="tiny muted">課題率が下がれば改善方向。本人確認済み場面の記録に基づき、練習だけが変化の原因とは断定しません。</div></div>';
+ const retryButton=r.after&&r.delta!==null&&r.delta>=0?'<button class="primary small" onclick="applyAlternativeDecisionRetry('+Number(training.id)+')">難易度・練習方法を自動再調整</button>':'';
+ return '<div class="note" style="margin-top:8px"><b>🔁 別メニューの試合効果チェック</b><div class="tiny"><b>'+esc(r.status)+'</b>｜対象課題：'+esc(r.source.decisionIssue||'判断課題')+'</div>'+(r.comparison?.before?'<div class="tiny muted">練習前：'+esc(r.comparison.before.match.date)+'｜'+esc(r.comparison.before.match.title||'試合')+'</div>':'<div class="tiny muted">練習前の同テーマ評価：記録なし</div>')+(r.comparison?.after?'<div class="tiny muted">練習後：'+esc(r.comparison.after.match.date)+'｜'+esc(r.comparison.after.match.title||'試合')+'</div>':'<div class="tiny muted">練習日より後の同テーマの試合評価を待っています。</div>')+metric('練習前の課題出現率',r.before)+metric('練習後の課題出現率',r.after)+delta+retryButton+(r.after&&event?'<button class="secondary small" onclick="openMatchEventInHistory('+Number(r.comparison.after.match.id)+',\\''+eventArg+'\\')">練習後の試合場面を見る</button>':'')+'<div class="tiny muted">課題率が下がれば改善方向。本人確認済み場面の記録に基づき、練習だけが変化の原因とは断定しません。</div></div>';
 }
 function applyAlternativeDecisionPractice(){
  const issue=getRepeatedDecisionIssue();if(!issue)return;
