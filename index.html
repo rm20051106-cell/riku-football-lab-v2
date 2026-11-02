@@ -264,18 +264,25 @@ function getRepeatedIssueAdjustment(focus,matchDate){
  const steps=Array.isArray(previous.steps)&&previous.steps.length?previous.steps:getTrainingSteps(focus);
  const done=Array.isArray(previous.stepsDone)?previous.stepsDone.length:0;
  const completion=steps.length?done/steps.length:0;
- const easier=previous.reviewStatus==='難しかった'||previous.reviewStatus==='まだ試せていない'||previous.effort==='きつめ'||completion<0.5;
- const level=easier?1:previous.reviewStatus==='できた'&&completion>=0.8?3:2;
+ const reflection=buildTrainingReflection(previous);
+ const review=previous.reviewStatus||'未入力';
+ const transfer=previous.matchTransferStatus||'未入力';
+ const easier=review==='難しかった'||review==='まだ試せていない'||previous.effort==='きつめ'||completion<0.5||transfer==='まだ';
+ const level=easier?1:review==='できた'&&completion>=0.8&&transfer==='できた'?3:2;
  const variants={
- 'ドリブル':['難易度を下げ、ゆっくりの方向転換から開始。マーカー幅を広げ、左右各3回の成功を確認してから親子1対1へ。','前回と違う角度から相手役が寄せる。最初のタッチで相手の重心をずらし、抜いた後の2〜3歩を加速。','相手役の寄せる方向をランダムにする。左右どちらにも行ける姿勢から判断し、突破後にシュートまでつなぐ。'],
- 'ボールを受ける':['近い距離・止まったボールから。受ける前に左右を一度確認し、半身で足元に止める成功を重ねる。','親が左右どちらかを指示。首振り→半身→前向きのファーストタッチを連続して行う。','受ける直前に親が守備位置を変える。確認した情報を使い、遠い足で前方のスペースへ置く。'],
- 'パス':['近距離でインサイドパス。軸足と面を整え、左右各5本の正確さを優先。','受ける前に首を振り、コーンの左右にあるゲートを見てパスコースを選ぶ。','親がコースを直前に変える。周囲を確認してワンタッチかツータッチを判断し、逆足も使う。'],
- 'シュート':['近距離・止まったボールから。軸足とミートを確認し、力まず狙った場所へ蹴る。','左右に少し動いてからボールを受け、軸足と体の向きを整えてコースを狙う。','親の合図やパス方向を変え、ファーストタッチから素早くコースを選んでシュート。'],
+ 'ドリブル':['マーカー幅を広げ、ゆっくりの方向転換から開始。左右各3回の成功を確認してから親子1対1へ。','前回と違う角度から相手役が寄せる。最初のタッチで重心をずらし、抜いた後の2〜3歩を加速。','相手役の寄せる方向をランダムにする。左右どちらにも行ける姿勢から判断し、突破後にシュートまでつなぐ。'],
+ 'ボールを受ける':['近い距離・止まったボールから。受ける前に左右を一度確認し、半身で足元に止める成功を重ねる。','親が左右どちらかを指示。首振り→半身→前向きのファーストタッチを連続して行う。','受ける直前に守備位置を変える。確認した情報を使い、遠い足で前方のスペースへ置く。'],
+ 'パス':['近距離でインサイドパス。軸足と面を整え、左右各5本の正確さを優先。','受ける前に首を振り、コーンの左右にあるゲートを見てパスコースを選ぶ。','パスコースを直前に変える。周囲を確認してワンタッチかツータッチを判断し、逆足も使う。'],
+ 'シュート':['近距離・止まったボールから。軸足とミートを確認し、力まず狙った場所へ蹴る。','左右に少し動いてからボールを受け、軸足と体の向きを整えてコースを狙う。','パス方向を変え、ファーストタッチから素早くコースを選んでシュート。'],
  '守備・プレス':['相手役は歩く速さ。距離を保ち、正面に立って進行方向を限定する練習から。','相手役の左右の持ち出しに合わせてステップ。飛び込まず、外側へ誘導する。','相手役の選択をランダムにする。味方のカバー位置も意識して、奪うか遅らせるか判断。'],
- 'オフザボール':['親が止まった状態で、見える位置に動いてパスを受ける。','親が顔を上げる合図に合わせ、相手の背中側から斜めに動いて受ける。','親の視線と守備役の位置を見て、動き出すタイミングと角度を自分で選ぶ.'],
+ 'オフザボール':['親が止まった状態で、見える位置に動いてパスを受ける。','親が顔を上げる合図に合わせ、相手の背中側から斜めに動いて受ける。','親の視線と守備役の位置を見て、動き出すタイミングと角度を自分で選ぶ。']
  };
  const fallback=['ゆっくり場面を再現し、動きを一つずつ確認する。','相手の位置を変えて、同じ判断を繰り返す。','相手の動きを予測し、判断から実行までつなげる。'];
- return {previous,level,label:level===1?'基礎に戻して成功率アップ':level===3?'判断の変化を加える':'方法を変えて再挑戦',note:(variants[focus]||fallback)[level-1],reason:easier?'前回の難しさ・未完了を考慮':level===3?'練習項目をこなせていたため判断負荷を追加':'前回と異なる練習方法で同じ課題に再挑戦'};
+ const reasons=[];
+ if(review!=='未入力')reasons.push('振り返り「'+review+'」');
+ if(transfer!=='未入力')reasons.push('試合再現「'+transfer+'」');
+ reasons.push('チェック達成'+Math.round(completion*100)+'%');
+ return {previous,level,label:level===1?'基礎に戻して成功率アップ':level===3?'判断の変化を加える':'方法を変えて再挑戦',note:(variants[focus]||fallback)[level-1],reason:reasons.join('・'),reflection};
 }
 function getMatchImprovementPlan(ev){
  const focus=getTrainingFocusForMatchEvent(ev);
@@ -291,7 +298,7 @@ function getMatchImprovementPlan(ev){
  const base=plans[focus]||plans['その他'];
  const adjustment=getRepeatedIssueAdjustment(focus,ev?.matchDate||'');
  if(!adjustment)return {focus,...base,retryLevel:0};
- return {...base,focus,title:base.title+'｜再挑戦Lv'+adjustment.level,note:base.note+' 【前回からの自動調整】'+adjustment.note,retryLevel:adjustment.level,retryLabel:adjustment.label,retryReason:adjustment.reason,previousTrainingId:adjustment.previous.id};
+ return {...base,focus,title:base.title+'｜再挑戦Lv'+adjustment.level,note:base.note+' 【前回からの自動調整】'+adjustment.note+' 【前回の振り返り】'+adjustment.reflection.improve.join('／')+' 【次回の重点】'+adjustment.reflection.next.join('／'),retryLevel:adjustment.level,retryLabel:adjustment.label,retryReason:adjustment.reason,previousTrainingId:adjustment.previous.id,reflectionGood:adjustment.reflection.good,reflectionImprove:adjustment.reflection.improve,reflectionNext:adjustment.reflection.next};
 }
 function renderMatchImprovementSuggestion(match,ev){
  if(ev.reviewLabel!=='陸玖'||ev.assessment!=='改善したい')return '';
@@ -307,7 +314,7 @@ function applyMatchImprovementPlan(matchId,eventId){
  renderAll();
  trainMenu.value=p.title;trainDate.value=today();trainMinutes.value=p.minutes;trainFocus.value=p.focus==='パス'?'ボールを受ける':p.focus;
  trainNote.value='【試合からの改善課題】'+match.date+'｜'+(match.title||'試合動画')+'｜'+formatMatchTime(ev.time)+'\n場面：'+(ev.label||ev.reason||'映像で確認した場面')+'\n評価：改善したい\n\n【次回メニュー】'+p.note;
- pendingTrainingSource={matchId:match.id,eventId:ev.id,matchDate:match.date,matchTitle:match.title||'試合動画',time:ev.time??null,focus:p.focus,assessment:ev.assessment,retryLevel:p.retryLevel||0,previousTrainingId:p.previousTrainingId||null,retryReason:p.retryReason||''};
+ pendingTrainingSource={matchId:match.id,eventId:ev.id,matchDate:match.date,matchTitle:match.title||'試合動画',time:ev.time??null,focus:p.focus,assessment:ev.assessment,retryLevel:p.retryLevel||0,previousTrainingId:p.previousTrainingId||null,retryReason:p.retryReason||'',reflectionGood:p.reflectionGood||[],reflectionImprove:p.reflectionImprove||[],reflectionNext:p.reflectionNext||[]};
  showView('training');
 }
 function getImprovementFollowup(training){
