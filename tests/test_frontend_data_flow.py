@@ -45,6 +45,16 @@ class FrontendDataFlowContracts(unittest.TestCase):
         self.assertIn("||growthGoal?.focus||", HTML)
         self.assertIn("goalText=growthGoal?.note||goal?.goal", HTML)
 
+    def test_explicit_match_growth_goal_has_final_priority_in_weekly_plan(self):
+        start = HTML.index("function getWeeklyCoachPlan()")
+        end = HTML.index("\nfunction ", start + 15)
+        plan = HTML[start:end]
+        self.assertIn("if(growthGoal){primary.title='試合成長目標｜'", plan)
+        self.assertIn("primary.focus=growthGoal.focus", plan)
+        self.assertIn("primary.category='試合成長目標'", plan)
+        self.assertIn("primary.sourceMatch={...(primary.sourceMatch||{}),matchGrowthGoal:true", plan)
+        self.assertLess(plan.index("if(feedback.assessed)"), plan.index("if(growthGoal){primary.title="))
+
     def test_training_save_failure_preserves_form_and_source_link(self):
         self.assertIn("if(!persist()){\n  state.trainings=state.trainings.filter", HTML)
         self.assertIn("pendingTrainingSource=source;renderAll();", HTML)
