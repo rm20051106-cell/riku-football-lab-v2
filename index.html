@@ -1433,6 +1433,26 @@ function renderCoachOverallAssessment(){
  const detail=top.length?top.map(x=>'<div class="listitem"><div class="grow"><b>'+esc(x.skill)+'</b><div class="tiny muted">評価 '+x.total+'場面・良 '+x.good+'・改善 '+x.improve+(x.rate===null?'':'・良かった割合 '+x.rate+'%')+' ／ 練習 '+x.sessions+'回'+(x.transfer?'・試合で試せた '+x.transferDone+'/'+x.transfer+'回':'')+'</div></div></div>').join(''):'<div class="empty">試合で陸玖として確認し、評価を入力するとプレー別に分析します。</div>';
  return '<section class="note" style="margin-top:14px"><h3 style="margin-top:0">専属AIコーチ｜総合評価</h3>'+renderRecentMatchCoachInsight()+'<div class="tiny muted">根拠：本人確認済み試合場面 '+a.allReviews+'件・練習記録 '+a.totalTraining+'件</div><div class="listitem"><div class="grow"><b>今の強み候補</b><div class="tiny">'+esc(strengthText)+'</div></div></div><div class="listitem"><div class="grow"><b>次に伸ばすテーマ</b><div class="tiny">'+esc(focusText)+'</div><div class="tiny muted">'+esc(focusReason)+'</div></div></div><div class="tiny muted">コーチの練習提案：'+esc(drills[focus?.skill]||'基本技術をバランスよく練習し、試合後に一つ振り返る')+'</div><h4>プレー別の評価</h4>'+detail+'<div class="tiny muted">評価の確かさ：'+esc(a.confidence)+'。3場面未満の項目は強み・課題として断定しません。試合数、出場時間、相手、ポジションの違いも影響します。これは映像AIによる自動判定ではなく、入力された記録の整理です。</div></section>';
 }
+function getPlayerWeaponPatterns(){
+ const byMatch=new Map();
+ (state.matchAnalyses||[]).forEach(m=>{
+  const scenes=(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖'&&e.assessment==='良かった'&&e.actionType&&e.actionType!=='未選択'&&Number.isFinite(Number(e.time))).sort((a,b)=>Number(a.time)-Number(b.time));
+  for(let i=0;i<scenes.length-1;i++){
+   const first=scenes[i],second=scenes[i+1],gap=Number(second.time)-Number(first.time);
+   if(gap<0||gap>120||first.actionType===second.actionType)continue;
+   const actions=[first.actionType,second.actionType],styles=[first.playStyle,second.playStyle].filter(Boolean);
+   const key=actions.join(' → ');
+   const row=byMatch.get(key)||{key,actions,styles:{},matches:new Set(),count:0,scenes:[]};
+   row.count++;row.matches.add(String(m.id??m.date??m.title??'match'));
+   styles.forEach(style=>row.styles[style]=(row.styles[style]||0)+1);
+   row.scenes.push({date:m.date||'',title:m.title||'試合',from:first.time,to:second.time,fromStyle:first.playStyle||'',toStyle:second.playStyle||''});
+   byMatch.set(key,row);
+  }
+ });
+ const patterns=Array.from(byMatch.values()).map(x=>({...x,matches:x.matches.size,styles:Object.entries(x.styles).sort((a,b)=>b[1]-a[1]).map(([style,count])=>({style,count})),scenes:x.scenes.slice(-6)})).filter(x=>x.matches>=2&&x.count>=2).sort((a,b)=>b.matches-a.matches||b.count-a.count);
+ const leaders=patterns.filter(x=>x.matches>=2).slice(0,5);
+ return {patterns:leaders,hasEvidence:leaders.length>0,scenesUsed:(state.matchAnalyses||[]).reduce((n,m)=>n+(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖'&&e.assessment==='良かった'&&e.actionType&&e.actionType!=='未選択'&&Number.isFinite(Number(e.time))).length,0)};
+}
 function getPositionRoleProfile(){
  const labels={'トップ':'トップ','サイド':'サイド','中盤':'中盤','FW':'FW（前線）','MF':'MF','DF':'DF','GK':'GK'};
  const groups={};
@@ -1544,11 +1564,14 @@ function renderPlayerSkillProfile(){
  const priorityHtml=priority?'<div class="note" style="margin-top:10px"><b>次週の最優先テーマ：'+esc(priority.focus)+'</b><div class="tiny">試合で改善したい '+priority.improve+'場面／練習で難しかった・未実施 '+priority.reviewHard+'件／試合でまだ再現できていない '+priority.transferNotYet+'件。</div><div class="tiny muted">記録から選んだ優先候補です。チーム練習・試合日程・疲労に合わせて調整してください。</div><button class="secondary small" onclick="applyCoachFocusPriority(\''+priority.focus+'\')">このテーマで練習メニューを作る</button></div>':'<div class="note" style="margin-top:10px"><b>次週の優先テーマ：記録を集めています</b><div class="tiny">どの能力が課題か判断するには、同じテーマの評価・振り返りをもう少し記録してください。現時点では苦手と断定しません。</div></div>';
  const chart=profile.strengths.length?renderGrowthBars('能力スコア（記録のあるテーマ）',profile.strengths.map(x=>({label:x.focus,value:x.strengthScore??0})),'点'):'';
  const positions=getPositionRoleProfile();
+ const weapons=getPlayerWeaponPatterns();
  const positionRows=positions.rows.length?positions.rows.map(r=>'<div class="listitem" style="display:block"><div class="brand"><b>'+esc(r.label)+'</b><b>'+r.rate+'% 良かった</b></div><div class="tiny muted">確認済み '+r.total+'場面｜良かった '+r.good+'・改善したい '+r.improve+'</div><div class="tiny">プレー分類：'+r.actions.map(x=>esc(x.action)+' '+x.good+'/'+x.total+'（'+x.rate+'%）').join(' ／ ')+'</div><div class="tiny">練習テーマ：'+r.skills.map(x=>esc(x.focus)+' '+x.good+'/'+x.total).join(' ／ ')+'</div><div class="tiny">プレースタイル：'+r.styles.map(x=>esc(x.style)+' '+x.good+'/'+x.total+'（'+x.rate+'%）').join(' ／ ')+'</div></div>').join(''):'<div class="empty">ポジション記録がありません。試合場面ごとにポジションを選ぶと、ここで比較できます。記録がない位置は推測しません。</div>';
  const positionSummary=positions.best?'<div class="note" style="margin-top:8px"><b>現時点で評価が高い位置：'+esc(positions.best.label)+'</b><div class="tiny">評価済み場面が3件以上ある位置同士で比較しています。次週はこの位置で改善したいプレーを重点練習に反映します。</div></div>':'<div class="note" style="margin-top:8px"><b>ポジション比較：記録不足</b><div class="tiny">公平な比較には、2つ以上の位置でそれぞれ評価済み場面が3件以上必要です。今は最適ポジションを断定しません。</div></div>';
  const styleLeaders=positions.strongStyles.length?'<div class="tiny muted">複数回確認できたプレースタイル：'+positions.strongStyles.map(x=>esc(x.roleLabel)+'｜'+esc(x.style)+' '+x.good+'/'+x.total+'（'+x.rate+'%）').join(' ／ ')+'</div>':'<div class="tiny muted">プレースタイルの傾向は、同じ動きの記録が2場面以上集まると表示します。</div>';
+ const weaponRows=weapons.hasEvidence?weapons.patterns.map((p,i)=>'<div class="listitem" style="display:block"><b>'+(i+1)+'. '+p.actions.map(esc).join(' → ')+'</b><div class="tiny muted">異なる試合 '+p.matches+'試合｜連続場面 '+p.count+'組</div><div class="tiny">確認された細かな動き：'+(p.styles.length?p.styles.map(x=>esc(x.style)+' '+x.count+'回').join(' ／ '):'細分類の記録なし')+'</div><div class="tiny muted">記録例：'+p.scenes.map(x=>esc(x.date)+' '+esc(x.title)).join(' ／ ')+'</div></div>').join(''):'<div class="empty">本人確認済みの良かった場面から、複数の試合で繰り返されたプレーの連係はまだ確認できません。プレー内容・時刻・評価を記録してください。現時点で得点パターンや独自の武器は断定しません。</div>';
+ const weaponHtml='<h3 style="margin:14px 0 4px">陸玖の武器・プレー連係分析</h3><div class="tiny muted">陸玖本人と確認済みで「良かった」と評価した同一試合内の連続場面を集計。120秒以内に続いた異なるプレー分類が、2試合以上で確認できた場合だけ表示します。ゴール自体は専用記録がないため推定しません。</div>'+weaponRows;
  const positionHtml='<h3 style="margin:14px 0 4px">ポジション別プレースタイル分析</h3><div class="tiny muted">陸玖本人と確認した場面のうち、ポジション・プレー分類・評価がそろった記録だけを集計。プレースタイルの細分類は試合場面で手動選択した内容を使います。</div>'+positionRows+positionSummary+styleLeaders;
- host.innerHTML=positionHtml+chart+'<div class="tiny muted">試合評価65%・練習後の自己振り返り15%・試合での再現20%を、記録がある項目だけで重みを調整して集計。映像AIがプレーの良否を自動判定した点数ではありません。</div><h3 style="margin:12px 0 4px">得意を伸ばすランキング</h3>'+renderRows(profile.strengths,'strength')+'<h3 style="margin:12px 0 4px">改善を優先するランキング</h3>'+renderRows(profile.weaknesses,'weakness')+priorityHtml;
+ host.innerHTML=weaponHtml+positionHtml+chart+'<div class="tiny muted">試合評価65%・練習後の自己振り返り15%・試合での再現20%を、記録がある項目だけで重みを調整して集計。映像AIがプレーの良否を自動判定した点数ではありません。</div><h3 style="margin:12px 0 4px">得意を伸ばすランキング</h3>'+renderRows(profile.strengths,'strength')+'<h3 style="margin:12px 0 4px">改善を優先するランキング</h3>'+renderRows(profile.weaknesses,'weakness')+priorityHtml;
 }
 function getCoachPrioritySummary(){
  const skills=['ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール','その他'];
@@ -1730,9 +1753,12 @@ function getWeeklyCoachPlan(){
  const feedback={...trainingFeedback,level:combinedLevel,assessed:trainingFeedback.assessed||matchFeedback.assessed,weakFocus:matchFeedback.weakFocus||trainingFeedback.weakFocus,reason:matchFeedback.assessed?matchFeedback.reason+(trainingFeedback.assessed?'。'+trainingFeedback.reason:''):trainingFeedback.reason,matchFeedback};
  const focusMap={'判断の質':'ボールを受ける','周囲の確認':'ボールを受ける','練習実行':'ドリブル','試合への転移':'ドリブル'};
  const positionProfile=getPositionRoleProfile();
- const focus=(feedback.level===1&&feedback.weakFocus)||positionProfile.weeklyFocus||skillPriority?.focus||(goal?focusMap[goal.key]||'ボールを受ける':'ボールを受ける'),level=feedback.assessed?feedback.level:((growth.level||2)<=2?1:(growth.level||2)>=4?3:2);
+ const weaponPatterns=getPlayerWeaponPatterns();
+ const weaponFocus=weaponPatterns.patterns[0]?.actions?.[1]||null;
+ const focus=(feedback.level===1&&feedback.weakFocus)||positionProfile.weeklyFocus||weaponFocus||skillPriority?.focus||(goal?focusMap[goal.key]||'ボールを受ける':'ボールを受ける'),level=feedback.assessed?feedback.level:((growth.level||2)<=2?1:(growth.level||2)>=4?3:2);
  const goalText=goal?.goal||'受ける前に周囲を確認し、相手を見てプレーを選ぶ';
  const primary=preferred?{title:'実績優先｜'+preferred.title,focus:repeated.focus,minutes:preferred.minutes,category:'判断力・実績優先',note:'【対象課題】'+repeated.issue+'\n【過去の比較】改善 '+preferred.stats.improved+'/'+preferred.stats.count+'件・成功率 '+preferred.stats.successRate+'%\n'+preferred.note+'\n【手順】'+preferred.steps.join('／'),why:'比較2件以上・改善2件以上・成功率50%以上の実績を優先',sourceMatch:{alternativeDecisionPractice:true,focus:repeated.focus,decisionIssue:repeated.issue,practiceMethod:preferred.title,preferredMethodApplied:true,methodEvidenceCount:preferred.stats.count,methodSuccessRate:preferred.stats.successRate}}:{title:focus==='ドリブル'?'加速ドリブル＋判断':'首振り＋前向きファーストタッチ',focus,minutes:focus==='ドリブル'?15:12,category:'判断力・次の目標',note:'【今週の最優先目標】'+goalText+'\n'+(focus==='ドリブル'?'マーカーで左右に運び、親子1対1で相手の重心を見て突破方向を選ぶ。':'受ける前に左右・背後を確認し、半身で受けて前進・パス・キープを選ぶ。'),why:'判断力レベルと次の目標「'+(goal?.key||'周囲の確認')+'」を反映'};
+ if(weaponPatterns.hasEvidence){const pattern=weaponPatterns.patterns[0];primary.note+='\n【確認済みの武器パターン】'+pattern.actions.join(' → ')+'（異なる試合 '+pattern.matches+'試合・連続場面 '+pattern.count+'組）。この流れを練習で再現する。';primary.why+='／複数試合で再現されたプレー連係を反映';}
  if(positionProfile.best){const topStyle=positionProfile.best.styles[0];primary.note+='\n【ポジション別分析】評価が比較可能な位置の中で「'+positionProfile.best.label+'」の良かった率が高い（'+positionProfile.best.good+'/'+positionProfile.best.total+'場面）。'+(topStyle?'この位置で多く記録された動きは「'+topStyle.style+'」（'+topStyle.good+'/'+topStyle.total+'場面）。':'');primary.why+='／ポジション別の確認済み記録を反映';}
  if(skillPriority){primary.note+='\n【能力分析からの重点】'+skillPriority.focus+'。試合・練習の保存記録をもとに優先候補として選択。';primary.why+='／能力分析の優先テーマを反映';}
  if(feedback.assessed){primary.minutes=Math.max(8,primary.minutes+(feedback.level===1?-3:feedback.level===3?2:0));primary.title=(feedback.level===1?'基礎から再調整｜':feedback.level===3?'応用へステップアップ｜':'継続・安定｜')+primary.title;primary.note+='\n【前週の結果】'+feedback.reason+'。'+(feedback.avgCompletion===null?'':'平均チェック達成 '+feedback.avgCompletion+'%。');primary.why+='／前週の振り返り '+feedback.assessed+'件を反映';}
