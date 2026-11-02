@@ -2573,8 +2573,11 @@ function createPreMatchPreparation(){
  const roleLabel=role==='未選択'?'ポジション未指定':role;
  const saved=(state.preMatchPlans||[]).find(x=>x.date===dateValue);
  const focus=recent[0]?.focus||'ボールを受ける';
+ const lastReview=recent[0]?.reviewStatus||'';
+ const focusCue={'ドリブル':'ゆっくりしたボールタッチと方向転換','シュート':'近距離で軸足とフォームを確認するだけ','パス':'近距離の正確なインサイドパス','ボールを受ける':'半身で受ける姿勢とファーストタッチ','守備・プレス':'ステップと身体の向きを軽く確認','オフザボール':'受ける前に周囲を見る動きを確認','その他':'得意なボールタッチ'}[focus]||'得意なボールタッチ';
+ const reviewCue=lastReview==='難しかった'?'直近の練習が難しかったため、新しい課題には進まず、できる動きを軽く確認する。':lastReview==='できた'?'直近の練習でできた動きを、疲れない強さで一度だけ確認する。':'直近の練習テーマ「'+focus+'」を軽く確認する。';
  const isForward=['トップ','FW'].includes(role),isSide=role==='サイド',isMid=['中盤','MF'].includes(role);
- const dayBefore={title:'前日｜軽く動いて感覚を整える',minutes:tired?5:10,menu:tired?'散歩・軽い関節運動だけ。ボール練習は休んでもOK。':'軽いボールタッチ3分→左右のインサイドパス各5回→ゆっくりドリブル2分。全力ダッシュ・強いシュートはしない。',cue:'早めに休み、睡眠と水分を優先。'};
+ const dayBefore={title:'前日｜軽く動いて感覚を整える',minutes:tired?5:10,menu:tired?'散歩・軽い関節運動だけ。ボール練習は休んでもOK。':'軽いボールタッチ3分→'+focusCue+'を2分。全力ダッシュ・強いシュートはしない。',cue:reviewCue+' 早めに休み、睡眠と水分を優先。'};
  const matchDay={title:'当日｜身体を起こす',minutes:tired?5:8,menu:'歩く・軽いジョグ2分→動的ストレッチ→短いパス・ボールタッチ。疲れない強さで止める。',cue:'汗をかきすぎず、身体が軽い状態で終える。'};
  const roleCue=isForward?'前を向く準備と、ゴール方向への最初の一歩':isSide?'タッチライン際での受け方と、縦・中の選択':isMid?'周囲を見て半身で受け、次のプレーを早く選ぶ':'周囲を見て、受ける前の身体の向きを整える';
  const immediate={title:'試合直前｜短く反応を確認',minutes:tired?3:5,menu:'軽いボールタッチ→近距離パス→短い方向転換を各数回。シュートやダッシュは必要最小限にし、チームのウォームアップを優先。',cue:roleCue+'。'};
@@ -2584,7 +2587,7 @@ function createPreMatchPreparation(){
  const options=positionOptions.map(x=>'<option value="'+esc(x)+'" '+(x===role?'selected':'')+'>'+esc(x==='未選択'?'指定しない':x)+'</option>').join('');
  const dateInput='<label class="label">試合日</label><input type="date" value="'+esc(dateValue)+'" onchange="updatePreMatchDate(this.value)"><label class="label">試合でのポジション</label><select onchange="updatePreMatchPosition(this.value)">'+options+'</select>';
  const timing=days<0?'設定した試合日は過去の日付です。':days===0?'試合当日です。':days===1?'試合は明日です。':'試合まで '+days+' 日です。';
- const recentText=recent.length?'直近7日：練習 '+recent.length+'件／きつめ・難しかった '+hard+'件':'直近7日の練習記録なし。負荷は推測しません。';
+ const recentText=recent.length?'直近7日：練習 '+recent.length+'件／きつめ・難しかった '+hard+'件／最近のテーマ '+focus+'・振り返り '+(lastReview||'未評価'):'直近7日の練習記録なし。負荷・課題は推測しません。';
  const fatigue=tired?'負荷が高めの記録があるため、全メニューを短縮しています。':'疲労をためない軽い内容です。';
  const content=phases.map(p=>{
   const result=plan?.phases?.find(x=>x.key===p.key);
