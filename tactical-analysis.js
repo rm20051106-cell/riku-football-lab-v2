@@ -775,6 +775,15 @@ function getTacticalTransferPlanRecommendations(){
  });
  return out;
 }
+function getTacticalRoleGuidance(role,actionLabel){
+ const guidance={
+  'トップ':{goal:'相手DFの視野から外れる位置を取り、味方が前を向く瞬間に足元・背後へ動き分ける',practice:'DFの背中側から左右へ立ち位置を変え、パスの合図で足元または背後へ動き出す'},
+  'サイド':{goal:'タッチライン際の幅を保ち、相手との距離に応じて外側・内側の受け場所を選ぶ',practice:'サイドの幅を取り、味方の向きと相手の寄せ方を見て外・内のサポート角度を作る'},
+  '中盤':{goal:'相手の背中側や味方の斜めに立ち、前向きで受けられる角度を作る',practice:'周囲を確認して半身で立ち、味方との三角形を保ちながら斜めのパスコースを作る'},
+  'その他':{goal:'手動確認した役割の範囲で、周囲確認・立ち位置・サポートを継続して確認する',practice:'その日の役割と状況を先に決め、周囲確認・立ち位置・サポート角度を反復する'}
+ };
+ return guidance[role]||null;
+}
 function applyTacticalTransferGoalsToPlan(plans){
  const goals=getTacticalTransferPlanRecommendations();
  const priority=goals.find(x=>x.type==='training');
@@ -786,7 +795,7 @@ function applyTacticalTransferGoalsToPlan(plans){
    '立ち位置':{title:'相手の間・背後・外側を見つける',note:'味方と重ならず、相手の間・背後・外側の空いたレーンで受ける。'}
   };
   const t=templates[priority.label];
-  if(t){const index=Math.min(1,plans.length-1);plans[index]={...plans[index],title:t.title,category:'試合判断の再現',minutes:12,note:t.note+'\\n\\n【試合再現トラッキング】'+priority.context.role+'｜'+priority.context.pressure+'・'+priority.context.zone+'・'+priority.context.scoreState,why:'同じ状況の試合手動確認で繰り返し見られた課題を練習テーマに反映'};}
+  if(t){const index=Math.min(1,plans.length-1),roleGuidance=getTacticalRoleGuidance(priority.context.role,priority.label);plans[index]={...plans[index],title:priority.context.role+'向け：'+t.title,category:'試合判断の再現',minutes:12,note:t.note+(roleGuidance?'\\n\\n【'+priority.context.role+'の役割目標】'+roleGuidance.goal+'。\\n【役割に合わせた練習】'+roleGuidance.practice+'。':'')+'\\n\\n【試合再現トラッキング】'+priority.context.role+'｜'+priority.context.pressure+'・'+priority.context.zone+'・'+priority.context.scoreState,why:'手動確認した役割「'+priority.context.role+'」と同じ状況の試合記録で繰り返し見られた課題を反映'};}
  }
  return plans;
 }
