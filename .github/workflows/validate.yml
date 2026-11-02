@@ -6,7 +6,7 @@ on:
 
 concurrency:
   group: validate-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   syntax-and-container:
@@ -46,6 +46,16 @@ jobs:
           for file in /tmp/riku-inline-scripts/*.js; do
             node --check "$file"
           done
+
+      - name: Install browser E2E dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          python -m pip install --disable-pip-version-check playwright
+          python -m playwright install --with-deps chromium
+
+      - name: Run browser and frontend regression tests
+        run: python -m unittest discover -s tests -v
 
       - name: Build backend Docker image
         run: docker build -t riku-football-lab-ai ./backend
