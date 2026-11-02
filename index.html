@@ -198,7 +198,22 @@ function updateTrainingStep(id,index,checked){
  if(!checked){const at=done.indexOf(index);if(at>=0)done.splice(at,1);}
  record.steps=steps;record.stepsDone=done;saveTrainingReflectionSnapshot(record);record.updatedAt=new Date().toISOString();persist();renderAll();
 }
-function saveTraining(){let menu=trainMenu.value;if(!menu)return;const menuData=state.menus.find(x=>x.name===menu);const chosen=trainFocus.value==='自動'?inferTrainingFocus(menu,menuData?.category):trainFocus.value;const checkPrompts={'ドリブル':'試合で相手を抜くための運び出し・切り返しを使えたか','パス':'受ける前に周囲を見て、味方へ正確につなげたか','シュート':'軸足とミートを意識して、狙ったコースへ打てたか','ボールを受ける':'受ける前に首を振り、前を向くタッチができたか','守備・プレス':'飛び込まずに相手の進行方向を限定できたか','オフザボール':'パスが出る前に動き出して、受ける場所を作れたか','その他':'練習で意識したポイントを試合で一度でも試せたか'};const record={id:Date.now(),date:trainDate.value||today(),menu,minutes:+trainMinutes.value||0,effort:trainEffort.value,focus:chosen,note:trainNote.value.trim(),steps:getTrainingSteps(chosen),stepsDone:[],matchCheckPrompt:checkPrompts[chosen]||checkPrompts['その他'],matchCheckStatus:'次の試合で確認',sourceMatch:pendingTrainingSource?{...pendingTrainingSource}:null};if(pendingTrainingSource)record.sourceMatch={...pendingTrainingSource};if(record.sourceMatch?.matchId&&record.sourceMatch?.eventId){record.sourceMatch.issueKey=record.sourceMatch.issueKey||getTrainingIssueKey(record.sourceMatch);record.sourceMatch.linkedManuallyConfirmed=true;}else if(record.sourceMatch){record.sourceMatch.linkedManuallyConfirmed=false;}saveTrainingReflectionSnapshot(record);state.trainings.unshift(record);pendingTrainingSource=null;trainNote.value='';trainFocus.value='自動';persist();alert('練習記録を保存しました。次の試合で「'+(checkPrompts[chosen]||checkPrompts['その他'])+'」を確認できます。')}
+function saveTraining(){
+ let menu=trainMenu.value;if(!menu)return;
+ const menuData=state.menus.find(x=>x.name===menu),chosen=trainFocus.value==='自動'?inferTrainingFocus(menu,menuData?.category):trainFocus.value;
+ const checkPrompts={'ドリブル':'試合で相手を抜くための運び出し・切り返しを使えたか','パス':'受ける前に周囲を見て、味方へ正確につなげたか','シュート':'軸足とミートを意識して、狙ったコースへ打てたか','ボールを受ける':'受ける前に首を振り、前を向くタッチができたか','守備・プレス':'飛び込まずに相手の進行方向を限定できたか','オフザボール':'パスが出る前に動き出して、受ける場所を作れたか','その他':'練習で意識したポイントを試合で一度でも試せたか'};
+ const source=pendingTrainingSource?{...pendingTrainingSource}:null;
+ const record={id:nextUniqueRecordId(state.trainings,state.clips,state.forms,state.matchAnalyses),date:trainDate.value||today(),menu,minutes:+trainMinutes.value||0,effort:trainEffort.value,focus:chosen,note:trainNote.value.trim(),steps:getTrainingSteps(chosen),stepsDone:[],matchCheckPrompt:checkPrompts[chosen]||checkPrompts['その他'],matchCheckStatus:'次の試合で確認',sourceMatch:source};
+ if(record.sourceMatch?.matchId&&record.sourceMatch?.eventId){record.sourceMatch.issueKey=record.sourceMatch.issueKey||getTrainingIssueKey(record.sourceMatch);record.sourceMatch.linkedManuallyConfirmed=true;}
+ else if(record.sourceMatch)record.sourceMatch.linkedManuallyConfirmed=false;
+ saveTrainingReflectionSnapshot(record);state.trainings.unshift(record);
+ if(!persist()){
+  state.trainings=state.trainings.filter(x=>String(x.id)!==String(record.id));pendingTrainingSource=source;renderAll();
+  alert('練習記録を端末に保存できませんでした。入力内容を残したまま、空き容量とバックアップを確認してください。');return;
+ }
+ pendingTrainingSource=null;trainNote.value='';trainFocus.value='自動';renderAll();
+ alert('練習記録を保存しました。次の試合で「'+(checkPrompts[chosen]||checkPrompts['その他'])+'」を確認できます。');
+}
 function addMenu(){let name=newMenuName.value.trim();if(!name){alert('メニュー名を入力してください');return}state.menus.push({name,category:newMenuCategory.value,minutes:10});newMenuName.value='';persist()}
 function removeMenu(i){if(!confirm('このメニューを削除しますか？'))return;state.menus.splice(i,1);persist()}
 function saveMeasure(){let v=Number(measureValue.value);if(!measureValue.value||!Number.isFinite(v)){alert('数値を入力してください');return}state.measures.unshift({date:measureDate.value||today(),type:measureType.value,value:v,unit:measureUnit.value,note:measureNote.value.trim()});measureValue.value='';measureNote.value='';persist();alert('測定値を保存しました')}
@@ -541,7 +556,7 @@ function saveMatchEventEdits(matchId,eventId){
  markManualMatchReview(ev,review);ev.actionType=action;ev.assessment=assessment;ev.assessmentSource='manual';ev.manualAssessmentAt=new Date().toISOString();ev.note=read('note').trim().slice(0,300);ev.manualGrowthFocus=['加速ドリブル','切り返し','判断力','ポジショニング'].includes(read('manualGrowthFocus'))?read('manualGrowthFocus'):'';ev.manualGrowthIssue=read('manualGrowthIssue').trim().slice(0,80);ev.manualGrowthSource='manual';
  ev.situationType=read('situationType');ev.situationLabel=read('situationLabel').trim().slice(0,80);
  ev.availableOptions=[...root.querySelectorAll('input[data-field="availableOption"]:checked')].map(x=>x.value);
- ev.actualChoice=read('actualChoice');ev.outcome=read('outcome');ev.decisionQuality=read('decisionQuality')||'未評価';
+ ev.actualChoice=read('actualChoice');ev.outcome=read('outcome');ev.decisionQuality=read('decisionQuality')||'未評価';ev.decisionReviewSource='manual';ev.decisionReviewAt=new Date().toISOString();
  if(ev.actualChoice&&ev.availableOptions.length&&!ev.availableOptions.includes(ev.actualChoice)){alert('実際に選んだプレーは、選択肢にもチェックしてください。');return}
  const linked=syncTrainingMatchEventLink(match,ev);
  persist();
@@ -2044,14 +2059,16 @@ function getPreviousWeekMatchAdjustment(weekStart){
  const from=fmt(start),to=fmt(end);
  const matches=(state.matchAnalyses||[]).filter(m=>String(m.date||'')>=from&&String(m.date||'')<=to);
  const events=matches.flatMap(m=>(m.candidateEvents||[]).filter(e=>isManuallyReviewedMatchEvent(e)).map(e=>({...e,matchDate:m.date,matchTitle:m.title})));
- const assessed=events.filter(e=>['良かった','改善したい'].includes(e.assessment)||['最適な選択','良い選択','別の選択肢もあった','判断が遅れた'].includes(e.decisionQuality)||['周囲を確認できた','ボールだけを見ていた','味方・相手の位置を確認できなかった'].includes(e.decisionScan));
- const good=assessed.filter(e=>e.assessment==='良かった').length,improve=assessed.filter(e=>e.assessment==='改善したい').length;
- const q=assessed.filter(e=>['最適な選択','良い選択','別の選択肢もあった','判断が遅れた'].includes(e.decisionQuality));
+ const assessmentEvents=events.filter(e=>e.assessmentSource==='manual'&&['良かった','改善したい'].includes(e.assessment));
+ const decisionEvents=events.filter(e=>e.decisionReviewSource==='manual');
+ const assessed=[...new Map([...assessmentEvents,...decisionEvents.filter(e=>['最適な選択','良い選択','別の選択肢もあった','判断が遅れた'].includes(e.decisionQuality)||['周囲を確認できた','ボールだけを見ていた','味方・相手の位置を確認できなかった'].includes(e.decisionScan))].map(e=>[String(e.id),e])).values()];
+ const good=assessmentEvents.filter(e=>e.assessment==='良かった').length,improve=assessmentEvents.filter(e=>e.assessment==='改善したい').length;
+ const q=decisionEvents.filter(e=>['最適な選択','良い選択','別の選択肢もあった','判断が遅れた'].includes(e.decisionQuality));
  const qGood=q.filter(e=>['最適な選択','良い選択'].includes(e.decisionQuality)).length;
- const scan=assessed.filter(e=>['周囲を確認できた','ボールだけを見ていた','味方・相手の位置を確認できなかった'].includes(e.decisionScan));
+ const scan=decisionEvents.filter(e=>['周囲を確認できた','ボールだけを見ていた','味方・相手の位置を確認できなかった'].includes(e.decisionScan));
  const scanGood=scan.filter(e=>e.decisionScan==='周囲を確認できた').length;
  const focusCounts={};
- const needsFocus=assessed.filter(e=>e.assessment==='改善したい'||e.decisionQuality==='別の選択肢もあった'||e.decisionQuality==='判断が遅れた'||e.decisionScan==='ボールだけを見ていた'||e.decisionScan==='味方・相手の位置を確認できなかった');
+ const needsFocus=[...assessmentEvents.filter(e=>e.assessment==='改善したい'),...decisionEvents.filter(e=>e.decisionQuality==='別の選択肢もあった'||e.decisionQuality==='判断が遅れた'||e.decisionScan==='ボールだけを見ていた'||e.decisionScan==='味方・相手の位置を確認できなかった')];
  needsFocus.forEach(e=>{const focus=getTrainingFocusForMatchEvent(e);focusCounts[focus]=(focusCounts[focus]||0)+1;});
  const weakFocus=Object.keys(focusCounts).sort((a,b)=>focusCounts[b]-focusCounts[a])[0]||'';
  const qRate=q.length?Math.round(qGood/q.length*100):null,scanRate=scan.length?Math.round(scanGood/scan.length*100):null;
@@ -2153,7 +2170,7 @@ function getWeeklyCoachPlan(){
  const weekDates=getNextCoachWeekDates(),start=new Date(weekDates[0]+'T00:00:00');
  const dateAt=(offset)=>weekDates[offset]||weekDates[6];
  const fmtWeekStart=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
- const trainingFeedback=getPreviousWeekTrainingAdjustment(fmtWeekStart(start)),matchFeedback=getPreviousWeekMatchAdjustment(fmtWeekStart(start)),growth=getDecisionGrowthLevel(),repeated=getRepeatedDecisionIssue(),preferred=repeated?getPreferredDecisionPracticePlan(repeated.issue):null,goal=growth.goal,skillTrends=getSkillTrendSummary(),skillPriority=skillTrends.priority||getPlayerSkillProfile().priority;
+ const trainingFeedback=getPreviousWeekTrainingAdjustment(fmtWeekStart(start)),matchFeedback=getPreviousWeekMatchAdjustment(fmtWeekStart(start)),growth=getDecisionGrowthLevel(),repeated=getRepeatedDecisionIssue(),preferred=repeated?getPreferredDecisionPracticePlan(repeated.issue):null,growthGoal=state.settings?.nextMatchGoal?.source==='manual-reviewed-match-growth'?state.settings.nextMatchGoal:null,goal=growth.goal,skillTrends=getSkillTrendSummary(),skillPriority=skillTrends.priority||getPlayerSkillProfile().priority;
  const combinedLevel=matchFeedback.assessed&&matchFeedback.level===1?1:matchFeedback.assessed&&matchFeedback.level===3&&(!trainingFeedback.assessed||trainingFeedback.level!==1)?3:trainingFeedback.level;
  const feedback={...trainingFeedback,level:combinedLevel,assessed:trainingFeedback.assessed||matchFeedback.assessed,weakFocus:matchFeedback.weakFocus||trainingFeedback.weakFocus,reason:matchFeedback.assessed?matchFeedback.reason+(trainingFeedback.assessed?'。'+trainingFeedback.reason:''):trainingFeedback.reason,matchFeedback};
  const focusMap={'判断の質':'ボールを受ける','周囲の確認':'ボールを受ける','練習実行':'ドリブル','試合への転移':'ドリブル'};
@@ -2161,9 +2178,9 @@ function getWeeklyCoachPlan(){
  const weaponPatterns=getPlayerWeaponPatterns();
  const weaponPractice=getWeaponPracticePlan();
  const weaponFocus=weaponPatterns.patterns[0]?.actions?.[1]||null;
- const focus=(feedback.level===1&&feedback.weakFocus)||positionProfile.weeklyFocus||weaponFocus||skillPriority?.focus||(goal?focusMap[goal.key]||'ボールを受ける':'ボールを受ける'),level=feedback.assessed?feedback.level:((growth.level||2)<=2?1:(growth.level||2)>=4?3:2);
- const goalText=goal?.goal||'受ける前に周囲を確認し、相手を見てプレーを選ぶ';
- const primary=preferred?{title:'実績優先｜'+preferred.title,focus:repeated.focus,minutes:preferred.minutes,category:'判断力・実績優先',note:'【対象課題】'+repeated.issue+'\n【過去の比較】改善 '+preferred.stats.improved+'/'+preferred.stats.count+'件・成功率 '+preferred.stats.successRate+'%\n'+preferred.note+'\n【手順】'+preferred.steps.join('／'),why:'比較2件以上・改善2件以上・成功率50%以上の実績を優先',sourceMatch:{alternativeDecisionPractice:true,focus:repeated.focus,decisionIssue:repeated.issue,practiceMethod:preferred.title,preferredMethodApplied:true,methodEvidenceCount:preferred.stats.count,methodSuccessRate:preferred.stats.successRate}}:{title:focus==='ドリブル'?'加速ドリブル＋判断':'首振り＋前向きファーストタッチ',focus,minutes:focus==='ドリブル'?15:12,category:'判断力・次の目標',note:'【今週の最優先目標】'+goalText+'\n'+(focus==='ドリブル'?'マーカーで左右に運び、親子1対1で相手の重心を見て突破方向を選ぶ。':'受ける前に左右・背後を確認し、半身で受けて前進・パス・キープを選ぶ。'),why:'判断力レベルと次の目標「'+(goal?.key||'周囲の確認')+'」を反映'};
+ const focus=(feedback.level===1&&feedback.weakFocus)||growthGoal?.focus||positionProfile.weeklyFocus||weaponFocus||skillPriority?.focus||(goal?focusMap[goal.key]||'ボールを受ける':'ボールを受ける'),level=feedback.assessed?feedback.level:((growth.level||2)<=2?1:(growth.level||2)>=4?3:2);
+ const goalText=growthGoal?.note||goal?.goal||'受ける前に周囲を確認し、相手を見てプレーを選ぶ';
+ const primary=preferred?{title:'実績優先｜'+preferred.title,focus:repeated.focus,minutes:preferred.minutes,category:'判断力・実績優先',note:'【対象課題】'+repeated.issue+'\n【過去の比較】改善 '+preferred.stats.improved+'/'+preferred.stats.count+'件・成功率 '+preferred.stats.successRate+'%\n'+preferred.note+'\n【手順】'+preferred.steps.join('／'),why:'比較2件以上・改善2件以上・成功率50%以上の実績を優先',sourceMatch:{alternativeDecisionPractice:true,focus:repeated.focus,decisionIssue:repeated.issue,practiceMethod:preferred.title,preferredMethodApplied:true,methodEvidenceCount:preferred.stats.count,methodSuccessRate:preferred.stats.successRate}}:{title:focus==='ドリブル'?'加速ドリブル＋判断':'首振り＋前向きファーストタッチ',focus,minutes:focus==='ドリブル'?15:12,category:'判断力・次の目標',note:'【今週の最優先目標】'+goalText+'\n'+(focus==='ドリブル'?'マーカーで左右に運び、親子1対1で相手の重心を見て突破方向を選ぶ。':'受ける前に左右・背後を確認し、半身で受けて前進・パス・キープを選ぶ。'),why:growthGoal?'本人確認済み試合の成長目標「'+(growthGoal.growthFocus||growthGoal.focus)+'」を翌週計画へ反映':'判断力レベルと次の目標「'+(goal?.key||'周囲の確認')+'」を反映'};
  primary.note+='\n\n'+weaponPractice.note;primary.why+='／'+weaponPractice.why;if(weaponPractice.mode==='weapon'){primary.title=weaponPractice.title;primary.focus=weaponPractice.focus;primary.minutes=weaponPractice.minutes;primary.category='武器再現トレーニング';primary.sourceMatch=weaponPractice.sourceMatch;}
  if(weaponPatterns.hasEvidence){const pattern=weaponPatterns.patterns[0];primary.note+='\n【確認済みの武器パターン】'+pattern.actions.join(' → ')+'（異なる試合 '+pattern.matches+'試合・連続場面 '+pattern.count+'組）。この流れを練習で再現する。';primary.why+='／複数試合で再現されたプレー連係を反映';}
  if(positionProfile.best){const topStyle=positionProfile.best.styles[0];primary.note+='\n【ポジション別分析】評価が比較可能な位置の中で「'+positionProfile.best.label+'」の良かった率が高い（'+positionProfile.best.good+'/'+positionProfile.best.total+'場面）。'+(topStyle?'この位置で多く記録された動きは「'+topStyle.style+'」（'+topStyle.good+'/'+topStyle.total+'場面）。':'');primary.why+='／ポジション別の確認済み記録を反映';}
