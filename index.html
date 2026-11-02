@@ -2688,8 +2688,9 @@ function renderNextMatchGoalVideoEvidence(){
 function renderNextMatchGoalPanel(){
  const goal=state.settings?.nextMatchGoal||null;
  const seasonGoal=getActiveSeasonGoal();
- const suggestedFocus=goal?.focus||seasonGoal?.focus||'ドリブル';
- const suggestedNote=goal?.note||seasonGoal?.note||'';
+ const growthSuggestion=getMatchGrowthRecommendations().find(x=>x.latest);
+ const suggestedFocus=goal?.focus||seasonGoal?.focus||growthSuggestion?.trainingFocus||'ドリブル';
+ const suggestedNote=goal?.note||seasonGoal?.note||growthSuggestion?.goal||'';
  const history=getNextMatchGoalHistory();
  const matches=(state.matchAnalyses||[]).slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
  let html='<h3 style="margin-top:14px">次の試合の目標設定・試合後チェック</h3><div class="card"><div class="tiny muted">試合前に1つだけ意識するテーマを決め、試合後に該当する試合記録と達成度を保存します。AIの自動判定ではなく、本人・保護者の振り返りです。</div>';
@@ -3194,7 +3195,7 @@ function getMatchGrowthTimelineData(){
    const sessions=training.filter(t=>String(t.date||'')>previousDate&&String(t.date||'')<String(row.date||''));
    const completed=sessions.filter(t=>t.reviewStatus==='できた'||t.matchTransferStatus==='できた').length;
    const difficult=sessions.filter(t=>['難しかった','まだ試せていない'].includes(t.reviewStatus)||t.matchTransferStatus==='まだ'||t.effort==='きつめ').length;
-   return {...row,trainingSessions:sessions.length,trainingCompleted:completed,trainingDifficult:difficult,trainingMinutes:sessions.reduce((n,t)=>n+(Number(t.minutes)||0),0),trainingNotes:sessions.map(t=>({date:t.date,review:t.reviewStatus||'未入力',transfer:t.matchTransferStatus||'未入力',completion:Array.isArray(t.steps)&&t.steps.length?Math.round((t.stepsDone||[]).length/t.steps.length*100):null}))};
+   return {...row,trainingSessions:sessions.length,trainingCompleted:completed,trainingDifficult:difficult,trainingMinutes:sessions.reduce((n,t)=>n+(Number(t.minutes)||0),0),trainingNotes:sessions.map(t=>({date:t.date,review:t.reviewStatus||'未入力',transfer:t.matchTransferStatus||'未入力',completion:Array.isArray(t.steps)&&t.steps.length?Math.round((t.stepsDone||[]).length/t.steps.length*100):null,reflection:t.reflectionSnapshot||buildTrainingReflection(t)}))};
   });
   const issueKeys=[...new Set(enriched.flatMap(row=>Object.keys(row.issues)))];
   const repeatedIssues=issueKeys.map(key=>{
@@ -3230,7 +3231,7 @@ function renderMatchGrowthTimeline(){
    const rate=row.total>=2?'良かった割合 '+row.rate+'%':'割合比較保留（評価2場面未満）';
    const scenes=row.rated.slice(0,3).map(ev=>'<button class="secondary small" onclick="openMatchEventInHistory('+Number(row.match.id)+','+JSON.stringify(String(ev.id))+')">'+formatMatchTime(ev.time)+' '+(ev.assessment==='良かった'?'良':'改善')+'</button>').join(' ');
    const trainingNotes=row.trainingNotes.slice(0,2).map(t=>'<div class="tiny muted">練習 '+esc(t.date)+'：振り返り '+esc(t.review)+'／試合再現 '+esc(t.transfer)+(t.completion===null?'':'／完了 '+t.completion+'%')+'</div>').join('');
-   return '<div class="listitem" style="display:block"><b>'+esc(row.date)+'｜'+esc(row.title)+'</b><div class="tiny muted">'+rating+'｜'+rate+'</div><div class="tiny muted">前回試合後〜今回試合前の練習：'+training+'</div>'+trainingNotes+(scenes?'<div class="tiny">確認済み場面：'+scenes+'</div>':'')+'</div>';
+   const reflectionHtml=row.trainingNotes.slice(0,2).map(t=>'<div class="tiny">練習振り返り：良かった '+esc((t.reflection?.good||[]).join('／')||'未記録')+'｜改善 '+esc((t.reflection?.improve||[]).join('／')||'未記録')+'｜次回 '+esc((t.reflection?.next||[]).join('／')||'未記録')+'</div>').join('');return '<div class="listitem" style="display:block"><b>'+esc(row.date)+'｜'+esc(row.title)+'</b><div class="tiny muted">'+rating+'｜'+rate+'</div><div class="tiny muted">前回試合後〜今回試合前の練習：'+training+'</div>'+trainingNotes+reflectionHtml+(scenes?'<div class="tiny">確認済み場面：'+scenes+'</div>':'')+'</div>';
   }).join(''):'<div class="empty">この分類の成長比較はまだありません。試合場面を手動確認し、成長比較の分類を選んで保存してください。</div>';
   const previous=item.previous,latest=item.latest;
   const compare=previous&&latest&&previous.total>=2&&latest.total>=2?'<div class="tiny">直近比較：'+previous.rate+'% → '+latest.rate+'%（'+(latest.rate-previous.rate>0?'+':'')+(latest.rate-previous.rate)+'ポイント）</div>':'<div class="tiny muted">直近2試合の比較は、各試合2場面以上の手動評価がそろうまで保留。</div>';
