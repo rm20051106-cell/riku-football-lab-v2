@@ -51,6 +51,7 @@ function render(){
  renderTacticalMatchReports();
  renderTacticalSituationAnalysis();
  renderTacticalDecisionScenarios();
+ renderTacticalTrainingLog();
  let host=document.getElementById(PANEL_ID);
  if(!host){
   const history=document.getElementById('matchScanRecords');
@@ -392,6 +393,69 @@ function applyTacticalDecisionTrainingPlan(plans){
   plans[2] = {...base, title:'試合状況別の判断トレーニング', category:'判断力', minutes:chosen.minutes, note:(base.note?base.note+'\\n\\n':'')+note, why:'手動確認済みの同じ試合状況 '+chosen.count+'場面から練習シナリオを作成'};
  }
  return plans;
+}
+
+
+function getTacticalTrainingRecords(){
+ const rows=(typeof state!=='undefined'&&Array.isArray(state.tacticalDecisionTrainingRecords))?state.tacticalDecisionTrainingRecords:[];
+ return rows.filter(x=>x&&x.player==='陸玖'&&x.completed===true&&x.responseSpeed&&x.optionsFound&&x.adapted);
+}
+function summarizeTacticalTraining(){
+ const rows=getTacticalTrainingRecords().slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+ const recent=rows.slice(-5);
+ if(recent.length<3)return {rows,recent,ready:false,reason:'本人の実施記録が3回未満です。3回以上記録すると傾向を表示します。'};
+ const fast=recent.filter(x=>x.responseSpeed==='2秒以内').length;
+ const slow=recent.filter(x=>x.responseSpeed==='3秒以上').length;
+ const options=recent.filter(x=>x.optionsFound==='3つ以上').length;
+ const limited=recent.filter(x=>x.optionsFound==='1つ').length;
+ const adapted=recent.filter(x=>x.adapted==='状況に合わせて変えられた').length;
+ const unchanged=recent.filter(x=>x.adapted==='状況が変わっても同じ選択だった').length;
+ const scores=[{key:'speed',label:'判断の速さ',score:fast-slow,detail:fast+'回は2秒以内／'+slow+'回は3秒以上'},{key:'options',label:'選択肢の見つけ方',score:options-limited,detail:options+'回は3つ以上／'+limited+'回は1つ'},{key:'adapt',label:'状況に応じた判断の変化',score:adapted-unchanged,detail:adapted+'回は状況に合わせて変更／'+unchanged+'回は同じ選択'}];
+ const priority=scores.slice().sort((a,b)=>a.score-b.score)[0];
+ return {rows,recent,ready:true,scores,priority};
+}
+function renderTacticalTrainingLog(){
+ const videoView=document.getElementById('video');if(!videoView)return;
+ let host=document.getElementById('tacticalTrainingLog');
+ if(!host){host=document.createElement('section');host.id='tacticalTrainingLog';host.className='card';}
+ const scenarios=getTacticalDecisionScenarios();
+ const available=[...scenarios.personalized,...scenarios.general];
+ const summary=summarizeTacticalTraining();
+ const options=available.map((x,i)=>'<option value="'+i+'">'+escT(x.title)+(x.personalized?'（本人記録に基づく）':'（一般練習）')+'</option>').join('');
+ const metrics=summary.ready?summary.scores.map(x=>'<div class="listitem"><div class="grow"><b>'+escT(x.label)+'</b><div class="tiny muted">'+escT(x.detail)+'</div></div><span class="tiny">'+(x.score>0?'良い傾向':x.score<0?'練習テーマ候補':'記録上は同程度')+'</span></div>').join(''):'<div class="note">評価保留：'+escT(summary.reason)+' 記録のない練習を実施済みとして扱いません。</div>';
+ const priority=summary.ready?'<div class="note"><b>次回の重点：</b>'+escT(summary.priority.label)+'。'+(summary.priority.key==='speed'?'まずは落ち着いて周囲を見てから、短い時間で選択肢を決める練習。':summary.priority.key==='options'?'受ける前に左右・前方を見て、パス・ドリブル・キープなど複数の選択肢を探す練習。':'守備役の位置や試合状況を変え、状況に応じて選択を切り替える練習。')+'</div>':'';
+ host.innerHTML='<h2>⑪ 判断トレーニング実施記録・自動調整</h2><p class="tiny muted">練習後に陸玖本人が実際に行った結果だけを記録します。動画や試合分析から実施結果を推測しません。</p><div class="card"><b>今回の練習</b><label class="label">シナリオ<select id="tacticalTrainingScenario">'+options+'</select></label><label class="label">判断を決めるまでの時間<select id="tacticalTrainingSpeed"><option value="2秒以内">2秒以内</option><option value="2〜3秒">2〜3秒</option><option value="3秒以上">3秒以上</option><option value="判断できなかった">判断できなかった</option></select></label><label class="label">見つけられた選択肢<select id="tacticalTrainingOptions"><option value="1つ">1つ</option><option value="2つ">2つ</option><option value="3つ以上">3つ以上</option><option value="数えられなかった">数えられなかった</option></select></label><label class="label">状況が変わった時の判断<select id="tacticalTrainingAdapt"><option value="状況に合わせて変えられた">状況に合わせて変えられた</option><option value="同じ選択を続けた">同じ選択を続けた</option><option value="状況が変わっても同じ選択だった">状況が変わっても同じ選択だった</option><option value="状況変化なし">状況変化なし</option><option value="判断できなかった">判断できなかった</option></select></label><label class="label">ひとことメモ（任意）<input id="tacticalTrainingNote" maxlength="180" placeholder="例：右を閉じられたので左へパス"></label><button id="tacticalTrainingSave">この練習結果を記録</button><div class="tiny muted">記録者が実施を確認して保存してください。タイム計測が難しい場合は体感で選択できます。本人の記録だけを集計します。</div></div><div class="card"><h3>実施結果から見た傾向</h3><div class="tiny muted">集計対象：直近5回まで／評価開始：3回以上</div>'+metrics+priority+'<div class="tiny muted">これは練習記録の振り返りであり、医学的・競技能力の確定評価ではありません。</div></div><div class="card"><h3>最近の実施記録</h3>'+(summary.rows.length?summary.rows.slice(-8).reverse().map(x=>'<div class="listitem"><div class="grow"><b>'+escT(x.date)+'｜'+escT(x.scenarioTitle)+'</b><div class="tiny muted">速さ：'+escT(x.responseSpeed)+'｜選択肢：'+escT(x.optionsFound)+'｜状況対応：'+escT(x.adapted)+'</div></div></div>').join(''):'<div class="tiny muted">まだ実施記録はありません。</div>')+'</div>';
+ document.getElementById('tacticalTrainingSave').onclick=()=>{
+  const scenarioIndex=Number(document.getElementById('tacticalTrainingScenario').value)||0;
+  const scenario=available[scenarioIndex]||available[0];
+  if(!scenario){alert('記録する練習シナリオがありません。');return;}
+  const responseSpeed=document.getElementById('tacticalTrainingSpeed').value;
+  const optionsFound=document.getElementById('tacticalTrainingOptions').value;
+  const adapted=document.getElementById('tacticalTrainingAdapt').value;
+  if(!responseSpeed||!optionsFound||!adapted){alert('3項目を選択してください。');return;}
+  if(!Array.isArray(state.tacticalDecisionTrainingRecords))state.tacticalDecisionTrainingRecords=[];
+  state.tacticalDecisionTrainingRecords.push({id:'tdt-'+Date.now()+'-'+Math.random().toString(36).slice(2,7),player:'陸玖',completed:true,date:typeof today==='function'?today():new Date().toISOString().slice(0,10),scenarioTitle:scenario.title,scenarioPersonalized:!!scenario.personalized,responseSpeed,optionsFound,adapted,note:(document.getElementById('tacticalTrainingNote').value||'').trim().slice(0,180)});
+  if(typeof persist==='function')persist();
+  renderTacticalTrainingLog();
+  alert('陸玖の判断トレーニング実施結果を保存しました。');
+ };
+ const scenariosPanel=document.getElementById('tacticalDecisionScenarios');
+ if(scenariosPanel)scenariosPanel.insertAdjacentElement('afterend',host);else videoView.appendChild(host);
+}
+function applyTacticalTrainingResultPlan(plans){
+ if(!Array.isArray(plans)||!plans.length)return plans;
+ const summary=summarizeTacticalTraining();
+ if(!summary.ready)return plans;
+ const base=plans[2]||plans[0];if(!base)return plans;
+ const p=summary.priority;
+ const details={
+  speed:{title:'判断を素早く決めるトレーニング',note:'周囲を確認し、パス・ドリブル・キープの選択肢を見つけてから判断する。無理に急がせず、落ち着いた判断を目指す。'},
+  options:{title:'選択肢を複数見つけるトレーニング',note:'受ける前に左右・前方を確認し、パス・ドリブル・キープのうち2つ以上の選択肢を声に出してから実行する。'},
+  adapt:{title:'状況変化に合わせる判断トレーニング',note:'守備役の位置や試合状況を途中で変え、最初の選択にこだわらず、空いたスペースや味方に合わせて判断を変える。'}
+ };
+ const d=details[p.key];
+ plans[2]={...base,title:d.title,category:'判断力',minutes:10,note:d.note+'\\n\\n【本人の実施記録】直近'+summary.recent.length+'回から次回の重点を調整。',why:'陸玖本人の実施記録 '+summary.recent.length+'回を集計：'+p.label+'（'+p.detail+'）'};
+ return applyTacticalTrainingResultPlan(plans);
 }
 
 function install(){
