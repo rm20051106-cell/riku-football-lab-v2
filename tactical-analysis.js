@@ -230,8 +230,8 @@ function renderTacticalMatchReports(){
   const strengths=facts.filter(x=>x.observed>=2&&x.good>=2&&x.good>x.weak).sort((a,b)=>b.good-a.good);
   const weaknesses=facts.filter(x=>x.observed>=2&&x.weak>=2&&x.weak>=x.good).sort((a,b)=>b.weak-a.weak);
   const goals=[];
-  weaknesses.forEach(x=>{if(goals.length<3)goals.push({text:x.goal,source:x.weak+'場面で確認',status:'改善テーマ'});});
-  strengths.forEach(x=>{if(goals.length<3)goals.push({text:x.goal.replace('受ける','受ける動き')+'を次の試合でも再現する',source:x.good+'場面で確認',status:'継続目標'});});
+  if(enough)weaknesses.forEach(x=>{if(goals.length<3)goals.push({text:x.goal,source:x.weak+'場面で確認',status:'改善テーマ'});});
+  if(enough)strengths.forEach(x=>{if(goals.length<3)goals.push({text:x.goal.replace('受ける','受ける動き')+'を次の試合でも再現する',source:x.good+'場面で確認',status:'継続目標'});});
   while(goals.length<3)goals.push({text:'次の試合でも受ける前・受ける瞬間・受けた後を撮影し、'+(goals.length===0?'周囲の確認':goals.length===1?'立ち位置':'サポートと動き出し')+'を確認する',source:'この項目はまだ十分な傾向がありません',status:'観察目標・評価保留'});
   const outcomeCounts={};
   scenes.forEach(ev=>{const f=ev.tacticalReview.fields;if(f.decision&&f.decision!=='映像で確認できない'&&f.outcome&&f.outcome!=='映像で確認できない'){const key=f.decision+' → '+f.outcome;outcomeCounts[key]=(outcomeCounts[key]||0)+1;}});
