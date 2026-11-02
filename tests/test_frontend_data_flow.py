@@ -98,6 +98,11 @@ class FrontendDataFlowContracts(unittest.TestCase):
         for token in ("const missing=records.filter", "const unlinked=records.filter", "const orphan=data.keys.map", "const duplicateRecordKeys=records.map", "const duplicateGroups=[]"):
             self.assertIn(token, HTML)
 
+    def test_corrupt_backup_does_not_replace_current_local_data(self):
+        self.assertIn("const previousState=state,previousStoredState=localStorage.getItem(KEY)", HTML)
+        self.assertIn("throw Error('バックアップの内容が書き出し後に変更・破損した可能性があります。現在の記録を保護するため復元を中止しました')", HTML)
+        self.assertIn("state=previousState;try{if(previousStoredState!==null)localStorage.setItem(KEY,previousStoredState)", HTML)
+
 
 if __name__ == "__main__":
     unittest.main()
