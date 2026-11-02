@@ -103,6 +103,25 @@ class FrontendDataFlowContracts(unittest.TestCase):
         self.assertIn("throw Error('バックアップの内容が書き出し後に変更・破損した可能性があります。現在の記録を保護するため復元を中止しました')", HTML)
         self.assertIn("state=previousState;try{if(previousStoredState!==null)localStorage.setItem(KEY,previousStoredState)", HTML)
 
+    def test_positioning_review_uses_safe_persist_and_rolls_back(self):
+        start = HTML.index("function updateMatchPositioning(")
+        end = HTML.index("\nfunction ", start + 15)
+        update = HTML[start:end]
+        self.assertIn("const originalReview=ev.positioningReview?{...ev.positioningReview}:null", update)
+        self.assertIn("if(!persist()){", update)
+        self.assertIn("else delete ev.positioningReview", update)
+        self.assertIn("renderAll();", update)
+        self.assertNotIn("localStorage.setItem(KEY", update)
+
+    def test_next_match_growth_goal_is_restored_when_persist_fails(self):
+        start = HTML.index("function applyMatchGrowthGoal(")
+        end = HTML.index("\nfunction ", start + 15)
+        update = HTML[start:end]
+        self.assertIn("const previousGoal=state.settings.nextMatchGoal?", update)
+        self.assertIn("if(!persist()){", update)
+        self.assertIn("else delete state.settings.nextMatchGoal", update)
+        self.assertIn("元の目標を維持しています", update)
+
 
 if __name__ == "__main__":
     unittest.main()
