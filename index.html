@@ -611,7 +611,14 @@ function updateMatchPositioning(matchId,eventId,field,value){
  const allowed=['scanBeforeReceive','positioning','supportAngle','spaceMovement','decisionOptions'];
  if(!match||!ev||!isManuallyReviewedMatchEvent(ev)){alert('陸玖本人として確認済みの場面だけを評価できます。');return}
  if(!allowed.includes(field)||!['良かった','改善したい','映像で確認できない'].includes(value))return;
- ev.positioningReview=ev.positioningReview||{};ev.positioningReview[field]=value;ev.positioningReviewedAt=today();localStorage.setItem(KEY,JSON.stringify(state));
+ const originalReview=ev.positioningReview?{...ev.positioningReview}:null,originalReviewedAt=ev.positioningReviewedAt;
+ ev.positioningReview=ev.positioningReview||{};ev.positioningReview[field]=value;ev.positioningReviewedAt=today();
+ if(!persist()){
+  if(originalReview)ev.positioningReview=originalReview;else delete ev.positioningReview;
+  if(originalReviewedAt===undefined)delete ev.positioningReviewedAt;else ev.positioningReviewedAt=originalReviewedAt;
+  alert('ポジショニング評価を端末に保存できませんでした。入力内容は保存されていません。端末容量を確認して、もう一度選択してください。');return;
+ }
+ renderAll();
 }
 function getMatchPositioningAnalysis(){
  const fields=[
@@ -3288,8 +3295,14 @@ function renderMatchGrowthTimeline(){
 }
 function applyMatchGrowthGoal(focus){
  const item=getMatchGrowthRecommendations().find(x=>x.key===focus);if(!item)return;
- state.settings=state.settings||{};state.settings.nextMatchGoal={focus:item.trainingFocus,note:item.goal,date:today(),source:'manual-reviewed-match-growth',growthFocus:item.key};
- persist();renderAll();
+ state.settings=state.settings||{};
+ const previousGoal=state.settings.nextMatchGoal?{...state.settings.nextMatchGoal}:null;
+ state.settings.nextMatchGoal={focus:item.trainingFocus,note:item.goal,date:today(),source:'manual-reviewed-match-growth',growthFocus:item.key};
+ if(!persist()){
+  if(previousGoal)state.settings.nextMatchGoal=previousGoal;else delete state.settings.nextMatchGoal;
+  alert('次の試合の成長目標を端末に保存できませんでした。元の目標を維持しています。端末容量を確認して、もう一度お試しください。');return;
+ }
+ renderAll();
 }
 function renderIntegratedGrowthReport(){
  const host=document.getElementById('integratedGrowthReport');if(!host)return;
