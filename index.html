@@ -194,7 +194,7 @@ function setCandidateReview(candidateId,reviewLabel){
  if(savedId){
   const record=(state.matchAnalyses||[]).find(x=>x.id===savedId);
   const saved=(record?.candidateEvents||[]).find(x=>String(x.id)===String(candidateId));
-  if(saved)saved.reviewLabel=reviewLabel;
+  if(saved){saved.reviewLabel=reviewLabel;syncTrainingMatchEventLink(record,saved);}
   persist();
  }
  const status=document.getElementById('candidate-review-'+candidateId);
@@ -210,7 +210,7 @@ function setCandidateTrackReview(candidateId,trackId){
  event.selected_track_id=String(trackId);event.review_label='陸玖';
  matchAiResult.dataset.result=JSON.stringify(result);
  const savedId=Number(matchAiResult.dataset.savedId||0);
- if(savedId){const record=(state.matchAnalyses||[]).find(x=>x.id===savedId);const saved=(record?.candidateEvents||[]).find(x=>String(x.id)===String(candidateId));if(saved){saved.selectedTrackId=String(trackId);saved.reviewLabel='陸玖';}persist();}
+ if(savedId){const record=(state.matchAnalyses||[]).find(x=>x.id===savedId);const saved=(record?.candidateEvents||[]).find(x=>String(x.id)===String(candidateId));if(saved){saved.selectedTrackId=String(trackId);saved.reviewLabel='陸玖';syncTrainingMatchEventLink(record,saved);}persist();}
  const status=document.getElementById('candidate-review-'+candidateId);
  if(status)status.textContent='確認結果：陸玖（選択トラック '+trackId+'）'+(savedId?'・履歴に保存済み':'・履歴保存時に記録');
  refreshCandidateReviewSummary();
@@ -240,7 +240,7 @@ function setCandidateTag(candidateId,field,value){
  event[field]=value;matchAiResult.dataset.result=JSON.stringify(result);
  const savedId=Number(matchAiResult.dataset.savedId||0);
  if(savedId){const record=(state.matchAnalyses||[]).find(x=>x.id===savedId);const saved=(record?.candidateEvents||[]).find(x=>String(x.id)===String(candidateId));
-  if(saved){const map={action_type:'actionType',assessment:'assessment',candidate_note:'note',decision_quality:'decisionQuality',decision_scan:'decisionScan',position_role:'positionRole',play_style:'playStyle'};if(map[field])saved[map[field]]=value;}persist();}
+  if(saved){const map={action_type:'actionType',assessment:'assessment',candidate_note:'note',decision_quality:'decisionQuality',decision_scan:'decisionScan',position_role:'positionRole',play_style:'playStyle'};if(map[field])saved[map[field]]=value;syncTrainingMatchEventLink(record,saved);}persist();}
  const el=document.getElementById('candidate-tag-'+candidateId);if(el)el.textContent='分類：'+(event.action_type||'未選択')+'／評価：'+(event.assessment||'未選択');
  if(field==='decision_quality'||field==='decision_scan')refreshDecisionFeedback(candidateId);
  refreshCandidateReviewSummary();
