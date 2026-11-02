@@ -628,6 +628,34 @@ function getActiveSeasonGoal(){
  entries.sort((a,b)=>String(b[1].savedAt||'').localeCompare(String(a[1].savedAt||''))||String(b[0]).localeCompare(String(a[0])));
  return entries.length?{...entries[0][1],year:String(entries[0][0])}:null;
 }
+function adaptTrainingPlanFromReflection(plan){
+ const focus=plan?.focus||'ドリブル';
+ const history=(state.trainings||[]).filter(t=>(t.focus||inferTrainingFocus(t.menu,t.category))===focus&&(t.reviewStatus||t.matchTransferStatus)).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||Number(b.id||0)-Number(a.id||0));
+ const latest=history[0];
+ if(!latest)return {...plan,reflectionAdjustment:'振り返り記録がまだないため、基本メニューから始めます。'};
+ let minutes=Math.max(8,Math.min(Number(plan.minutes)||12,Number(plan.minutes)||12));
+ const notes=[];
+ const review=latest.reviewStatus||'';
+ const transfer=latest.matchTransferStatus||'';
+ if(review==='難しかった'){
+  minutes=Math.max(8,minutes-2);
+  notes.push('前回「難しかった」ため、最初はゆっくり・少ない回数で基本動作を確認。成功してから通常の速さへ');
+ }else if(review==='まだ試せていない'){
+  minutes=Math.max(8,minutes-1);
+  notes.push('前回は十分に試せていないため、今回は簡単な形から入り、できたら次の段階へ');
+ }else if(review==='できた'){
+  notes.push('前回「できた」ため、相手の位置か進む方向を一つだけ変えて応用');
+ }
+ if(transfer==='まだ'){
+  notes.push('試合ではまだ出せていないため、最後に短い実戦形式で同じ場面をゆっくり再現');
+ }else if(transfer==='少しできた'){
+  notes.push('試合で少しできた動きを、相手か方向を一つだけ変えて再挑戦');
+ }else if(transfer==='できた'){
+  notes.push('試合でもできた動きを、別の状況でも再現できるか確認');
+ }
+ if(!notes.length)return {...plan,minutes,reflectionAdjustment:'直近の振り返りに大きな変更がないため、同じテーマを続けます。'};
+ return {...plan,minutes,note:(plan.note||'')+' 【前回の振り返りを反映】'+notes.join('。')+'。',why:(plan.why||'基本メニュー')+'／直近の練習後・試合後の振り返りを反映',reflectionAdjustment:notes.join('。')+'。'};
+}
 function getCoachTrainingPlan(){
  const seasonGoal=getActiveSeasonGoal();
  const priority=getCoachPrioritySummary();
@@ -640,9 +668,9 @@ function getCoachTrainingPlan(){
  '守備・プレス':{focus:'守備・プレス',title:'1対1の守備・コース限定',minutes:10,category:'アジリティ',note:'相手に飛び込まず、体の向きで進行方向を限定。無理のない距離で行う。',why:'試合の振り返りで守備の改善テーマが多かったため'},
  'オフザボール':{focus:'オフザボール',title:'パス前の動き出し',minutes:10,category:'受ける動き',note:'相手の背中側や見えにくい角度へ動き、受ける場所を作る。',why:'試合の振り返りでボールを持たない時の改善テーマが多かったため'}
  };
- if(seasonGoal&&plans[seasonGoal.focus]){const p=plans[seasonGoal.focus];return {...p,note:p.note+' 年間目標：'+seasonGoal.note,why:'保存した年間目標（'+seasonGoal.year+'年設定）を優先：'+seasonGoal.note};}
- if(top&&plans[top]){const p=priority[0];return {...plans[top],focus:top,why:'直近の記録から「'+top+'」を優先。本人確認済み試合 '+p.scenes+'場面（改善 '+p.improve+'／良かった '+p.good+'）、直近の練習 '+p.sessions+'回。'+p.sampleNote+'。'};}
- return {focus:'ドリブル',title:'加速ドリブル＋切り返し',minutes:15,category:'突破・ドリブル',note:'マーカーを使って左右に切り返し、前へ運ぶタッチから2〜3歩加速。最後に親子1対1で相手を見て突破方向を選ぶ。',why:'試合の改善データがまだ少ないため、今の育成テーマに合わせた基本メニュー'};
+ if(seasonGoal&&plans[seasonGoal.focus]){const p=plans[seasonGoal.focus];return adaptTrainingPlanFromReflection({...p,note:p.note+' 年間目標：'+seasonGoal.note,why:'保存した年間目標（'+seasonGoal.year+'年設定）を優先：'+seasonGoal.note});}
+ if(top&&plans[top]){const p=priority[0];return adaptTrainingPlanFromReflection({...plans[top],focus:top,why:'直近の記録から「'+top+'」を優先。本人確認済み試合 '+p.scenes+'場面（改善 '+p.improve+'／良かった '+p.good+'）、直近の練習 '+p.sessions+'回。'+p.sampleNote+'。'});}
+ return adaptTrainingPlanFromReflection({focus:'ドリブル',title:'加速ドリブル＋切り返し',minutes:15,category:'突破・ドリブル',note:'マーカーを使って左右に切り返し、前へ運ぶタッチから2〜3歩加速。最後に親子1対1で相手を見て突破方向を選ぶ。',why:'試合の改善データがまだ少ないため、今の育成テーマに合わせた基本メニュー'});
 }
 function getTrainingSessionGuide(focus){
  const guides={
