@@ -486,11 +486,11 @@ function saveMatchEventEdits(matchId,eventId){
 function filterMatchTimeline(matchId){
  const root=document.getElementById('match-event-timeline-'+matchId);if(!root)return;
  const filter=document.getElementById('match-event-filter-'+matchId)?.value||'all';
- const query=(document.getElementById('match-event-search-'+matchId)?.value||'').trim().toLowerCase();
+ const query=(document.getElementById('match-event-search-'+matchId)?.value||'').normalize('NFKC').trim().toLocaleLowerCase('ja-JP');
  let shown=0;
  root.querySelectorAll('article[data-event-id]').forEach(article=>{
   const review=article.dataset.review||'',assessment=article.dataset.assessment||'';
-  const hay=(article.dataset.search||'').toLowerCase();
+  const hay=(article.dataset.search||'').normalize('NFKC').toLocaleLowerCase('ja-JP');
   const matchesFilter=filter==='all'||(filter==='riku'&&review==='陸玖')||(filter==='unconfirmed'&&(!review||review==='未確認'))||(filter==='improve'&&review==='陸玖'&&assessment==='改善したい')||(filter==='good'&&review==='陸玖'&&assessment==='良かった')||(filter==='decision-incomplete'&&review==='陸玖'&&article.dataset.decisionIncomplete==='true');
   const matchesQuery=!query||hay.includes(query);
   article.hidden=!(matchesFilter&&matchesQuery);if(!article.hidden)shown++;
