@@ -2629,7 +2629,10 @@ function createPreMatchPreparation(){
  const fatigue=tired?'負荷が高めの記録があるため、全メニューを短縮しています。':'疲労をためない軽い内容です。';
  const health=(state.preMatchHealthChecks||{})[dateValue]||{};
  const healthDecision=getPreMatchHealthDecision(health);
- if(healthDecision.key==='pending'||healthDecision.key==='stop'||healthDecision.key==='rest'){
+ const priorRecovery=Object.values(state.postMatchRecovery||{}).filter(x=>x.date&&x.date<dateValue).sort((a,b)=>b.date.localeCompare(a.date))[0];
+ const recoveryGuard=priorRecovery&&priorRecovery.pain&&priorRecovery.pain!=='なし'?'stop':priorRecovery&&(priorRecovery.decision==='rest'||priorRecovery.decision==='light')?priorRecovery.decision:'';
+ const recoveryGuardText=recoveryGuard==='stop'?'前回の試合後に痛み・違和感が記録されています。保護者に伝え、状態を確認するまで運動を再開しないでください。':recoveryGuard==='rest'?'前回の試合後に強い疲労・睡眠不足が記録されています。今回も体調を再確認し、休養を優先してください。':recoveryGuard==='light'?'前回の試合後に疲労・足の重さが記録されています。回復具合を確認し、軽い準備から始めてください。':'';
+ if(recoveryGuard==='stop'||healthDecision.key==='stop'||healthDecision.key==='pending'||healthDecision.key==='rest'){
   phases.forEach(p=>{p.minutes=0;p.menu=healthDecision.key==='pending'?'5項目の体調チェックを完了するまで運動メニューは保留。':healthDecision.key==='stop'?'運動・ウォームアップは中止。保護者に伝えて状態を確認する。':'今日は運動をせず、休養・水分・睡眠を優先する。';p.cue=healthDecision.reason;});
  }else if(healthDecision.key==='light'){
   phases.forEach(p=>{p.minutes=Math.min(p.minutes,3);p.menu='歩く程度の軽い準備のみ。ボール練習・ダッシュ・強い方向転換は省略する。';p.cue=healthDecision.reason;});
@@ -2638,7 +2641,7 @@ function createPreMatchPreparation(){
   const result=plan?.phases?.find(x=>x.key===p.key);
   return '<div class="listitem" style="display:block"><b>'+esc(p.title)+'</b><div class="tiny muted">'+p.minutes+'分目安</div><div class="tiny">'+esc(p.menu)+'</div><div class="tiny muted">意識：'+esc(p.cue)+'</div><label class="label" style="margin-top:8px">実施後の評価</label><select onchange="updatePreMatchReview(\''+esc(dateValue)+'\',\''+p.key+'\',this.value)"><option value="">まだ評価していない</option><option value="軽くできた" '+(result?.review==='軽くできた'?'selected':'')+'>軽くできた</option><option value="ちょうど良い" '+(result?.review==='ちょうど良い'?'selected':'')+'>ちょうど良い</option><option value="疲れた" '+(result?.review==='疲れた'?'selected':'')+'>疲れた</option><option value="痛み・違和感あり" '+(result?.review==='痛み・違和感あり'?'selected':'')+'>痛み・違和感あり</option><option value="実施しなかった" '+(result?.review==='実施しなかった'?'selected':'')+'>実施しなかった</option></select></div>';
  }).join('');
- host.innerHTML=dateInput+renderPreMatchHealthCheck(dateValue)+'<div class="tiny muted" style="margin-top:8px">'+esc(timing)+' '+esc(recentText)+'</div><div class="note" style="margin-top:8px"><b>負荷調整</b><div class="tiny">'+esc(fatigue)+' ポジション：'+esc(roleLabel)+'。'+esc(roleCue)+'。</div></div><button class="secondary small" style="margin-top:8px" onclick="savePreMatchPlan()">この試合の準備メニューを保存</button>'+content+'<div class="tiny muted">※直近の練習記録と手動で選んだポジションを参考にした目安です。疲労・痛み・体調不良があれば中止し、休養を優先してください。チームのウォームアップ指示がある場合はそちらを優先。</div>';
+ host.innerHTML=dateInput+renderPreMatchHealthCheck(dateValue)+(recoveryGuardText?'<div class="note" style="margin-top:8px"><b>前回の試合後記録を反映</b><div class="tiny">'+esc(recoveryGuardText)+'</div></div>':'')+'<div class="tiny muted" style="margin-top:8px">'+esc(timing)+' '+esc(recentText)+'</div><div class="note" style="margin-top:8px"><b>負荷調整</b><div class="tiny">'+esc(fatigue)+' ポジション：'+esc(roleLabel)+'。'+esc(roleCue)+'。</div></div><button class="secondary small" style="margin-top:8px" onclick="savePreMatchPlan()">この試合の準備メニューを保存</button>'+content+'<div class="tiny muted">※直近の練習記録と手動で選んだポジションを参考にした目安です。疲労・痛み・体調不良があれば中止し、休養を優先してください。チームのウォームアップ指示がある場合はそちらを優先。</div>';
  window.__preMatchCurrent={date:dateValue,role,days,phases};
 }
 function savePreMatchPlan(){
