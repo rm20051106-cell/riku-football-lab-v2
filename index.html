@@ -52,6 +52,7 @@ button,.button{border:0;border-radius:12px;padding:12px 14px;font-weight:800;fon
  <div class="card"><h2>練習方法別・判断力改善の成功率</h2><div id="growthDecisionPracticeMethodStats"></div></div>
  <div class="card"><h2>繰り返し見つかった判断課題と別メニュー</h2><div id="growthRepeatedDecisionIssue"></div></div>
  <div class="card"><h2>練習前後の判断力の変化（月別）</h2><div id="growthTrainingDecisionChange"></div><div class="tiny muted">練習日を基準に、同じテーマの練習前後の試合評価を照合。月ごとに変化率の平均を表示します。比較できるデータがない月は無理に補完しません。</div></div>
+ <div class="card"><h2>陸玖の判断力レベル・次の目標</h2><div id="growthDecisionLevel"></div></div>
  <div class="card"><h2>判断力の成長グラフ</h2><div id="growthDecisionChart"></div><div class="tiny muted">月ごとの「判断の質」と「周囲の確認」を可視化します。本人確認済みの陸玖の場面だけを集計し、未評価は割合に含めません。</div></div>
  <div class="card"><h2>ポジション別の判断分析</h2><p class="tiny muted">各場面で実際に担当していた役割（GK・DF・MF・FW）を選ぶと、判断の質・周囲の確認・プレー選択を役割別に集計します。ポジションは映像から自動推定せず、確認した内容だけを使います。</p><div id="growthPositionDecision"></div></div>
  <div class="card"><h2>陸玖専用・判断力トレーニング自動作成</h2><p class="tiny muted">ポジション別の試合評価から、改善優先度が最も高い役割を自動で選び、その場面に合った練習メニューを作ります。評価データが少ない場合は、記録を増やしてから自動作成します。</p><div id="positionDecisionTrainingPlan"></div></div>
@@ -1255,7 +1256,50 @@ function renderRepeatedDecisionIssue(){
  const samples=issue.attempts.slice().sort((a,b)=>String(a.match.date).localeCompare(String(b.match.date))).map(x=>'<div class="tiny muted">・'+esc(x.match.date)+' '+esc(x.match.title||'試合')+'｜練習日 '+esc(x.training.date)+'</div>').join('');
  host.innerHTML='<div class="note"><b>繰り返し見つかった判断課題：'+esc(issue.issue)+'</b><div class="tiny">テーマ：'+esc(issue.focus)+'｜別々の試合 '+issue.matches.size+'試合｜該当 '+issue.bad+'/'+issue.assessed+'評価場面（'+issue.rate+'%）</div><div class="tiny muted">照合した記録</div>'+samples+'<div class="divider"></div><b>別アプローチの練習案：'+esc(plan.title)+'</b><div class="tiny muted">約'+plan.minutes+'分</div><div class="tiny" style="white-space:pre-line;margin:6px 0">'+esc(plan.note)+'</div><div class="tiny muted">成功基準：'+esc(plan.success)+'</div><button class="secondary small" onclick="applyAlternativeDecisionPractice()">この別メニューで練習を作成</button><div class="tiny muted" style="margin-top:6px">※最低2試合で同じ課題が確認された場合のみ表示。試合の映像・評価の記録に基づく提案で、能力や原因を断定しません。</div></div>';
 }
+function getDecisionGrowthLevel(){
+ const events=(state.matchAnalyses||[]).flatMap(match=>(match.candidateEvents||[]).filter(ev=>ev.reviewLabel==='陸玖').map(ev=>({...ev,matchDate:match.date})));
+ const q=events.filter(e=>['最適な選択','良い選択','別の選択肢もあった','判断が遅れた'].includes(e.decisionQuality));
+ const scan=events.filter(e=>['周囲を確認できた','ボールだけを見ていた','味方・相手の位置を確認できなかった'].includes(e.decisionScan));
+ const goodQ=q.filter(e=>['最適な選択','良い選択'].includes(e.decisionQuality)).length;
+ const goodScan=scan.filter(e=>e.decisionScan==='周囲を確認できた').length;
+ const qRate=q.length?goodQ/q.length*100:null,scanRate=scan.length?goodScan/scan.length*100:null;
+ const linked=(state.trainings||[]).filter(t=>t.sourceMatch);
+ let done=0,total=0,transferGood=0,transferAssessed=0;
+ linked.forEach(t=>{
+  const steps=Array.isArray(t.steps)&&t.steps.length?t.steps:getTrainingSteps(t.focus);
+  done+=(t.stepsDone||[]).length;total+=steps.length;
+  const follow=getImprovementFollowup(t);
+  if(follow?.status==='改善の兆しあり'){transferGood++;transferAssessed++;}
+  else if(follow?.status==='まだ改善課題あり')transferAssessed++;
+ });
+ const methodRows=getDecisionPracticeMethodStats();
+ const methodCount=methodRows.reduce((n,r)=>n+r.count,0),methodImproved=methodRows.reduce((n,r)=>n+r.improved,0);
+ const practiceRate=total?done/total*100:null;
+ const transferRate=transferAssessed?transferGood/transferAssessed*100:methodCount?methodImproved/methodCount*100:null;
+ const components=[];
+ if(qRate!==null)components.push({key:'判断の質',value:qRate,weight:.4,count:q.length});
+ if(scanRate!==null)components.push({key:'周囲の確認',value:scanRate,weight:.3,count:scan.length});
+ if(practiceRate!==null)components.push({key:'練習実行',value:practiceRate,weight:.15,count:total});
+ if(transferRate!==null)components.push({key:'試合への転移',value:transferRate,weight:.15,count:transferAssessed||methodCount});
+ const weight=components.reduce((n,c)=>n+c.weight,0);
+ const score=weight?Math.round(components.reduce((n,c)=>n+c.value*c.weight,0)/weight):null;
+ const enough=q.length>=3||scan.length>=3;
+ const level=score===null?null:score>=85?5:score>=70?4:score>=55?3:score>=40?2:1;
+ const weakest=[{key:'判断の質',value:qRate,goal:'ボールを受ける前に状況を見て、前進・パス・キープから最適な選択を早く決める',metric:'判断の質',count:q.length},{key:'周囲の確認',value:scanRate,goal:'受ける前に首を振り、味方・相手・空きスペースを確認してプレーに反映する',metric:'周囲の確認',count:scan.length},{key:'練習実行',value:practiceRate,goal:'短時間でも決めた練習ステップを最後まで実行し、できた回数を記録する',metric:'練習実行',count:total},{key:'試合への転移',value:transferRate,goal:'練習で使った判断を試合でも再現し、同じ課題の出現率を下げる',metric:'試合への転移',count:transferAssessed||methodCount}].filter(x=>x.value!==null).sort((a,b)=>a.value-b.value);
+ const stageNames=['基礎づくり','周囲を見る','選択肢を増やす','素早く判断する','試合で使いこなす'];
+ return {events:q.length+scan.length,qCount:q.length,scanCount:scan.length,qRate,scanRate,practiceRate,transferRate,score,level,enough,stage:level?stageNames[level-1]:null,goal:weakest[0]||null,components,trainingCount:linked.length,transferAssessed};
+}
+function renderDecisionGrowthLevel(){
+ const host=document.getElementById('growthDecisionLevel');if(!host)return;
+ const r=getDecisionGrowthLevel();
+ if(!r.level){host.innerHTML='<div class="empty">判断力の段階評価には、陸玖本人と確認した試合場面の「判断の質」または「周囲の確認」の記録が必要です。記録が増えるまでは段階を決めつけません。</div>';return;}
+ const labels={1:'基礎づくり',2:'周囲を見る',3:'選択肢を増やす',4:'素早く判断する',5:'試合で使いこなす'};
+ host.innerHTML='<div class="note"><div class="tiny muted">'+(r.enough?'試合評価に基づく段階評価':'評価件数が少ないため仮評価')+'｜総合指標 '+r.score+'/100</div><div style="font-size:22px;font-weight:800;margin:5px 0">レベル '+r.level+'｜'+labels[r.level]+'</div><div class="tiny muted">判断の質 '+(r.qRate===null?'—':Math.round(r.qRate)+'%（'+r.qCount+'件）')+'｜周囲の確認 '+(r.scanRate===null?'—':Math.round(r.scanRate)+'%（'+r.scanCount+'件）')+'</div><div class="tiny muted">練習実行 '+(r.practiceRate===null?'—':Math.round(r.practiceRate)+'%')+'｜試合への転移 '+(r.transferRate===null?'—':Math.round(r.transferRate)+'%')+'</div></div>'+
+ (r.goal?'<div class="listitem" style="margin-top:8px"><b>次の目標：'+esc(r.goal.key)+'</b><div class="tiny">'+esc(r.goal.goal)+'</div><div class="tiny muted">現在の指標 '+Math.round(r.goal.value)+'%｜改善目標：まずは次の評価で前回より向上</div></div>':'')+
+ '<div class="tiny muted" style="margin-top:8px">段階は判断の質40%、周囲の確認30%、練習実行15%、試合への転移15%を基本重みとして、記録がある項目だけで再計算します。判断・確認の評価が3件未満の場合は仮評価です。これは育成用の目安で、年齢別の標準テストや医学的・専門機関の判定ではありません。</div>';
+}
 function renderGrowthDashboard(){
+ renderDecisionGrowthLevel();
  renderMonthlyGrowthReport();
  renderDecisionGrowthChart();
  renderMonthlyTrainingDecisionChange();
