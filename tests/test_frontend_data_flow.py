@@ -131,3 +131,10 @@ if __name__ == "__main__":
             self.assertIn(token, HTML)
         self.assertIn("lastVideoImportFiles=files", HTML)
         self.assertIn("保存前の容量を確認しています", HTML)
+
+    def test_storage_usage_is_visualized_and_restore_errors_keep_retry(self):
+        self.assertIn("videoStorageUsageBar", HTML)
+        self.assertIn("aria-label=\\\"ブラウザ保存領域の使用率\\\"", HTML)
+        self.assertIn("lastVideoImportFiles=files", HTML)
+        self.assertIn("retryFailedVideoImport", HTML)
+        self.assertIn("再試行できます", HTML)
