@@ -2111,6 +2111,7 @@ function getWeeklyLoadAssessment(){
  else if(safety.level==='light'){level='light';reason=safety.reason;factor=.5;}
  else if(incomplete.length>=2){level='reduce';factor=.65;reason='直近14日で難しさ・未完了・きつさの記録が複数あります。次週は自主練習を減らし、短い成功体験と休養を優先します。';}
  else if(recentMinutes>=100||recentDays>=5||recent14.length>=7){level='reduce';factor=.65;reason='直近の練習量・頻度が多めです。次週の自主練習を約35%抑え、休養日を確保します。';}
+ else if(matchDates.length>=2){level='reduce';factor=.6;reason='次週に試合が複数回あります。試合前後の回復を優先し、自主練習を約40%抑えます。';}
  else if(activityCount>=5){level='reduce';factor=.7;reason='次週の試合・チーム活動が多いため、自主練習を約30%抑えます。';}
  else if(activityCount>=3){level='moderate';factor=.8;reason='次週の試合・チーム活動を考慮し、自主練習を約20%抑えます。';}
  else if(!evidence){level='hold';factor=.8;reason='負荷を増やすだけの練習・回復データが不足しています。自主練習は短時間のままにし、予定と体調を確認してください。';}
@@ -2168,6 +2169,24 @@ function getWeeklyCoachPlan(){
  if(weeklyLoad.level==='stop'||weeklyLoad.level==='light'||weeklyLoad.level==='reduce'||weeklyLoad.level==='moderate'||weeklyLoad.level==='hold')days.forEach(plan=>{if(weeklyLoad.level==='stop'){plan.minutes=0;plan.rest=true;plan.team=false;plan.title='活動を見合わせて保護者に相談';plan.note=weeklyLoad.reason;plan.why='痛み・違和感を最優先';}else if(plan.minutes){plan.minutes=Math.max(5,Math.floor(plan.minutes*weeklyLoad.factor));plan.title=weeklyLoad.level==='light'?'回復優先｜軽い活動':weeklyLoad.level==='hold'?'記録不足｜短時間を維持':'負荷調整｜短時間メニュー';plan.note=weeklyLoad.reason+'\n強度を上げず、痛み・違和感が出たら中止してください。';plan.why+='／週間負荷管理を反映';}});
  const scheduledDates=weeklyLoad.dates;
  days.forEach(plan=>{const wd=new Date(plan.date+'T00:00:00').getDay(),isMatch=weeklyLoad.matchDates.includes(plan.date),isTeam=weeklyLoad.teamDays.includes(wd);if(isMatch||isTeam){plan.minutes=0;plan.team=true;plan.rest=false;plan.title=isMatch?'試合日｜追加の自主練習なし':'チーム練習日｜追加の自主練習なし';plan.category=isMatch?'試合':'チーム活動';plan.note=(isMatch?'試合を優先。追加の自主練習は行わず、試合後は体調を記録。':'チーム練習を優先。追加の自主練習は不要。')+'\n'+weeklyLoad.reason;plan.why='登録された活動予定と週間負荷を反映';}else if(weeklyLoad.configured&&plan.team){plan.minutes=0;plan.team=false;plan.rest=true;plan.title='休養・予定確認';plan.category='休養';plan.note='この曜日のチーム活動は未登録です。実際の予定を確認し、予定がなければ休養を優先してください。';plan.why='登録された曜日だけをチーム活動として扱う';}});
+ const matchDates=weeklyLoad.matchDates.slice().sort();
+ const dateAdd=(value,offset)=>{const d=new Date(value+'T00:00:00');d.setDate(d.getDate()+offset);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
+ matchDates.forEach(matchDate=>{
+  const matchIndex=days.findIndex(x=>x.date===matchDate);
+  if(matchIndex<0)return;
+  const previous=days.find(x=>x.date===dateAdd(matchDate,-1));
+  if(previous&&!weeklyLoad.matchDates.includes(previous.date)){
+   if(previous.team){previous.note+='\\n【翌日試合】自主練習を追加せず、試合前日は疲労を残さないことを優先。チーム練習の強度は指導者と相談してください。';}
+   else{previous.minutes=Math.min(previous.minutes||5,5);previous.rest=false;previous.team=false;previous.title='試合前日｜軽い準備だけ';previous.category='試合前調整';previous.note='軽いボールタッチと動きの確認だけ。全力ダッシュ・強い切り返し・強いシュートは避け、早めに休みます。\\n試合のための追加トレーニングはしません。';previous.why='登録された試合日から逆算した前日調整';}
+  }
+  const nextDate=dateAdd(matchDate,1),next=days.find(x=>x.date===nextDate);
+  if(next){
+   if(weeklyLoad.matchDates.includes(nextDate)){next.note+='\\n【連戦】前日の試合後の疲労・痛みを本人と保護者で確認。参加可否は保護者・指導者で判断し、追加自主練習は行わないでください。';}
+   else if(next.team){next.note+='\\n【前日試合後】疲労・足の重さ・痛みを確認し、追加自主練習はしないでください。体調に不安があれば保護者・指導者へ相談。';}
+   else{next.minutes=0;next.team=false;next.rest=true;next.title='試合翌日｜回復・体調確認';next.category='試合後回復';next.note='試合後の疲労・足の重さ・睡眠・痛みを本人と保護者で記録。運動は追加せず休養を優先。痛み・違和感があれば練習を中止し保護者へ伝える。';next.why='登録された試合日の翌日を回復日に設定';}
+  }
+  const current=days[matchIndex];current.note+='\\n試合当日はチームのウォームアップを優先。追加の自主練習は行わず、終了後に試合後回復記録を入力してください。';
+ });
  if(recoverySafety.level==='stop'||recoverySafety.level==='light')days.forEach(plan=>{if(recoverySafety.level==='stop'){plan.minutes=0;plan.title='活動を見合わせて保護者に相談';plan.category='回復・安全優先';plan.rest=true;plan.team=false;plan.note=recoverySafety.reason+'\n保護者と相談し、痛みが続く場合は医療機関へ相談してください。';plan.why='痛み・違和感の記録を優先';}else{if(plan.minutes){plan.minutes=Math.min(plan.minutes,5);plan.title='回復優先｜短時間の軽い活動';plan.category='回復・安全優先';plan.note=recoverySafety.reason+'\n強度を上げず、痛みが出たら中止してください。';plan.why+='／体調記録に基づく安全調整';}else if(plan.team){plan.note+='\n【体調に関する注意】'+recoverySafety.reason+' チーム活動への参加可否は保護者・指導者と相談し、追加の自主練習は行わないでください。';}}});
  return days.map(plan=>{const adjusted=plan.minutes?adaptTrainingPlanFromReflection(plan):{...plan};if(recoverySafety.level==='stop'){adjusted.minutes=0;adjusted.rest=true;adjusted.team=false;adjusted.title='活動を見合わせて保護者に相談';adjusted.note=recoverySafety.reason+'\n保護者と相談し、痛みが続く場合は医療機関へ相談してください。';}else if(recoverySafety.level==='light'&&adjusted.minutes){adjusted.minutes=Math.min(5,adjusted.minutes);adjusted.title='回復優先｜短時間の軽い活動';adjusted.note=recoverySafety.reason+'\n強度を上げず、痛みが出たら中止してください。';}return {...adjusted,date:plan.date,day:plan.day,team:!!adjusted.team,rest:!!adjusted.rest,sourceMatch:plan.sourceMatch||null,difficultyLevel:feedback.assessed?feedback.level:adjusted.difficultyLevel,note:adjusted.minutes?adjusted.note+'\n\n'+getTrainingSessionGuide(adjusted.focus,level):adjusted.note,why:plan.why};});
 }
@@ -2940,17 +2959,27 @@ function createPreMatchPreparation(){
  const focusCue={'ドリブル':'ゆっくりしたボールタッチと方向転換','シュート':'近距離で軸足とフォームを確認するだけ','パス':'近距離の正確なインサイドパス','ボールを受ける':'半身で受ける姿勢とファーストタッチ','守備・プレス':'ステップと身体の向きを軽く確認','オフザボール':'受ける前に周囲を見る動きを確認','その他':'得意なボールタッチ'}[focus]||'得意なボールタッチ';
  const reviewCue=lastReview==='難しかった'?'直近の練習が難しかったため、新しい課題には進まず、できる動きを軽く確認する。':lastReview==='できた'?'直近の練習でできた動きを、疲れない強さで一度だけ確認する。':'直近の練習テーマ「'+focus+'」を軽く確認する。';
  const isForward=['トップ','FW'].includes(role),isSide=role==='サイド',isMid=['中盤','MF'].includes(role);
- const dayBefore={title:'前日｜軽く動いて感覚を整える',minutes:tired?5:10,menu:tired?'散歩・軽い関節運動だけ。ボール練習は休んでもOK。':'軽いボールタッチ3分→'+focusCue+'を2分。全力ダッシュ・強いシュートはしない。',cue:reviewCue+' 早めに休み、睡眠と水分を優先。'};
- const matchDay={title:'当日｜身体を起こす',minutes:tired?5:8,menu:'歩く・軽いジョグ2分→動的ストレッチ→短いパス・ボールタッチ。疲れない強さで止める。',cue:'汗をかきすぎず、身体が軽い状態で終える。'};
- const roleCue=isForward?'前を向く準備と、ゴール方向への最初の一歩':isSide?'タッチライン際での受け方と、縦・中の選択':isMid?'周囲を見て半身で受け、次のプレーを早く選ぶ':'周囲を見て、受ける前の身体の向きを整える';
- const immediate={title:'試合直前｜短く反応を確認',minutes:tired?3:5,menu:'軽いボールタッチ→近距離パス→短い方向転換を各数回。シュートやダッシュは必要最小限にし、チームのウォームアップを優先。',cue:roleCue+'。'};
- const phases=[{key:'dayBefore',...dayBefore},{key:'matchDay',...matchDay},{key:'immediate',...immediate}];
+ const matchTime=dateValue;
+ const dateShift=(offset)=>{const d=new Date(matchTime+'T00:00:00');d.setDate(d.getDate()+offset);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
+ const matchEvidence=(state.matchAnalyses||[]).filter(m=>String(m.date||'')<dateValue&&String(m.date||'')>=dateShift(-30)).flatMap(m=>(m.candidateEvents||[]).filter(e=>isManuallyReviewedMatchEvent(e)&&e.assessment==='改善したい').map(e=>({date:m.date,focus:getTrainingFocusForMatchEvent(e),actionType:e.actionType||'',positionRole:e.positionRole||'',note:e.manualNote||e.reviewNote||''}))).sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+ const confirmedIssue=matchEvidence[0]||null;
+ const phaseFocus=confirmedIssue?.focus||focus;
+ const phaseFocusCue={'ドリブル':'加速ドリブルと切り返しを、疲れない強さで数回だけ確認','シュート':'軸足・身体の向きを近距離でゆっくり確認','パス':'近距離の正確なパスと受ける前の首振り','ボールを受ける':'半身で受ける準備と前向きファーストタッチ','守備・プレス':'相手との距離と身体の向きを軽く確認','オフザボール':'周囲を見て動き出すタイミングを確認','その他':'得意なボールタッチと周囲の確認'}[phaseFocus]||'軽いボールタッチと周囲の確認';
+ const roleCue=isForward?'前を向く準備とゴール方向への最初の一歩':isSide?'タッチライン際で縦・中の選択':isMid?'周囲を見て半身で受け、次のプレーを選ぶ':'周囲を見て受ける前の身体の向きを整える';
+ const dayBefore={title:'前日｜軽く整える',minutes:tired?3:5,menu:tired?'散歩と軽い関節運動のみ。ボール練習は休んでもOK。':'軽いボールタッチと'+phaseFocusCue+'。全力ダッシュ・強いシュートはしない。',cue:'疲れを残さず早めに休む。'+roleCue+'。',date:dateShift(-1)};
+ const threeDays={title:'3日前｜最後の短い確認',minutes:tired?5:10,menu:tired?'疲労があれば休養。':'試合で使う動きを低〜中強度で短く確認。加速ドリブル・切り返しは成功する速さで3〜4回。',cue:confirmedIssue?'本人確認済みの課題「'+phaseFocus+'」を1つだけ試す。':'練習記録のテーマ「'+phaseFocus+'」を1つだけ確認。',date:dateShift(-3)};
+ const weekBefore={title:'7日前｜試合テーマを1つ決める',minutes:10,menu:'ボールタッチ→加速ドリブル→方向転換を短く行い、最後に親子1対1で突破方向を選ぶ。',cue:confirmedIssue?'直近の試合で本人確認された「'+phaseFocus+'」を次の試合で試す。':'保存された練習テーマ「'+phaseFocus+'」を試合で試す候補にする。',date:dateShift(-7)};
+ const matchDay={title:'当日｜チームのウォームアップ優先',minutes:tired?3:5,menu:'歩く・軽いジョグ→動的ストレッチ→短いパスとボールタッチ。チームのウォームアップを優先し、追加の全力ダッシュや強いキックはしない。',cue:roleCue+'。疲れや痛みがあれば保護者・指導者へ伝える。',date:dateValue};
+ const immediate={title:'試合直前｜短く反応を確認',minutes:tired?2:3,menu:'軽いタッチと近距離パスを数回。疲れない範囲で終え、チームの指示に合わせる。',cue:roleCue+'。',date:dateValue};
+ const nextDay={title:'翌日｜回復を確認して休養',minutes:0,menu:'試合後に疲労・足の重さ・睡眠・痛みを本人と保護者で記録。記録前に運動再開を決めない。痛みがあれば練習を中止し保護者に伝える。',cue:'休養・水分・食事・睡眠を優先。回復記録に応じて次の練習量を調整。',date:dateShift(1)};
+ const phases=[{key:'weekBefore',...weekBefore},{key:'threeDays',...threeDays},{key:'dayBefore',...dayBefore},{key:'matchDay',...matchDay},{key:'immediate',...immediate},{key:'nextDay',...nextDay}];
  const plan=saved||null;
  const positionOptions=['未選択',...roles];
  const options=positionOptions.map(x=>'<option value="'+esc(x)+'" '+(x===role?'selected':'')+'>'+esc(x==='未選択'?'指定しない':x)+'</option>').join('');
  const dateInput='<label class="label">試合日</label><input type="date" value="'+esc(dateValue)+'" onchange="updatePreMatchDate(this.value)"><label class="label">試合でのポジション</label><select onchange="updatePreMatchPosition(this.value)">'+options+'</select>';
  const timing=days<0?'設定した試合日は過去の日付です。':days===0?'試合当日です。':days===1?'試合は明日です。':'試合まで '+days+' 日です。';
  const recentText=recent.length?'直近7日：練習 '+recent.length+'件／きつめ・難しかった '+hard+'件／最近のテーマ '+focus+'・振り返り '+(lastReview||'未評価'):'直近7日の練習記録なし。負荷・課題は推測しません。';
+ const evidenceText=confirmedIssue?'試合で本人確認された改善課題：'+confirmedIssue.focus+'（'+confirmedIssue.date+'）。この課題を試合前の確認テーマ候補にしています。':'試合で本人確認された改善課題はありません。映像から課題を推測せず、保存済み練習テーマのみを参考にします。';
  const fatigue=tired?'負荷が高めの記録があるため、全メニューを短縮しています。':'疲労をためない軽い内容です。';
  const health=(state.preMatchHealthChecks||{})[dateValue]||{};
  const healthDecision=getPreMatchHealthDecision(health);
@@ -2964,9 +2993,9 @@ function createPreMatchPreparation(){
  }
  const content=phases.map(p=>{
   const result=plan?.phases?.find(x=>x.key===p.key);
-  return '<div class="listitem" style="display:block"><b>'+esc(p.title)+'</b><div class="tiny muted">'+p.minutes+'分目安</div><div class="tiny">'+esc(p.menu)+'</div><div class="tiny muted">意識：'+esc(p.cue)+'</div><label class="label" style="margin-top:8px">実施後の評価</label><select onchange="updatePreMatchReview(\''+esc(dateValue)+'\',\''+p.key+'\',this.value)"><option value="">まだ評価していない</option><option value="軽くできた" '+(result?.review==='軽くできた'?'selected':'')+'>軽くできた</option><option value="ちょうど良い" '+(result?.review==='ちょうど良い'?'selected':'')+'>ちょうど良い</option><option value="疲れた" '+(result?.review==='疲れた'?'selected':'')+'>疲れた</option><option value="痛み・違和感あり" '+(result?.review==='痛み・違和感あり'?'selected':'')+'>痛み・違和感あり</option><option value="実施しなかった" '+(result?.review==='実施しなかった'?'selected':'')+'>実施しなかった</option></select></div>';
+  return '<div class="listitem" style="display:block"><b>'+esc(p.title)+'</b><div class="tiny muted">'+esc(p.date||dateValue)+'｜'+p.minutes+'分目安</div><div class="tiny">'+esc(p.menu)+'</div><div class="tiny muted">意識：'+esc(p.cue)+'</div><label class="label" style="margin-top:8px">実施後の評価</label><select onchange="updatePreMatchReview(\''+esc(dateValue)+'\',\''+p.key+'\',this.value)"><option value="">まだ評価していない</option><option value="軽くできた" '+(result?.review==='軽くできた'?'selected':'')+'>軽くできた</option><option value="ちょうど良い" '+(result?.review==='ちょうど良い'?'selected':'')+'>ちょうど良い</option><option value="疲れた" '+(result?.review==='疲れた'?'selected':'')+'>疲れた</option><option value="痛み・違和感あり" '+(result?.review==='痛み・違和感あり'?'selected':'')+'>痛み・違和感あり</option><option value="実施しなかった" '+(result?.review==='実施しなかった'?'selected':'')+'>実施しなかった</option></select></div>';
  }).join('');
- host.innerHTML=dateInput+renderPreMatchHealthCheck(dateValue)+(recoveryGuardText?'<div class="note" style="margin-top:8px"><b>前回の試合後記録を反映</b><div class="tiny">'+esc(recoveryGuardText)+'</div></div>':'')+'<div class="tiny muted" style="margin-top:8px">'+esc(timing)+' '+esc(recentText)+'</div><div class="note" style="margin-top:8px"><b>負荷調整</b><div class="tiny">'+esc(fatigue)+' ポジション：'+esc(roleLabel)+'。'+esc(roleCue)+'。</div></div><button class="secondary small" style="margin-top:8px" onclick="savePreMatchPlan()">この試合の準備メニューを保存</button>'+content+'<div class="tiny muted">※直近の練習記録と手動で選んだポジションを参考にした目安です。疲労・痛み・体調不良があれば中止し、休養を優先してください。チームのウォームアップ指示がある場合はそちらを優先。</div>';
+ host.innerHTML=dateInput+renderPreMatchHealthCheck(dateValue)+(recoveryGuardText?'<div class="note" style="margin-top:8px"><b>前回の試合後記録を反映</b><div class="tiny">'+esc(recoveryGuardText)+'</div></div>':'')+'<div class="tiny muted" style="margin-top:8px">'+esc(timing)+' '+esc(recentText)+'<br>'+esc(evidenceText)+'</div><div class="note" style="margin-top:8px"><b>負荷調整</b><div class="tiny">'+esc(fatigue)+' ポジション：'+esc(roleLabel)+'。'+esc(roleCue)+'。</div></div><button class="secondary small" style="margin-top:8px" onclick="savePreMatchPlan()">この試合の準備メニューを保存</button>'+content+'<div class="tiny muted">※直近の練習記録と手動で選んだポジションを参考にした目安です。疲労・痛み・体調不良があれば中止し、休養を優先してください。チームのウォームアップ指示がある場合はそちらを優先。</div>';
  window.__preMatchCurrent={date:dateValue,role,days,phases};
 }
 function savePreMatchPlan(){
@@ -2984,7 +3013,7 @@ function updatePreMatchReview(date,key,value){
  let plan=state.preMatchPlans.find(x=>x.date===date);
  if(!plan){const current=window.__preMatchCurrent;if(!current||current.date!==date)return;plan={id:Date.now(),date,role:current.role,createdAt:today(),phases:current.phases.map(p=>({...p,review:''}))};state.preMatchPlans.unshift(plan);}
  const phase=plan.phases.find(x=>x.key===key);if(phase)phase.review=value;
- if(value==='疲れた'||value==='痛み・違和感あり')plan.loadWarning=true;
+ if(value==='疲れた'||value==='痛み・違和感あり')plan.loadWarning=true;if(value==='痛み・違和感あり')plan.stopWarning=true;
  persist();
 }
 function renderMatchdayFocus(){
