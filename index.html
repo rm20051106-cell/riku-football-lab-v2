@@ -1473,8 +1473,8 @@ function getPlayerSkillProfile(asOfDate=null){
 }
 function syncMonthlySkillSnapshot(){
  const now=today(),currentMonth=now.slice(0,7),months=new Set();
- (state.matchAnalyses||[]).forEach(m=>{if(/^\\d{4}-\\d{2}-\\d{2}$/.test(m.date||'')&&m.date.slice(0,7)<=currentMonth)months.add(m.date.slice(0,7));});
- (state.trainings||[]).forEach(t=>{if(/^\\d{4}-\\d{2}-\\d{2}$/.test(t.date||'')&&t.date.slice(0,7)<=currentMonth)months.add(t.date.slice(0,7));});
+ (state.matchAnalyses||[]).forEach(m=>{if(/^\d{4}-\d{2}-\d{2}$/.test(m.date||'')&&m.date.slice(0,7)<=currentMonth)months.add(m.date.slice(0,7));});
+ (state.trainings||[]).forEach(t=>{if(/^\d{4}-\d{2}-\d{2}$/.test(t.date||'')&&t.date.slice(0,7)<=currentMonth)months.add(t.date.slice(0,7));});
  months.add(currentMonth);
  const history=[];
  [...months].sort().slice(-18).forEach(month=>{
