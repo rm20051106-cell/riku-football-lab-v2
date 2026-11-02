@@ -475,9 +475,9 @@ function renderTacticalDecisionGrowthReport(){
  }));
  const trainingRows=getTacticalTrainingRecords().filter(x=>/^\\d{4}-\\d{2}-\\d{2}$/.test(String(x.date||'')));
  const contexts=[
-  {key:'pressure',label:'相手のプレス',values:['強いプレスなし','前からプレス','横から寄せ','後ろから追われる','複数人に囲まれる'],none:'状況設定なし'},
-  {key:'zone',label:'プレー位置',values:['自陣','中盤','敵陣','ペナルティエリア付近'],none:'状況設定なし'},
-  {key:'scoreState',label:'試合状況',values:['リード','同点','ビハインド'],none:'状況設定なし'}
+  ...['強いプレスなし','前からプレス','横から寄せ','後ろから追われる','複数人に囲まれる'].map(value=>({key:'pressure',label:'相手のプレス',value})),
+  ...['自陣','中盤','敵陣','ペナルティエリア付近'].map(value=>({key:'zone',label:'プレー位置',value})),
+  ...['リード','同点','ビハインド'].map(value=>({key:'scoreState',label:'試合状況',value}))
  ];
  const trainingMetrics=[
   {key:'speed',label:'判断の速さ',good:x=>x.responseSpeed==='2秒以内',bad:x=>x.responseSpeed==='3秒以上',desc:'2秒以内／3秒以上'},
@@ -486,8 +486,8 @@ function renderTacticalDecisionGrowthReport(){
  ];
  const esc=v=>escT(v);
  const blocks=contexts.map(ctx=>{
-  const mr=matchRows.filter(x=>x.fields[ctx.key]&&x.fields[ctx.key]===ctx.values.find(v=>v===x.fields[ctx.key]));
-  const tr=trainingRows.filter(x=>ctx.values.includes(x[ctx.key]));
+  const mr=matchRows.filter(x=>x.fields[ctx.key]===ctx.value);
+  const tr=trainingRows.filter(x=>x[ctx.key]===ctx.value);
   const matchReady=mr.length>=3;
   const trainingReady=tr.length>=3;
   const matchDays=new Set(mr.map(x=>x.date)).size;
@@ -520,7 +520,7 @@ function renderTacticalDecisionGrowthReport(){
    recommendation='<div class="note">次の練習テーマは評価保留です。試合の手動確認が3場面以上、かつ本人の練習実施記録が3回以上そろった状況だけで提案します。</div>';
   }
   const timeline=rows=>rows.slice().sort((a,b)=>a.date.localeCompare(b.date)).slice(-8).map(x=>'<div class="tiny">'+esc(x.date)+'｜'+(x.count||1)+'件</div>').join('');
-  return '<div class="card"><h3>'+esc(ctx.label)+'</h3><div class="tiny muted">状況：'+ctx.values.map(esc).join('／')+'（状況設定なし・映像で確認できないは除外）</div><b>試合｜手動確認記録</b><div class="tiny muted">'+(matchReady?'確認 '+mr.length+'場面・'+matchDays+'日分':'評価保留 '+mr.length+'場面（3場面以上必要）')+'</div>'+matchStats+'<div class="tiny muted">日付：'+(timeline(mr.map(x=>({date:x.date})))||'記録なし')+'</div><div class="divider"></div><b>練習｜本人実施記録</b><div class="tiny muted">'+(trainingReady?'実施 '+tr.length+'回・'+trainingDays+'日分':'評価保留 '+tr.length+'回（3回以上必要）')+'</div>'+trainingStats+'<div class="tiny muted">日付：'+(timeline(tr.map(x=>({date:x.date})))||'記録なし')+'</div>'+recommendation+'</div>';
+  return '<div class="card"><h3>'+esc(ctx.label)+'｜'+esc(ctx.value)+'</h3><div class="tiny muted">この状況として明示的に記録されたデータだけを集計します。</div><b>試合｜手動確認記録</b><div class="tiny muted">'+(matchReady?'確認 '+mr.length+'場面・'+matchDays+'日分':'評価保留 '+mr.length+'場面（3場面以上必要）')+'</div>'+matchStats+'<div class="tiny muted">日付：'+(timeline(mr.map(x=>({date:x.date})))||'記録なし')+'</div><div class="divider"></div><b>練習｜本人実施記録</b><div class="tiny muted">'+(trainingReady?'実施 '+tr.length+'回・'+trainingDays+'日分':'評価保留 '+tr.length+'回（3回以上必要）')+'</div>'+trainingStats+'<div class="tiny muted">日付：'+(timeline(tr.map(x=>({date:x.date})))||'記録なし')+'</div>'+recommendation+'</div>';
  }).join('');
  host.innerHTML='<h2>⑬ 状況別・判断力の成長レポート</h2><p class="tiny muted">相手のプレス・プレー位置・試合状況ごとに、試合の手動確認記録と練習の本人実施記録を分けて比較します。各状況で記録が足りなければ評価・提案を保留します。</p>'+blocks+'<div class="tiny muted">試合記録は映像で確認できた行動の観察です。判断秒数や本人が見つけた選択肢の数は、練習記録だけで評価します。試合と練習を同じ点数に換算せず、因果関係も断定しません。</div>';
  const log=document.getElementById('tacticalDecisionGrowthReport');
