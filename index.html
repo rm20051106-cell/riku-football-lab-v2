@@ -348,11 +348,16 @@ function getImprovementFollowup(training){
  const source=training?.sourceMatch;if(!source)return null;
  const focus=source.focus||training.focus||inferTrainingFocus(training.menu,training.category);
  const later=(state.matchAnalyses||[]).filter(m=>String(m.date||'')>String(training.date||'')&&String(m.date||'')>=String(source.matchDate||''))
-  .flatMap(m=>(m.candidateEvents||[]).filter(ev=>ev.reviewLabel==='陸玖'&&ev.actionType&&ev.actionType!=='未選択'&&getTrainingFocusForMatchEvent(ev)===focus).map(ev=>({match:m,event:ev})))
+  .flatMap(m=>(m.candidateEvents||[]).filter(ev=>ev.reviewLabel==='陸玖'&&ev.actionType&&ev.actionType!=='未選択'&&getTrainingFocusForMatchEvent(ev)===focus).map(ev=>({match:m,event:ev,assessment:ev.assessment||'未評価'})))
   .sort((a,b)=>String(a.match.date||'').localeCompare(String(b.match.date||''))||Number(a.event.time||0)-Number(b.event.time||0));
- if(!later.length)return {status:'次の試合待ち',focus,source};
- const first=later[0],assessment=first.event.assessment||'未評価';
- return {status:assessment==='良かった'?'改善の兆しあり':assessment==='改善したい'?'まだ改善課題あり':'次の試合で評価待ち',focus,source,match:first.match,event:first.event,assessment};
+ if(!later.length)return {status:'次の試合待ち',focus,source,results:[],good:0,improve:0,assessed:0,rate:null};
+ const assessed=later.filter(x=>['良かった','改善したい'].includes(x.assessment));
+ const good=assessed.filter(x=>x.assessment==='良かった').length;
+ const improve=assessed.filter(x=>x.assessment==='改善したい').length;
+ const rate=assessed.length?Math.round(good/assessed.length*100):null;
+ const status=assessed.length>=2&&rate>=60?'改善傾向あり':assessed.length>=2&&rate<=40?'課題継続・練習再調整':good>improve?'改善の兆しあり':improve>good?'まだ改善課題あり':'次の試合で評価待ち';
+ const first=later[0];
+ return {status,focus,source,match:first.match,event:first.event,assessment:first.assessment,results:later,good,improve,assessed:assessed.length,rate};
 }
 function getTrainingDecisionComparison(training){
  if(!training?.date)return null;
@@ -382,8 +387,13 @@ function renderTrainingDecisionComparison(training){
 function renderImprovementFollowup(training){
  if(!training?.sourceMatch)return '';
  const r=getImprovementFollowup(training);
- const tone=r.status==='改善の兆しあり'?'good':'';
- return '<div class="note" style="margin-top:8px"><b>📈 試合での改善追跡</b><div class="tiny '+tone+'">'+esc(r.status)+'</div><div class="tiny muted">元の課題：'+esc(r.source.matchDate||'')+'｜'+esc(r.source.matchTitle||'試合動画')+'｜'+formatMatchTime(r.source.time)+'／テーマ：'+esc(r.focus)+'</div>'+(r.match?'<div class="tiny">次の確認試合：'+esc(r.match.date)+'｜'+esc(r.match.title||'試合動画')+'｜'+formatMatchTime(r.event.time)+'／評価：'+esc(r.assessment)+'</div><button class="secondary small" onclick="openMatchEventInHistory('+Number(r.match.id)+',\''+String(r.event.id).replace(/\\/g,'\\\\').replace(/'/g,"\\'")+'\')">次の試合場面を見る</button>':'<div class="tiny muted">練習日より後の試合で、陸玖本人と確認した同じテーマの場面を待っています。</div>')+'<div class="tiny muted">※同じテーマの最初の確認場面を表示します。評価は映像と人の確認に基づきます。</div></div>';
+ const tone=r.status==='改善傾向あり'||r.status==='改善の兆しあり'?'good':'';
+ const progress=r.assessed?'<div class="tiny">確認済み '+r.assessed+'場面｜良かった '+r.good+'／改善したい '+r.improve+'｜良かった率 '+r.rate+'%</div>':'<div class="tiny muted">評価済みの同テーマ場面はまだありません。</div>';
+ const rows=(r.results||[]).map(x=>{
+  const arg=String(x.event.id).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+  return '<div class="tiny" style="margin-top:4px">・'+esc(x.match.date)+' '+esc(x.match.title||'試合')+'｜'+formatMatchTime(x.event.time)+'｜'+esc(x.assessment)+(x.assessment==='良かった'||x.assessment==='改善したい'?'<button class="secondary small" style="margin-left:5px" onclick="openMatchEventInHistory('+Number(x.match.id)+',\''+arg+'\')">場面を見る</button>':'')+'</div>';
+ }).join('');
+ return '<div class="note" style="margin-top:8px"><b>📈 試合での改善追跡</b><div class="tiny '+tone+'">'+esc(r.status)+'</div><div class="tiny muted">元の課題：'+esc(r.source.matchDate||'')+'｜'+esc(r.source.matchTitle||'試合動画')+'｜'+formatMatchTime(r.source.time)+'／テーマ：'+esc(r.focus)+'</div>'+progress+(rows?'<div class="tiny" style="margin-top:6px"><b>練習後の試合履歴</b></div>'+rows:'<div class="tiny muted">練習日より後の試合で、陸玖本人と確認した同じテーマの場面を待っています。</div>')+'<div class="tiny muted" style="margin-top:6px">※本人確認済みの同テーマ場面を複数試合にわたり集計します。練習との関連を追跡するもので、練習だけが改善の原因とは断定しません。</div></div>';
 }
 function renderMatchLibrary(){
  const host=document.getElementById('matchLibrary');if(!host)return;
