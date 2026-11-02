@@ -455,7 +455,7 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
     track_summary = associate_person_tracks(frames, max_gap_seconds=max(9.0, actual_interval * 2.1))
     knees = [x[k] for x in frames for k in ("left_knee_angle_deg", "right_knee_angle_deg") if x.get(k) is not None]
     hips = [x[k] for x in frames for k in ("left_hip_angle_deg", "right_hip_angle_deg") if x.get(k) is not None]
-    trunks = [x["trunk_lean_image_angle_deg"] for x in frames]
+    trunks = [x["trunk_lean_image_angle_deg"] for x in frames if x.get("trunk_lean_image_angle_deg") is not None]
     summary = {
         "sampled_pose_frames": len(frames),
         "duration_seconds": round(duration, 2),
@@ -539,7 +539,7 @@ def process_video(path: str, mode: str, camera_angle: str = "未選択", progres
     if not frames:
         raise HTTPException(status_code=422, detail="人物の姿勢を検出できませんでした。人物全身が見える明るい動画で再試行してください。")
     knees = [x[k] for x in frames for k in ("left_knee_angle_deg", "right_knee_angle_deg") if x.get(k) is not None]
-    trunks = [x["trunk_lean_image_angle_deg"] for x in frames]
+    trunks = [x["trunk_lean_image_angle_deg"] for x in frames if x.get("trunk_lean_image_angle_deg") is not None]
     hips = [x[k] for x in frames for k in ("left_hip_angle_deg", "right_hip_angle_deg") if x.get(k) is not None]
     # Estimate ankle/foot landmark movement between sampled frames in normalized image coordinates.
     # Values are image-widths per second, not real-world speed; camera motion and perspective affect them.
