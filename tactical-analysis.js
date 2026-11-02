@@ -85,9 +85,73 @@ function render(){
   document.getElementById('tacticalNote').value='';
  };
 }
+function getTacticalWeeklyEvidence(){
+ const matches=(typeof state!=='undefined'&&Array.isArray(state.matchAnalyses))?state.matchAnalyses:[];
+ const evidence=[];
+ matches.forEach(match=>(match.candidateEvents||[]).forEach(ev=>{
+  if(ev.reviewLabel!=='陸玖'||!ev.tacticalReview?.fields)return;
+  const f=ev.tacticalReview.fields;
+  const add=(key,focus,reason,drill,score)=>{if(f[key]&&f[key]!=='映像で確認できない')evidence.push({key,focus,reason,drill,score,matchId:match.id,eventId:ev.id,date:match.date||''});};
+  if(f.scan==='確認したが首振りなし')add('scan','ボールを受ける','受ける直前の周囲確認が少なかった場面','左右・前方を確認してから半身で受ける練習',5);
+  if(f.orientation==='後ろ向き')add('orientation','ボールを受ける','後ろ向きで受けた場面','半身で受け、前方へファーストタッチする練習',4);
+  if(f.position==='味方と位置が重なる')add('position','オフザボール','味方と立ち位置が重なった場面','味方と違うレーンへ移動してパスコースを作る練習',5);
+  if(f.support==='真後ろ'||f.support==='パスコースを作れていない')add('support','オフザボール','サポート角度を作りにくかった場面','保持者の斜め前・斜め後ろに立つ角度づくり',5);
+  if(f.movement==='動き出しなし')add('movement','オフザボール','スペースへの動き出しが見られなかった場面','味方が顔を上げる前に斜め・背後へ動く練習',5);
+  if(f.movement==='足元に受けに来た')add('movement','オフザボール','足元へ受けに来た場面','足元と背後への動き出しを使い分ける練習',3);
+ }));
+ const groups={};
+ evidence.forEach(x=>{const g=groups[x.key]||(groups[x.key]={...x,count:0,latest:x.date});g.count++;if(String(x.date)>String(g.latest))g.latest=x.date;});
+ return Object.values(groups).sort((a,b)=>b.score*b.count-a.score*a.count||String(b.latest).localeCompare(String(a.latest)));
+}
+function getTacticalWeeklyPriority(){
+ const rows=getTacticalWeeklyEvidence();
+ return rows.length?rows[0]:null;
+}
+function applyTacticalWeeklyPlan(plans){
+ const rows=getTacticalWeeklyEvidence();
+ if(!rows.length)return plans;
+ const chosen=rows.slice(0,3);
+ const templates={
+ 'ボールを受ける':{title:'首振り＋半身で前向きに受ける',category:'受ける動き',minutes:12,note:'パスが出る前に左右・前方を確認。半身で受け、前へ運べるファーストタッチを左右から反復する。'},
+ 'オフザボール':{title:'サポート角度＋スペースへの動き出し',category:'受ける動き',minutes:12,note:'保持者の斜め前・斜め後ろに立つ。味方が顔を上げる前に、相手の背後や空いたレーンへ動く。'}
+ };
+ const unique=[];
+ chosen.forEach(x=>{if(!unique.some(y=>y.focus===x.focus))unique.push(x);});
+ const slots=[0,2,1];
+ unique.slice(0,3).forEach((e,i)=>{
+  const template=templates[e.focus];if(!template)return;
+  const idx=slots[i];
+  const base=plans[idx];
+  plans[idx]={...base,title:template.title,category:template.category,focus:e.focus,minutes:template.minutes,note:template.note+'\\n\\n【試合映像からの改善テーマ】'+e.reason+'。'+e.drill,why:'本人確認済みの試合場面 '+e.count+'件を反映：'+e.reason};
+ });
+ return plans;
+}
+function renderTacticalWeeklyEvidence(){
+ const host=typeof dailyPlan!=='undefined'?dailyPlan:null;if(!host)return;
+ const priority=getTacticalWeeklyPriority();if(!priority)return;
+ if(document.getElementById('tacticalWeeklyEvidence'))return;
+ const box=document.createElement('div');box.id='tacticalWeeklyEvidence';box.className='note';box.style.marginTop='12px';
+ box.innerHTML='<b>試合分析を反映した翌週の重点テーマ</b><div class="tiny">本人確認済み・手動分析済み '+getTacticalWeeklyEvidence().reduce((n,x)=>n+x.count,0)+'項目を集計</div>'+getTacticalWeeklyEvidence().slice(0,3).map(x=>'<div class="listitem"><div class="grow"><b>'+escT(x.focus)+'｜'+escT(x.reason)+'</b><div class="tiny muted">'+x.count+'件・'+escT(x.drill)+'</div></div></div>').join('')+'<div class="tiny muted">映像で確認できない項目は集計から除外。手動確認の記録から練習候補を作成しています。</div>';
+ host.appendChild(box);
+}
+function installWeeklyCoach(){
+ if(typeof window.getWeeklyCoachPlan==='function'&&!window.getWeeklyCoachPlan.__tacticalWeekWrapped){
+  const original=window.getWeeklyCoachPlan;
+  const wrapped=function(){return applyTacticalWeeklyPlan(original.apply(this,arguments));};
+  wrapped.__tacticalWeekWrapped=true;window.getWeeklyCoachPlan=wrapped;
+ }
+ if(typeof window.renderAll==='function'&&!window.renderAll.__tacticalWeekRenderWrapped){
+  const original=window.renderAll;
+  const wrapped=function(){const result=original.apply(this,arguments);renderTacticalWeeklyEvidence();return result;};
+  wrapped.__tacticalWeekRenderWrapped=true;window.renderAll=wrapped;
+ }
+ renderTacticalWeeklyEvidence();
+}
+
 function install(){
  if(typeof state==='undefined')return;
  render();
+ installWeeklyCoach();
  if(typeof window.renderAll==='function'&&!window.renderAll.__tacticalWrapped){
   const original=window.renderAll;
   const wrapped=function(){const result=original.apply(this,arguments);render();return result;};
