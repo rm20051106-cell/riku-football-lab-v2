@@ -1250,7 +1250,7 @@ function getMonthlyGrowthReport(monthKey){
  const start=month+'-01',dEnd=new Date(yy,mm,1),end=dEnd.getFullYear()+'-'+String(dEnd.getMonth()+1).padStart(2,'0')+'-01';
  const trainings=(state.trainings||[]).filter(t=>String(t.date||'')>=start&&String(t.date||'')<end);
  const matches=(state.matchAnalyses||[]).filter(m=>String(m.date||'')>=start&&String(m.date||'')<end);
- const events=matches.flatMap(m=>(m.candidateEvents||[]).filter(e=>isManuallyReviewedMatchEvent(e)).map(e=>({...e,matchDate:m.date,matchTitle:m.title})));
+ const events=matches.flatMap(m=>(m.candidateEvents||[]).filter(e=>isManuallyReviewedMatchEvent(e)).map(e=>({...e,matchId:m.id,matchDate:m.date,matchTitle:m.title})));
  const assessed=events.filter(e=>['良かった','改善したい'].includes(e.assessment)),good=assessed.filter(e=>e.assessment==='良かった').length,needs=assessed.length-good;
  const focusCounts={};trainings.forEach(t=>{const f=t.focus||inferTrainingFocus(t.menu,t.category);focusCounts[f]=(focusCounts[f]||0)+1;});
  const topFocus=Object.entries(focusCounts).sort((a,b)=>b[1]-a[1])[0];
@@ -2061,7 +2061,7 @@ function getPreviousWeekMatchAdjustment(weekStart){
  const events=matches.flatMap(m=>(m.candidateEvents||[]).filter(e=>isManuallyReviewedMatchEvent(e)).map(e=>({...e,matchDate:m.date,matchTitle:m.title})));
  const assessmentEvents=events.filter(e=>e.assessmentSource==='manual'&&['良かった','改善したい'].includes(e.assessment));
  const decisionEvents=events.filter(e=>e.decisionReviewSource==='manual');
- const assessed=[...new Map([...assessmentEvents,...decisionEvents.filter(e=>['最適な選択','良い選択','別の選択肢もあった','判断が遅れた'].includes(e.decisionQuality)||['周囲を確認できた','ボールだけを見ていた','味方・相手の位置を確認できなかった'].includes(e.decisionScan))].map(e=>[String(e.id),e])).values()];
+ const assessed=[...new Map([...assessmentEvents,...decisionEvents.filter(e=>['最適な選択','良い選択','別の選択肢もあった','判断が遅れた'].includes(e.decisionQuality)||['周囲を確認できた','ボールだけを見ていた','味方・相手の位置を確認できなかった'].includes(e.decisionScan))].map(e=>[String(e.matchId)+'|'+String(e.id),e])).values()];
  const good=assessmentEvents.filter(e=>e.assessment==='良かった').length,improve=assessmentEvents.filter(e=>e.assessment==='改善したい').length;
  const q=decisionEvents.filter(e=>['最適な選択','良い選択','別の選択肢もあった','判断が遅れた'].includes(e.decisionQuality));
  const qGood=q.filter(e=>['最適な選択','良い選択'].includes(e.decisionQuality)).length;
