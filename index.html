@@ -22,6 +22,7 @@ button,.button{border:0;border-radius:12px;padding:12px 14px;font-weight:800;fon
 </head>
 <body>
 <header><div class="brand"><div><div class="logo">RIKU <span>FOOTBALL LAB</span></div><div class="sub">PLAYER DEVELOPMENT SYSTEM</div></div><div class="pill">● PERSONAL LAB</div></div></header>
+<div id="recordSaveNotice" class="note hidden" role="status" aria-live="polite" style="max-width:850px;margin:10px auto 0;padding:10px 14px"></div>
 <main>
 <section class="view active" id="home">
  <div class="hero"><div class="eyebrow">YOUR NEXT LEVEL STARTS HERE</div><h1>陸玖の成長を、<br>記録から武器に。</h1><p>練習・試合動画・シュートフォーム・測定記録をひとつに。毎回の振り返りを、次のプレーにつなげよう。</p><div class="btnrow"><button onclick="showView('video')">▶ 動画を分析する</button><button class="secondary" onclick="showView('form')">⚽ シュート・FKフォーム</button><button class="secondary" onclick="showView('training')">今日の練習を記録</button></div></div>
@@ -138,7 +139,24 @@ let state={aiFormAnalyses:[],matchAnalyses:[],playerProfile:{kit:'赤いシャ�
 {date:'2026-10-19',type:'立ち幅跳び',value:184,unit:'cm',note:'初期登録値'}
 ],clips:[],forms:[]};
 function load(){try{let s=JSON.parse(localStorage.getItem(KEY));if(s&&s.settings)state={...state,...s,playerProfile:{...state.playerProfile,...(s.playerProfile||{})},settings:{...state.settings,...s.settings},menus:s.menus||defaultMenus};}catch(e){}}
-function persist(){localStorage.setItem(KEY,JSON.stringify(state));renderAll()}
+function persist(){
+ const notice=document.getElementById('recordSaveNotice');
+ try{
+  const serialized=JSON.stringify(state);
+  localStorage.setItem(KEY,serialized);
+  if(notice){notice.classList.add('hidden');notice.textContent=''}
+  renderAll();
+  return true;
+ }catch(error){
+  console.error('記録データの保存に失敗しました',error);
+  if(notice){
+   notice.textContent='記録データを端末に保存できませんでした。今回の変更は画面上には残っていますが、再読み込みすると失われる可能性があります。すぐに「設定」→「記録データを書き出す」でバックアップしてください。原因：'+(error?.name||'保存エラー');
+   notice.classList.remove('hidden');
+  }
+  renderAll();
+  return false;
+ }
+}
 function today(){return new Date().toLocaleDateString('sv-SE')}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function showView(id){document.querySelectorAll('.view').forEach(x=>x.classList.toggle('active',x.id===id));document.querySelectorAll('.nav button').forEach(x=>x.classList.toggle('active',x.dataset.view===id));if(id==='settings'){playerName.value=state.settings.name;jersey1.value=state.settings.jersey1;jersey2.value=state.settings.jersey2;apiBaseUrl.value=state.settings.apiBaseUrl||'';apiStatus.textContent=state.settings.apiBaseUrl?'保存済み：'+state.settings.apiBaseUrl:'未設定';loadPlayerProfileFields()}window.scrollTo({top:0,behavior:'smooth'});renderAll()}
