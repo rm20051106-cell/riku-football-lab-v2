@@ -46,6 +46,7 @@ button,.button{border:0;border-radius:12px;padding:12px 14px;font-weight:800;fon
 <section class="view" id="growth">
  <h1 class="section-title">陸玖の成長グラフ</h1>
  <p class="section-desc">保存された練習・試合評価・測定記録を時系列で表示。記録が増えるほど変化が見やすくなります。</p>
+ <div class="card"><h2>陸玖専用・月間成長レポート</h2><p class="tiny muted">保存された練習・試合評価・測定記録から、その月の取り組みと次の重点を自動でまとめます。</p><label class="label" for="growthReportMonth">対象月</label><select id="growthReportMonth" onchange="renderMonthlyGrowthReport()"></select><div id="monthlyGrowthReport"></div></div>
  <div class="card"><h2>練習の積み重ね</h2><div id="growthTrainingChart"></div><div class="tiny muted">月ごとの練習記録数です。回数の増加は技術向上そのものを意味しません。</div></div>
  <div class="card"><h2>試合での評価推移</h2><div id="growthMatchChart"></div><div class="tiny muted">本人確認済みの陸玖の試合場面について、「良かった」の割合を月ごとに表示。評価件数も併記します。</div></div>
  <div class="card"><h2>試合→練習→次の試合｜テーマ別の改善率</h2><div id="growthImprovementSummary"></div><div class="tiny muted">改善率＝次の試合で「良かった」と確認できた件数 ÷ 評価済み件数。練習達成率＝練習チェック完了数 ÷ 全チェック数。評価待ちは分母に含めません。</div></div>
@@ -872,7 +873,39 @@ function renderThemeImprovementStats(){
  if(!rows.length){host.innerHTML='<div class="empty">まだ試合から作成した練習記録がありません。試合場面の「このメニューで練習を作成」から始めると、テーマ別の改善率を集計できます。</div>';return;}
  host.innerHTML=rows.map(g=>'<div class="listitem" style="display:block"><b>'+esc(g.theme)+'</b><div class="tiny muted">改善課題からの練習 '+g.chains+'件｜次の試合：改善 '+g.improved+'・課題継続 '+g.needsWork+'・評価待ち '+g.pending+'</div><div class="tiny" style="margin-top:6px">試合での改善率：<b>'+(g.improvementRate===null?'評価データ待ち':g.improvementRate+'%')+'</b>'+(g.assessed?'（'+g.improved+'/'+g.assessed+'件）':'')+'</div><div style="height:8px;background:var(--line,#ddd);border-radius:8px;overflow:hidden;margin:4px 0 8px"><div style="height:100%;width:'+(g.improvementRate??0)+'%;background:var(--accent,#7cba43);border-radius:8px"></div></div><div class="tiny">練習チェック達成率：<b>'+(g.practiceRate===null?'未記録':g.practiceRate+'%')+'</b>（'+g.practiceDone+'/'+g.practiceTotal+'項目）</div><div class="tiny muted">練習 '+g.practiceSessions+'回分のチェックを集計。次の試合で本人確認・評価された同じテーマの最初の場面を基準にしています。</div></div>').join('');
 }
+function getMonthlyGrowthReport(monthKey){
+ const month=String(monthKey||today().slice(0,7)),parts=month.split('-'),yy=Number(parts[0]),mm=Number(parts[1]);
+ const start=month+'-01',dEnd=new Date(yy,mm,1),end=dEnd.getFullYear()+'-'+String(dEnd.getMonth()+1).padStart(2,'0')+'-01';
+ const trainings=(state.trainings||[]).filter(t=>String(t.date||'')>=start&&String(t.date||'')<end);
+ const matches=(state.matchAnalyses||[]).filter(m=>String(m.date||'')>=start&&String(m.date||'')<end);
+ const events=matches.flatMap(m=>(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖').map(e=>({...e,matchDate:m.date,matchTitle:m.title})));
+ const assessed=events.filter(e=>['良かった','改善したい'].includes(e.assessment)),good=assessed.filter(e=>e.assessment==='良かった').length,needs=assessed.length-good;
+ const focusCounts={};trainings.forEach(t=>{const f=t.focus||inferTrainingFocus(t.menu,t.category);focusCounts[f]=(focusCounts[f]||0)+1;});
+ const topFocus=Object.entries(focusCounts).sort((a,b)=>b[1]-a[1])[0];
+ const linked=trainings.filter(t=>t.sourceMatch);let linkedImproved=0,linkedNeeds=0,linkedPending=0;
+ linked.forEach(t=>{const f=getImprovementFollowup(t);if(f?.status==='改善の兆しあり')linkedImproved++;else if(f?.status==='まだ改善課題あり')linkedNeeds++;else linkedPending++;});
+ const stepsTotal=trainings.reduce((n,t)=>n+(Array.isArray(t.steps)&&t.steps.length?t.steps.length:getTrainingSteps(t.focus||inferTrainingFocus(t.menu,t.category)).length),0);
+ const stepsDone=trainings.reduce((n,t)=>n+(Array.isArray(t.stepsDone)?t.stepsDone.length:0),0);
+ const measures=(state.measures||[]).filter(m=>String(m.date||'')>=start&&String(m.date||'')<end);
+ const measureSummary=['30m走','アジリティ','立ち幅跳び'].map(type=>{const list=measures.filter(m=>m.type===type&&Number.isFinite(Number(m.value))).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));if(!list.length)return null;const first=list[0],last=list[list.length-1];return {type,first,last,delta:list.length>1?Number(last.value)-Number(first.value):null,unit:last.unit||(type==='立ち幅跳び'?'cm':'秒'),count:list.length};}).filter(Boolean);
+ const goodThemes={};assessed.filter(e=>e.assessment==='良かった').forEach(e=>{const k=e.actionType||'その他';goodThemes[k]=(goodThemes[k]||0)+1;});
+ const best=Object.entries(goodThemes).sort((a,b)=>b[1]-a[1])[0];
+ const priority=Object.entries(focusCounts).sort((a,b)=>a[1]-b[1])[0]?.[0]||topFocus?.[0]||'ドリブル';
+ const drills={'ドリブル':'親子1対1で相手の重心を見て逆を取り、抜いた後の2〜3歩を加速する。','パス':'受ける前の首振りと、前向きのファーストタッチから正確につなぐ。','ボールを受ける':'首振り→半身→前向きのファーストタッチを反復する。','シュート':'軸足とミートを確認し、左右のコースを狙って蹴る。','守備・プレス':'飛び込まず距離を保ち、相手の進行方向を限定する。','オフザボール':'味方が顔を上げる前に動き出し、受ける角度を作る。','その他':'試合の改善場面を一つ選び、ゆっくり再現してから実戦形式で試す。'};
+ return {month,trainings:trainings.length,matches:matches.length,events:events.length,assessed:assessed.length,good,needs,goodRate:assessed.length?Math.round(good/assessed.length*100):null,focusCounts,topFocus,stepsDone,stepsTotal,stepRate:stepsTotal?Math.round(stepsDone/stepsTotal*100):null,linked:linked.length,linkedImproved,linkedNeeds,linkedPending,measureSummary,best,priority,next:drills[priority]||drills['その他']};
+}
+function renderMonthlyGrowthReport(){
+ const host=document.getElementById('monthlyGrowthReport'),picker=document.getElementById('growthReportMonth');if(!host||!picker)return;
+ const now=new Date(),keys=[];for(let i=0;i<12;i++){const d=new Date(now.getFullYear(),now.getMonth()-i,1);keys.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));}
+ const available=new Set([today().slice(0,7),...(state.trainings||[]).map(x=>String(x.date||'').slice(0,7)),...(state.matchAnalyses||[]).map(x=>String(x.date||'').slice(0,7)),...(state.measures||[]).map(x=>String(x.date||'').slice(0,7))]);
+ const selected=picker.value,options=keys.filter(k=>available.has(k));picker.innerHTML=options.map(k=>'<option value="'+k+'">'+Number(k.slice(5))+'月（'+k.slice(0,4)+'年）</option>').join('');picker.value=options.includes(selected)?selected:(options[0]||keys[0]);
+ const r=getMonthlyGrowthReport(picker.value);
+ const metric=(label,value,sub)=>'<div class="listitem"><b>'+esc(label)+'</b><div style="font-size:22px;font-weight:800;margin:3px 0">'+esc(value)+'</div><div class="tiny muted">'+esc(sub)+'</div></div>';
+ const measures=r.measureSummary.length?r.measureSummary.map(m=>'<div class="tiny">・'+esc(m.type)+'：'+esc(m.first.value)+' → <b>'+esc(m.last.value)+' '+esc(m.unit)+'</b>'+(m.delta===null?'（月内1件）':'（月内差 '+(m.delta>0?'+':'')+m.delta.toFixed(2)+' '+esc(m.unit)+'）')+'｜'+m.count+'件</div>').join(''):'<div class="tiny muted">この月の身体測定記録はありません。</div>';
+ host.innerHTML='<div class="grid two" style="margin-top:10px">'+metric('練習記録',r.trainings+'回','対象月の保存件数')+metric('試合場面の評価',r.assessed+'件',r.assessed?'良かった '+r.good+'／改善したい '+r.needs:'評価入力待ち')+metric('良かった評価',r.goodRate===null?'—':r.goodRate+'%','陸玖本人として確認・評価した場面のみ')+metric('練習チェック達成率',r.stepRate===null?'—':r.stepRate+'%',r.stepsDone+'/'+r.stepsTotal+'項目')+'</div><div class="listitem" style="margin-top:8px"><b>今月の取り組みテーマ</b><div class="tiny">'+(r.topFocus?esc(r.topFocus[0])+'（'+r.topFocus[1]+'回）':'練習テーマの記録なし')+'</div><div class="tiny muted">良かった場面の最多テーマ：'+(r.best?esc(r.best[0])+'（'+r.best[1]+'件）':'評価データなし')+'</div></div><div class="listitem"><b>試合→練習→次の試合</b><div class="tiny">連携練習 '+r.linked+'件｜改善の兆し '+r.linkedImproved+'・課題継続 '+r.linkedNeeds+'・評価待ち '+r.linkedPending+'</div></div><div class="listitem"><b>身体測定</b>'+measures+'</div><div class="note" style="margin-top:10px"><b>来月のおすすめ重点：'+esc(r.priority)+'</b><div class="tiny">'+esc(r.next)+'</div></div><div class="tiny muted" style="margin-top:8px">保存済み記録だけを集計します。記録がない項目はゼロ成長と判断せず「データなし」として扱います。タイムの計測条件が異なる場合は単純比較しません。</div>';
+}
 function renderGrowthDashboard(){
+ renderMonthlyGrowthReport();
  const months=[];const now=new Date();for(let offset=5;offset>=0;offset--){const d=new Date(now.getFullYear(),now.getMonth()-offset,1);months.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));}
  const trainings=state.trainings||[],matches=state.matchAnalyses||[],measures=state.measures||[];
  const trainingPoints=months.map(m=>({label:m.slice(5)+'月',value:trainings.filter(t=>String(t.date||'').slice(0,7)===m).length}));
