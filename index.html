@@ -1473,19 +1473,43 @@ function renderAnnualGrowthReport(yearValue){
  const matches=(state.matchAnalyses||[]).filter(m=>String(m.date||'').startsWith(year));
  const events=matches.flatMap(m=>(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖'));
  const good=events.filter(e=>e.assessment==='良かった'),improve=events.filter(e=>e.assessment==='改善したい');
- const months=Array.from({length:12},(_,i)=>{const key=year+'-'+String(i+1).padStart(2,'0');const ts=trainings.filter(t=>String(t.date||'').startsWith(key));const ms=matches.filter(m=>String(m.date||'').startsWith(key));const es=ms.flatMap(m=>(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖'));return {label:(i+1)+'月',train:ts.length,days:new Set(ts.map(t=>t.date).filter(Boolean)).size,matches:ms.length,scenes:es.length,good:es.filter(e=>e.assessment==='良かった').length,improve:es.filter(e=>e.assessment==='改善したい').length};});
  const trainingDays=new Set(trainings.map(t=>t.date).filter(Boolean)).size;
+ const trainingMinutes=trainings.reduce((sum,t)=>sum+(Number(t.minutes)||0),0);
+ const stepTotal=trainings.reduce((sum,t)=>sum+(Array.isArray(t.steps)?t.steps.length:0),0);
+ const stepDone=trainings.reduce((sum,t)=>sum+(Array.isArray(t.stepsDone)?t.stepsDone.length:0),0);
+ const manualForms=(state.forms||[]).filter(x=>String(x.date||'').startsWith(year)).length;
+ const aiForms=(state.aiFormAnalyses||[]).filter(x=>String(x.date||'').startsWith(year)).length;
+ const goalHistory=(state.settings?.nextMatchGoalHistory||[]).filter(x=>String(x.reviewDate||x.matchDate||x.date||'').startsWith(year)&&x.result);
  const reflections=Object.entries(state.settings?.matchdayReflection||{}).filter(([date])=>String(date).startsWith(year)).flatMap(([,values])=>Object.values(values||{}).filter(v=>['できた','もう少し','試せなかった'].includes(v)));
- let html='<section class="grid"><div class="card"><div class="tiny muted">年間練習記録</div><div class="stat">'+trainings.length+'<small>回</small></div><div class="tiny muted">練習した日 '+trainingDays+'日</div></div><div class="card"><div class="tiny muted">試合記録</div><div class="stat">'+matches.length+'<small>件</small></div><div class="tiny muted">本人確認場面 '+events.length+'件</div></div><div class="card"><div class="tiny muted">試合評価</div><div class="stat">'+good.length+' / '+improve.length+'</div><div class="tiny muted">良かった ／ 改善したい</div></div><div class="card"><div class="tiny muted">試合後の振り返り</div><div class="stat">'+reflections.length+'<small>件</small></div></div></section>';
+ const months=Array.from({length:12},(_,i)=>{const key=year+'-'+String(i+1).padStart(2,'0');const ts=trainings.filter(t=>String(t.date||'').startsWith(key));const ms=matches.filter(m=>String(m.date||'').startsWith(key));const es=ms.flatMap(m=>(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖'));return {label:(i+1)+'月',train:ts.length,days:new Set(ts.map(t=>t.date).filter(Boolean)).size,matches:ms.length,scenes:es.length,good:es.filter(e=>e.assessment==='良かった').length,improve:es.filter(e=>e.assessment==='改善したい').length};});
+ let html='<section class="grid"><div class="card"><div class="tiny muted">年間練習記録</div><div class="stat">'+trainings.length+'<small>回</small></div><div class="tiny muted">練習した日 '+trainingDays+'日</div></div><div class="card"><div class="tiny muted">練習時間</div><div class="stat">'+trainingMinutes+'<small>分</small></div><div class="tiny muted">チェック '+stepDone+' / '+stepTotal+'項目</div></div><div class="card"><div class="tiny muted">試合記録</div><div class="stat">'+matches.length+'<small>件</small></div><div class="tiny muted">本人確認場面 '+events.length+'件</div></div><div class="card"><div class="tiny muted">試合評価</div><div class="stat">'+good.length+' / '+improve.length+'</div><div class="tiny muted">良かった ／ 改善したい</div></div><div class="card"><div class="tiny muted">フォーム記録</div><div class="stat">'+manualForms+'<small>件</small></div><div class="tiny muted">AIフォーム解析 '+aiForms+'件</div></div><div class="card"><div class="tiny muted">試合後の目標評価</div><div class="stat">'+goalHistory.length+'<small>件</small></div><div class="tiny muted">振り返り '+reflections.length+'件</div></div></section>';
+ html+='<div class="tiny muted" style="margin-top:6px">練習時間・チェック数・分析件数は活動記録です。技術の上達や試合での成功を直接示す数値ではありません。</div>';
  html+='<h4 style="margin-top:14px">月ごとの成長記録</h4>'+months.map(m=>'<div class="listitem"><div class="grow"><b>'+m.label+'</b><div class="tiny muted">練習 '+m.train+'回／'+m.days+'日・試合 '+m.matches+'件・本人確認 '+m.scenes+'場面</div><div class="tiny">良かった '+m.good+' ／ 改善したい '+m.improve+'</div></div></div>').join('');
  const skills=['ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール','その他'];
  const rows=skills.map(skill=>{const list=events.filter(e=>e.actionType===skill&&['良かった','改善したい'].includes(e.assessment));const g=list.filter(e=>e.assessment==='良かった').length;return {skill,n:list.length,g,improve:list.length-g,rate:list.length?Math.round(g/list.length*100):0};}).filter(x=>x.n);
  html+='<h4 style="margin-top:14px">プレー別・年間評価の傾向</h4>'+(rows.length?rows.map(x=>'<div class="listitem"><div class="grow"><b>'+x.skill+'</b><div class="tiny muted">良かった '+x.g+' ／ 改善したい '+x.improve+' ／ 評価済み '+x.n+'場面</div><div class="progress" style="margin-top:5px"><span style="width:'+x.rate+'%"></span></div><div class="tiny muted">良かった割合 '+x.rate+'%</div></div></div>').join(''):'<div class="empty">年間の本人確認・評価済み場面がまだありません。</div>');
  const types=[...new Set((state.measures||[]).filter(m=>String(m.date||'').startsWith(year)).map(m=>m.type))];
  const measured=types.map(type=>{const list=(state.measures||[]).filter(m=>m.type===type&&String(m.date||'').startsWith(year)).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));return {type,first:list[0],last:list[list.length-1],count:list.length};});
- html+='<h4 style="margin-top:14px">測定の年間変化</h4>'+(measured.length?measured.map(x=>'<div class="listitem"><div class="grow"><b>'+esc(x.type)+'</b><div class="tiny muted">'+esc(x.first.date)+'：'+esc(x.first.value)+' '+esc(x.first.unit||'')+(x.first===x.last?'':' → '+esc(x.last.date)+'：'+esc(x.last.value)+' '+esc(x.last.unit||''))+'</div><div class="tiny">年間 '+x.count+'回測定</div></div></div>').join(''):'<div class="empty">この年の測定記録はまだありません。</div>');
- html+='<div class="note"><b>コーチからの読み取り方</b><div class="tiny">練習回数・試合数・評価件数は活動記録です。良かった割合や測定値の変化だけで成長や実力を断定しません。出場時間、ポジション、対戦相手、測定条件、体調なども合わせて振り返ってください。</div></div>';
+ html+='<h4 style="margin-top:14px">測定の年間変化</h4>'+(measured.length?measured.map(x=>{const sameUnit=(x.first.unit||'')===(x.last.unit||'');const delta=Number(x.last.value)-Number(x.first.value);const hasDelta=x.first!==x.last&&sameUnit&&Number.isFinite(delta);return '<div class="listitem"><div class="grow"><b>'+esc(x.type)+'</b><div class="tiny muted">'+esc(x.first.date)+'：'+esc(x.first.value)+' '+esc(x.first.unit||'')+(x.first===x.last?'':' → '+esc(x.last.date)+'：'+esc(x.last.value)+' '+esc(x.last.unit||''))+'</div><div class="tiny">年間 '+x.count+'回測定'+(hasDelta?' ／ 差 '+(delta>0?'+':'')+delta.toFixed(2)+' '+esc(x.last.unit||''):'')+'</div></div></div>';}).join(''):'<div class="empty">この年の測定記録はまだありません。</div>');
+ state.settings=state.settings||{};
+ const seasonGoals=state.settings.seasonGoals||{};
+ const savedGoal=seasonGoals[year]||null;
+ const focusOptions=['ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール'];
+ const defaultFocus=rows.slice().sort((a,b)=>b.improve-a.improve||b.n-a.n)[0]?.skill||'ドリブル';
+ html+='<h4 style="margin-top:18px">次のシーズンの目標</h4><div class="card"><div class="tiny muted">年間の記録を見ながら、次のシーズンで伸ばしたいテーマを1つ選び、具体的な行動目標を保存できます。過去の試合目標・記録は上書きしません。</div><label class="tiny" for="annualSeasonFocus">重点テーマ</label><select id="annualSeasonFocus" class="input" style="width:100%;margin:5px 0 9px">'+focusOptions.map(x=>'<option value="'+x+'" '+((savedGoal?.focus||defaultFocus)===x?'selected':'')+'>'+x+'</option>').join('')+'</select><label class="tiny" for="annualSeasonNote">具体的な目標</label><textarea id="annualSeasonNote" class="input" rows="3" style="width:100%;margin:5px 0 9px" placeholder="例：受ける前に首を振り、前を向けるファーストタッチを増やす">'+esc(savedGoal?.note||'')+'</textarea><button class="primary" onclick="saveAnnualSeasonGoal('+Number(year)+')">この目標を保存する</button>'+(savedGoal?'<div class="tiny muted" style="margin-top:8px">保存済み：'+esc(savedGoal.savedAt||'')+'｜'+esc(savedGoal.focus)+'｜'+esc(savedGoal.note)+'</div>':'<div class="tiny muted" style="margin-top:8px">まだ目標は保存されていません。</div>')+'</div>';
+ html+='<div class="note" style="margin-top:12px"><b>コーチからの読み取り方</b><div class="tiny">練習回数・試合数・評価件数は活動記録です。良かった割合や測定値の変化だけで成長や実力を断定しません。出場時間、ポジション、対戦相手、測定条件、体調なども合わせて振り返ってください。記録が少ないテーマは無理に順位づけしません。</div></div>';
  host.innerHTML=html;
+}
+function saveAnnualSeasonGoal(yearValue){
+ const year=String(yearValue||new Date().getFullYear());
+ const focus=document.getElementById('annualSeasonFocus')?.value||'ドリブル';
+ const note=(document.getElementById('annualSeasonNote')?.value||'').trim();
+ if(!note){alert('次のシーズンで取り組みたい具体的な目標を入力してね。');return;}
+ state.settings=state.settings||{};
+ state.settings.seasonGoals=state.settings.seasonGoals||{};
+ state.settings.seasonGoals[year]={year,focus,note,savedAt:today()};
+ persist();
+ renderAnnualGrowthReport(year);
 }
 function printAnnualGrowthReport(){
  const select=document.getElementById('annualGrowthYear'),host=document.getElementById('annualGrowthReport');if(!host)return;
