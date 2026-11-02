@@ -912,7 +912,7 @@ function renderTacticalMatchContextDevelopment(){
  if(!host){host=document.createElement('section');host.id='tacticalMatchContextDevelopment';host.className='card';}
  const groups=getTacticalMatchContextGroups();
  const comparisons=getTacticalMatchPeriodComparisons(groups);
- const comparisonHtml=comparisons.map(x=>'<div class="card"><b>'+escT(x.role)+'｜'+escT(x.defense)+'｜'+escT(x.score)+'</b><div class="tiny muted">'+escT(x.from)+'（'+x.fromCount+'場面）→ '+escT(x.to)+'（'+x.toCount+'場面）</div><div class="tiny"><b>プレー選択の構成変化：</b>'+x.decisions.map(d=>escT(d.choice)+' '+d.before+'%→'+d.after+'%（'+(d.delta>0?'+':'')+d.deltaポイント）').join('／')+'</div><div class="tiny"><b>課題行動率の変化：</b>'+(x.actions.map(a=>escT(a.label)+' '+a.before+'%→'+a.after+'%（'+(a.delta>0?'+':'')+a.delta+'ポイント）').join('／')||'両時間帯で観察数3件以上の共通項目なし')+'</div><div class="tiny muted">時間帯間の記録構成の差です。時間経過による能力変化や因果関係を断定しません。</div></div>').join('');
+ const comparisonHtml=comparisons.map(x=>'<div class="card"><b>'+escT(x.role)+'｜'+escT(x.defense)+'｜'+escT(x.score)+'</b><div class="tiny muted">'+escT(x.from)+'（'+x.fromCount+'場面）→ '+escT(x.to)+'（'+x.toCount+'場面）</div><div class="tiny"><b>プレー選択の構成変化：</b>'+x.decisions.map(d=>escT(d.choice)+' '+d.before+'%→'+d.after+'%（'+(d.delta>0?'+':'')+d.delta+'ポイント）').join('／')+'</div><div class="tiny"><b>課題行動率の変化：</b>'+(x.actions.map(a=>escT(a.label)+' '+a.before+'%→'+a.after+'%（'+(a.delta>0?'+':'')+a.delta+'ポイント）').join('／')||'両時間帯で観察数3件以上の共通項目なし')+'</div><div class="tiny muted">時間帯間の記録構成の差です。時間経過による能力変化や因果関係を断定しません。</div></div>').join('');
  const cards=groups.map(group=>{
   const insight=getTacticalMatchContextInsight(group);
   const heading=[group.role,group.defense,group.period,group.score].map(escT).join('｜');
