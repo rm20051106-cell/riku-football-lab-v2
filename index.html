@@ -49,6 +49,7 @@ button,.button{border:0;border-radius:12px;padding:12px 14px;font-weight:800;fon
  <div class="card"><h2>陸玖専用・月間成長レポート</h2><p class="tiny muted">保存された練習・試合評価・測定記録から、その月の取り組みと次の重点を自動でまとめます。</p><label class="label" for="growthReportMonth">対象月</label><select id="growthReportMonth" onchange="renderMonthlyGrowthReport()"></select><div id="monthlyGrowthReport"></div></div>
  <div class="card"><h2>練習の積み重ね</h2><div id="growthTrainingChart"></div><div class="tiny muted">月ごとの練習記録数です。回数の増加は技術向上そのものを意味しません。</div></div>
  <div class="card"><h2>試合での評価推移</h2><div id="growthMatchChart"></div><div class="tiny muted">本人確認済みの陸玖の試合場面について、「良かった」の割合を月ごとに表示。評価件数も併記します。</div></div>
+ <div class="card"><h2>練習前後の判断力の変化（月別）</h2><div id="growthTrainingDecisionChange"></div><div class="tiny muted">練習日を基準に、同じテーマの練習前後の試合評価を照合。月ごとに変化率の平均を表示します。比較できるデータがない月は無理に補完しません。</div></div>
  <div class="card"><h2>判断力の成長グラフ</h2><div id="growthDecisionChart"></div><div class="tiny muted">月ごとの「判断の質」と「周囲の確認」を可視化します。本人確認済みの陸玖の場面だけを集計し、未評価は割合に含めません。</div></div>
  <div class="card"><h2>ポジション別の判断分析</h2><p class="tiny muted">各場面で実際に担当していた役割（GK・DF・MF・FW）を選ぶと、判断の質・周囲の確認・プレー選択を役割別に集計します。ポジションは映像から自動推定せず、確認した内容だけを使います。</p><div id="growthPositionDecision"></div></div>
  <div class="card"><h2>陸玖専用・判断力トレーニング自動作成</h2><p class="tiny muted">ポジション別の試合評価から、改善優先度が最も高い役割を自動で選び、その場面に合った練習メニューを作ります。評価データが少ない場合は、記録を増やしてから自動作成します。</p><div id="positionDecisionTrainingPlan"></div></div>
@@ -1046,9 +1047,47 @@ function renderPositionDecisionTraining(){
  const roleTips={GK:'配球先と安全な選択',DF:'前進・横パス・戻しの判断',MF:'首振りと前向きで受ける判断',FW:'抜け出し・足元・落としの判断'};
  host.innerHTML='<div class="listitem"><div class="grow"><b>今回の重点：'+esc(plan.role)+'｜'+esc(plan.focus)+'</b><div class="tiny muted">'+esc(roleTips[plan.role])+'。記録された場面から優先順位を決定。</div></div></div><div class="tiny" style="white-space:pre-line;margin:8px 0">'+esc(plan.note)+'</div><div class="btnrow"><button onclick="applyPositionDecisionTraining()">この内容で今日の練習を作成</button></div><div class="tiny muted">作成後、トレーニング画面で内容・時間を編集して保存できます。記録データは端末内で集計し、外部AIや有料APIは使用しません。</div>';
 }
+function getMonthlyTrainingDecisionChange(){
+ const months={};
+ const seen=new Set();
+ (state.trainings||[]).filter(t=>t?.date).forEach(training=>{
+  const result=getTrainingDecisionComparison(training);
+  if(!result?.before||!result?.after)return;
+  const pair=String(result.focus)+'|'+String(result.before.match.id)+'|'+String(result.after.match.id);
+  if(seen.has(pair))return;
+  seen.add(pair);
+  const month=String(training.date).slice(0,7);
+  if(!/^\\d{4}-\\d{2}$/.test(month))return;
+  const row=months[month]||(months[month]={month,quality:[],scan:[],pairs:0});
+  let used=false;
+  if(result.prevQ&&result.nextQ){row.quality.push(result.nextQ.rate-result.prevQ.rate);used=true;}
+  if(result.prevS&&result.nextS){row.scan.push(result.nextS.rate-result.prevS.rate);used=true;}
+  if(used)row.pairs++;
+ });
+ return Object.values(months).sort((a,b)=>a.month.localeCompare(b.month)).map(row=>({
+  ...row,
+  qualityChange:row.quality.length?Math.round(row.quality.reduce((a,b)=>a+b,0)/row.quality.length):null,
+  scanChange:row.scan.length?Math.round(row.scan.reduce((a,b)=>a+b,0)/row.scan.length):null
+ }));
+}
+function renderMonthlyTrainingDecisionChange(){
+ const host=document.getElementById('growthTrainingDecisionChange');if(!host)return;
+ const rows=getMonthlyTrainingDecisionChange();
+ const quality=rows.filter(r=>r.qualityChange!==null);
+ const scan=rows.filter(r=>r.scanChange!==null);
+ if(!quality.length&&!scan.length){
+  host.innerHTML='<div class="empty">練習前と練習後の両方で、同じテーマの判断評価がそろうと月別グラフが表示されます。試合場面を陸玖本人と確認し、「判断の質」「周囲の確認」を評価してください。</div>';
+  return;
+ }
+ const qPoints=quality.map(r=>({date:r.month+'-01',value:r.qualityChange}));
+ const sPoints=scan.map(r=>({date:r.month+'-01',value:r.scanChange}));
+ const totalPairs=rows.reduce((n,r)=>n+r.pairs,0);
+ host.innerHTML='<div class="tiny muted">各月に行った練習について、同じテーマの練習前後の試合評価率の差を平均しています。プラスは改善方向、マイナスは再確認ポイントです。</div><div class="listitem"><b>良い判断率の変化（練習後 − 練習前）</b><div class="tiny muted">「最適な選択」「良い選択」の割合の差</div>'+renderGrowthLineChart('月別・良い判断率の変化',qPoints,'pt',{decimals:0,empty:'比較できる判断評価がまだありません。'})+'</div><div class="listitem"><b>周囲確認率の変化（練習後 − 練習前）</b><div class="tiny muted">「周囲を確認できた」の割合の差</div>'+renderGrowthLineChart('月別・周囲確認率の変化',sPoints,'pt',{decimals:0,empty:'比較できる周囲確認の評価がまだありません。'})+'</div><div class="tiny muted">比較できた練習テーマ・試合ペア：'+totalPairs+'組｜月ごとの値は重複する同一テーマ・同一試合ペアを1回として集計。練習の効果を断定するものではなく、試合評価の変化を示します。</div>';
+}
 function renderGrowthDashboard(){
  renderMonthlyGrowthReport();
  renderDecisionGrowthChart();
+ renderMonthlyTrainingDecisionChange();
  renderPositionDecisionAnalysis();
  renderPositionDecisionTraining();
  const months=[];const now=new Date();for(let offset=5;offset>=0;offset--){const d=new Date(now.getFullYear(),now.getMonth()-offset,1);months.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));}
