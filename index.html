@@ -255,6 +255,28 @@ function linkMatchEventToTraining(matchId,eventId){
  persist();
  alert('「'+training.menu+'」の練習記録に、'+match.title+' '+formatMatchTime(ev.time)+' の場面を結びつけたよ。');
 }
+function getRepeatedIssueAdjustment(focus,matchDate){
+ const candidates=(state.trainings||[]).filter(t=>{
+  const same=(t.sourceMatch?.focus||t.focus||inferTrainingFocus(t.menu,t.category))===focus;
+  return same&&t.sourceMatch&&String(t.date||'')<String(matchDate||'')&&getImprovementFollowup(t)?.status==='まだ改善課題あり';
+ }).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||Number(b.id||0)-Number(a.id||0));
+ const previous=candidates[0];if(!previous)return null;
+ const steps=Array.isArray(previous.steps)&&previous.steps.length?previous.steps:getTrainingSteps(focus);
+ const done=Array.isArray(previous.stepsDone)?previous.stepsDone.length:0;
+ const completion=steps.length?done/steps.length:0;
+ const easier=previous.reviewStatus==='難しかった'||previous.reviewStatus==='まだ試せていない'||previous.effort==='きつめ'||completion<0.5;
+ const level=easier?1:previous.reviewStatus==='できた'&&completion>=0.8?3:2;
+ const variants={
+ 'ドリブル':['難易度を下げ、ゆっくりの方向転換から開始。マーカー幅を広げ、左右各3回の成功を確認してから親子1対1へ。','前回と違う角度から相手役が寄せる。最初のタッチで相手の重心をずらし、抜いた後の2〜3歩を加速。','相手役の寄せる方向をランダムにする。左右どちらにも行ける姿勢から判断し、突破後にシュートまでつなぐ。'],
+ 'ボールを受ける':['近い距離・止まったボールから。受ける前に左右を一度確認し、半身で足元に止める成功を重ねる。','親が左右どちらかを指示。首振り→半身→前向きのファーストタッチを連続して行う。','受ける直前に親が守備位置を変える。確認した情報を使い、遠い足で前方のスペースへ置く。'],
+ 'パス':['近距離でインサイドパス。軸足と面を整え、左右各5本の正確さを優先。','受ける前に首を振り、コーンの左右にあるゲートを見てパスコースを選ぶ。','親がコースを直前に変える。周囲を確認してワンタッチかツータッチを判断し、逆足も使う。'],
+ 'シュート':['近距離・止まったボールから。軸足とミートを確認し、力まず狙った場所へ蹴る。','左右に少し動いてからボールを受け、軸足と体の向きを整えてコースを狙う。','親の合図やパス方向を変え、ファーストタッチから素早くコースを選んでシュート。'],
+ '守備・プレス':['相手役は歩く速さ。距離を保ち、正面に立って進行方向を限定する練習から。','相手役の左右の持ち出しに合わせてステップ。飛び込まず、外側へ誘導する。','相手役の選択をランダムにする。味方のカバー位置も意識して、奪うか遅らせるか判断。'],
+ 'オフザボール':['親が止まった状態で、見える位置に動いてパスを受ける。','親が顔を上げる合図に合わせ、相手の背中側から斜めに動いて受ける。','親の視線と守備役の位置を見て、動き出すタイミングと角度を自分で選ぶ.'],
+ };
+ const fallback=['ゆっくり場面を再現し、動きを一つずつ確認する。','相手の位置を変えて、同じ判断を繰り返す。','相手の動きを予測し、判断から実行までつなげる。'];
+ return {previous,level,label:level===1?'基礎に戻して成功率アップ':level===3?'判断の変化を加える':'方法を変えて再挑戦',note:(variants[focus]||fallback)[level-1],reason:easier?'前回の難しさ・未完了を考慮':level===3?'練習項目をこなせていたため判断負荷を追加':'前回と異なる練習方法で同じ課題に再挑戦'};
+}
 function getMatchImprovementPlan(ev){
  const focus=getTrainingFocusForMatchEvent(ev);
  const plans={
@@ -266,12 +288,15 @@ function getMatchImprovementPlan(ev){
   'オフザボール':{title:'試合課題｜動き出しと受ける角度',category:'オフザボール',minutes:12,note:'味方が顔を上げる前に動き出し、相手の背中や視野の外から受ける角度を作る。'},
   'その他':{title:'試合課題｜場面の再現トレーニング',category:'判断・基礎',minutes:10,note:'試合映像を親子で見返し、改善する動きを一つ決めてゆっくり再現。その後、短い対人形式で試す。'}
  };
- return {focus,...(plans[focus]||plans['その他'])};
+ const base=plans[focus]||plans['その他'];
+ const adjustment=getRepeatedIssueAdjustment(focus,ev?.matchDate||'');
+ if(!adjustment)return {focus,...base,retryLevel:0};
+ return {...base,focus,title:base.title+'｜再挑戦Lv'+adjustment.level,note:base.note+' 【前回からの自動調整】'+adjustment.note,retryLevel:adjustment.level,retryLabel:adjustment.label,retryReason:adjustment.reason,previousTrainingId:adjustment.previous.id};
 }
 function renderMatchImprovementSuggestion(match,ev){
  if(ev.reviewLabel!=='陸玖'||ev.assessment!=='改善したい')return '';
  const p=getMatchImprovementPlan(ev);
- return '<div class="note" style="margin-top:8px"><b>🎯 次回練習の自動提案</b><div class="tiny">'+esc(p.title)+'｜'+p.minutes+'分</div><div class="tiny muted">'+esc(p.note)+'</div><div class="btnrow"><button class="primary small" onclick="applyMatchImprovementPlan('+Number(match.id)+',\''+String(ev.id).replace(/\\/g,'\\\\').replace(/'/g,"\\'")+'\')">このメニューで練習を作成</button></div><div class="tiny muted">試合の改善評価とテーマを引き継ぎます。保存前に内容を編集できます。</div></div>';
+ return '<div class="note" style="margin-top:8px"><b>🎯 次回練習の自動提案</b><div class="tiny">'+esc(p.title)+'｜'+p.minutes+'分</div>'+(p.retryLevel?'<div class="tiny">再挑戦の調整：'+esc(p.retryLabel)+'（'+esc(p.retryReason)+'）</div>':'')+'<div class="tiny muted">'+esc(p.note)+'</div><div class="btnrow"><button class="primary small" onclick="applyMatchImprovementPlan('+Number(match.id)+',\''+String(ev.id).replace(/\\/g,'\\\\').replace(/'/g,"\\'")+'\')">このメニューで練習を作成</button></div><div class="tiny muted">試合の改善評価とテーマを引き継ぎます。保存前に内容を編集できます。</div></div>';
 }
 function applyMatchImprovementPlan(matchId,eventId){
  const match=(state.matchAnalyses||[]).find(x=>String(x.id)===String(matchId));
@@ -282,7 +307,7 @@ function applyMatchImprovementPlan(matchId,eventId){
  renderAll();
  trainMenu.value=p.title;trainDate.value=today();trainMinutes.value=p.minutes;trainFocus.value=p.focus==='パス'?'ボールを受ける':p.focus;
  trainNote.value='【試合からの改善課題】'+match.date+'｜'+(match.title||'試合動画')+'｜'+formatMatchTime(ev.time)+'\n場面：'+(ev.label||ev.reason||'映像で確認した場面')+'\n評価：改善したい\n\n【次回メニュー】'+p.note;
- pendingTrainingSource={matchId:match.id,eventId:ev.id,matchDate:match.date,matchTitle:match.title||'試合動画',time:ev.time??null,focus:p.focus,assessment:ev.assessment};
+ pendingTrainingSource={matchId:match.id,eventId:ev.id,matchDate:match.date,matchTitle:match.title||'試合動画',time:ev.time??null,focus:p.focus,assessment:ev.assessment,retryLevel:p.retryLevel||0,previousTrainingId:p.previousTrainingId||null,retryReason:p.retryReason||''};
  showView('training');
 }
 function getImprovementFollowup(training){
