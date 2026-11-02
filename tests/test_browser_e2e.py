@@ -104,10 +104,21 @@ class RikuBrowserE2ETests(unittest.TestCase):
             };
             persist();
             const timeline = getMatchGrowthTimelineData().find(x => x.key === '判断力');
-            return {rows: timeline.rows.length, plan: getWeeklyCoachPlan().map(x => x.title)};
+            return {
+                rows: timeline.rows.length,
+                plan: getWeeklyCoachPlan().map(x => ({
+                    title: x.title,
+                    matchGrowthGoal: !!x.sourceMatch?.matchGrowthGoal,
+                    growthFocus: x.sourceMatch?.growthFocus || null,
+                    note: x.note
+                }))
+            };
         }""")
         self.assertEqual(titles["rows"], 1)
-        self.assertTrue(any("試合成長目標" in title and "判断力" in title for title in titles["plan"]))
+        self.assertTrue(
+            any(item["matchGrowthGoal"] and item["growthFocus"] == "判断力" for item in titles["plan"]),
+            json.dumps(titles["plan"], ensure_ascii=False)
+        )
 
     def test_match_and_form_video_save_backup_restore_and_real_playback(self):
         page = self.page
@@ -162,19 +173,44 @@ class RikuBrowserE2ETests(unittest.TestCase):
         page.evaluate("(id) => removeClipVideo('form-' + id)", form_id)
         page.locator("#importFile").set_input_files(str(backup_path))
         page.wait_for_function("state.clips.length === 1 && state.forms.length === 1")
+        page.evaluate("""() => {
+            window.__lastVideoImportAlert = '';
+            window.alert = message => { window.__lastVideoImportAlert = String(message); };
+            window.confirm = () => true;
+        }""")
         page.locator("#videoImportFiles").set_input_files([str(x) for x in exported_paths])
         page.wait_for_function(
-            """async ({clipId, formId}) => {
-                const clip = await getClipVideo(clipId);
-                const form = await getClipVideo('form-' + formId);
-                return !!clip?.blob && clip.blob instanceof Blob && clip.blob.size > 0 && !!form?.blob && form.blob instanceof Blob && form.blob.size > 0 && state.clips[0].hasVideo && state.forms[0].hasVideo;
-            }""",
-            arg={"clipId": clip_id, "formId": form_id},
+            "() => window.__lastVideoImportAlert.includes('動画ファイルの復元が完了しました')",
             timeout=10000,
         )
-        clip_restored = page.evaluate("(id) => getClipVideo(id).then(x => x.blob.size)", clip_id)
-        form_restored = page.evaluate("(id) => getClipVideo('form-' + id).then(x => x.blob.size)", form_id)
-        self.assertGreater(clip_restored, 0)
+        import_result = page.evaluate("window.__lastVideoImportAlert")
+        self.assertIn("新規保存・確認：2本", import_result, import_result)
+        restored = page.evaluate("""async ({clipId, formId}) => {
+            const clip = await getClipVideo(String(clipId));
+            const form = await getClipVideo('form-' + String(formId));
+            const keys = await (async () => {
+                const db = await openVideoDB();
+                try {
+                    return await new Promise((resolve, reject) => {
+                        const tx = db.transaction('videos', 'readonly');
+                        const req = tx.objectStore('videos').getAllKeys();
+                        req.onsuccess = () => resolve(req.result.map(String));
+                        req.onerror = () => reject(req.error);
+                    });
+                } finally { db.close(); }
+            })();
+            return {
+                clipBytes: clip?.blob instanceof Blob ? clip.blob.size : 0,
+                formBytes: form?.blob instanceof Blob ? form.blob.size : 0,
+                keys,
+                clipFlag: state.clips[0]?.hasVideo,
+                formFlag: state.forms[0]?.hasVideo
+            };
+        }""", {"clipId": clip_id, "formId": form_id})
+        self.assertGreater(restored["clipBytes"], 0, json.dumps(restored, ensure_ascii=False))
+        self.assertGreater(restored["formBytes"], 0, json.dumps(restored, ensure_ascii=False))
+        self.assertTrue(restored["clipFlag"] and restored["formFlag"], json.dumps(restored, ensure_ascii=False))
+        clip_restored, form_restored = restored["clipBytes"], restored["formBytes"]
         self.assertEqual(clip_restored, form_restored)
 
         page.evaluate("(id) => playSavedClip(id, 0)", clip_id)
