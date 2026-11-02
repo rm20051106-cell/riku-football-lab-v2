@@ -633,7 +633,7 @@ function adaptTrainingPlanFromReflection(plan){
  const history=(state.trainings||[]).filter(t=>(t.focus||inferTrainingFocus(t.menu,t.category))===focus&&(t.reviewStatus||t.matchTransferStatus)).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||Number(b.id||0)-Number(a.id||0));
  const latest=history[0];
  if(!latest)return {...plan,reflectionAdjustment:'振り返り記録がまだないため、基本メニューから始めます。'};
- let minutes=Math.max(8,Math.min(Number(plan.minutes)||12,Number(plan.minutes)||12));
+ let minutes=Math.max(8,Number(plan.minutes)||12);
  const notes=[];
  const review=latest.reviewStatus||'';
  const transfer=latest.matchTransferStatus||'';
