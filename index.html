@@ -356,7 +356,7 @@ function getTrainingDecisionComparison(training){
  const matches=(state.matchAnalyses||[]).filter(m=>m.date).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));
  const collect=(match)=>({match,events:(match.candidateEvents||[]).filter(ev=>ev.reviewLabel==='陸玖'&&ev.actionType&&ev.actionType!=='未選択'&&getTrainingFocusForMatchEvent(ev)===focus)});
  const before=matches.filter(m=>String(m.date)<String(training.date)).map(collect).filter(x=>x.events.some(e=>['最適な選択','良い選択','別の選択肢もあった','判断が遅れた'].includes(e.decisionQuality)||['周囲を確認できた','ボールだけを見ていた','味方・相手の位置を確認できなかった'].includes(e.decisionScan))).slice(-1)[0]||null;
- const after=matches.filter(m=>String(m.date)>String(training.date)).map(collect).find(x=>x.events.length)||null;
+ const after=matches.filter(m=>String(m.date)>String(training.date)).map(collect).find(x=>x.events.some(e=>['最適な選択','良い選択','別の選択肢もあった','判断が遅れた'].includes(e.decisionQuality)||['周囲を確認できた','ボールだけを見ていた','味方・相手の位置を確認できなかった'].includes(e.decisionScan)))||null;
  const score=events=>{const vals=events.map(e=>({'最適な選択':4,'良い選択':3,'別の選択肢もあった':2,'判断が遅れた':1}[e.decisionQuality])).filter(Number.isFinite);return vals.length?{avg:vals.reduce((a,b)=>a+b,0)/vals.length,count:vals.length,rate:Math.round(vals.filter(v=>v>=3).length/vals.length*100)}:null;};
  const scan=events=>{const vals=events.filter(e=>['周囲を確認できた','ボールだけを見ていた','味方・相手の位置を確認できなかった'].includes(e.decisionScan));return vals.length?{count:vals.length,rate:Math.round(vals.filter(e=>e.decisionScan==='周囲を確認できた').length/vals.length*100)}:null;};
  const prevQ=before?score(before.events):null,nextQ=after?score(after.events):null,prevS=before?scan(before.events):null,nextS=after?scan(after.events):null;
