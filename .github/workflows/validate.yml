@@ -2,7 +2,7 @@ name: Validate RIKU FOOTBALL LAB
 
 on:
   pull_request:
-    branches: [main, feature/annual-goal-linkage, feature/ai-evidence-and-form-quality, feature/match-review-growth-report, feature/closed-loop-development, feature/adaptive-individual-coach]
+    branches: [main, feature/annual-goal-linkage, feature/ai-evidence-and-form-quality, feature/match-review-growth-report, feature/closed-loop-development, feature/adaptive-individual-coach, feature/weekly-load-planner]
 
 concurrency:
   group: validate-${{ github.ref }}
