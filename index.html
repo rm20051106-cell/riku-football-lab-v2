@@ -1161,6 +1161,20 @@ function getDecisionPracticeMethodStats(){
  });
  return Object.values(groups).map(row=>({...row,count:row.comparisons.length,successRate:Math.round(row.improved/row.comparisons.length*100),averageReduction:Math.round(row.totalReduction/row.comparisons.length)})).sort((a,b)=>b.successRate-a.successRate||b.count-a.count);
 }
+function getPreferredDecisionPracticeMethod(issue){
+ if(!issue)return null;
+ const candidates=getDecisionPracticeMethodStats().filter(row=>row.issue===issue&&row.count>=2&&row.improved>=2&&row.successRate>=50);
+ if(!candidates.length)return null;
+ candidates.sort((a,b)=>b.successRate-a.successRate||b.averageReduction-a.averageReduction||b.count-a.count);
+ return candidates[0];
+}
+function getPreferredDecisionPracticePlan(issue){
+ const best=getPreferredDecisionPracticeMethod(issue);if(!best)return null;
+ const source=(state.trainings||[]).filter(t=>t&&t.sourceMatch&&t.sourceMatch.alternativeDecisionPractice&&t.sourceMatch.decisionIssue===issue&&t.sourceMatch.practiceMethod===best.method).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')))[0];
+ if(!source)return null;
+ const original=getAlternativeDecisionPractice(issue);
+ return {title:best.method,minutes:Number(source.minutes)||original.minutes,note:source.note||original.note,steps:Array.isArray(source.steps)&&source.steps.length?source.steps:original.steps,success:original.success,stats:best};
+}
 function renderDecisionPracticeMethodStats(){
  const host=document.getElementById('growthDecisionPracticeMethodStats');if(!host)return;
  const rows=getDecisionPracticeMethodStats();
@@ -1224,12 +1238,13 @@ function renderAlternativeDecisionPracticeEffect(training){
 }
 function applyAlternativeDecisionPractice(){
  const issue=getRepeatedDecisionIssue();if(!issue)return;
- const plan=getAlternativeDecisionPractice(issue.issue);
- const title='再発課題｜'+plan.title;
+ const preferred=getPreferredDecisionPracticePlan(issue.issue);
+ const plan=preferred||getAlternativeDecisionPractice(issue.issue);
+ const title=(preferred?'成功率優先｜':'再発課題｜')+plan.title;
  if(!(state.menus||[]).some(m=>m.name===title)){state.menus.unshift({name:title,category:'判断力・別メニュー',minutes:plan.minutes});persist();}
  trainMenu.value=title;trainDate.value=today();trainMinutes.value=plan.minutes;trainFocus.value=issue.focus;
- trainNote.value='【繰り返し確認された課題】'+issue.issue+'（別々の試合 '+issue.matches.size+'試合／評価 '+issue.bad+'/'+issue.assessed+'場面）\\n【別アプローチ】'+plan.note+'\\n【練習ステップ】'+plan.steps.join('／')+'\\n【成功基準】'+plan.success+'\\n※試合評価の記録から提案。本人の能力を断定するものではありません。';
- pendingTrainingSource={alternativeDecisionPractice:true,focus:issue.focus,decisionIssue:issue.issue,practiceMethod:plan.title,issueBaselineRate:issue.rate,issueBaselineMatchIds:Array.from(issue.matches)};
+ trainNote.value='【繰り返し確認された課題】'+issue.issue+'（別々の試合 '+issue.matches.size+'試合／評価 '+issue.bad+'/'+issue.assessed+'場面）\\n'+(preferred?'【過去の成功率をもとに優先】改善 '+preferred.stats.improved+'/'+preferred.stats.count+'件（'+preferred.stats.successRate+'%）\\n':'【比較実績】十分な件数の成功方法がまだないため、基本の別メニューを提案\\n')+'【練習方法】'+plan.note+'\\n【練習ステップ】'+plan.steps.join('／')+'\\n【成功基準】'+plan.success+'\\n※試合評価の記録から提案。本人の能力を断定するものではありません。';
+ pendingTrainingSource={alternativeDecisionPractice:true,focus:issue.focus,decisionIssue:issue.issue,practiceMethod:plan.title,preferredMethodApplied:!!preferred,methodEvidenceCount:preferred?preferred.stats.count:0,methodSuccessRate:preferred?preferred.stats.successRate:null,issueBaselineRate:issue.rate,issueBaselineMatchIds:Array.from(issue.matches)};
  showView('training');
 }
 function renderRepeatedDecisionIssue(){
@@ -1475,10 +1490,16 @@ function applyWeeklyCoachSession(index){
  renderAll();trainMenu.value=plan.title;trainDate.value=plan.date;trainMinutes.value=plan.minutes;trainFocus.value=plan.focus;trainNote.value=plan.note;showView('training');
 }
 function applyCoachTrainingPlan(){
- const plan=getCoachTrainingPlan();
+ let plan=getCoachTrainingPlan();
+ const repeated=getRepeatedDecisionIssue();
+ const preferred=repeated?getPreferredDecisionPracticePlan(repeated.issue):null;
+ if(preferred){
+  plan={...plan,focus:repeated.focus,title:'成功率優先｜'+preferred.title,minutes:preferred.minutes,category:'判断力・実績優先',note:'【今回の優先課題】'+repeated.issue+'\\n【優先した練習方法】'+preferred.title+'\\n【過去の比較実績】改善 '+preferred.stats.improved+'/'+preferred.stats.count+'件（成功率 '+preferred.stats.successRate+'%）、平均課題率変化 '+preferred.stats.averageReduction+'ポイント\\n【練習内容】'+preferred.note+'\\n【手順】'+preferred.steps.join('／')+'\\n※比較2件以上・改善2件以上・成功率50%以上の方法を優先。'};
+  pendingTrainingSource={alternativeDecisionPractice:true,focus:repeated.focus,decisionIssue:repeated.issue,practiceMethod:preferred.title,preferredMethodApplied:true,methodEvidenceCount:preferred.stats.count,methodSuccessRate:preferred.stats.successRate};
+ }
  let option=Array.from(trainMenu.options).find(o=>o.value===plan.title);
  if(!option){state.menus.unshift({name:plan.title,category:plan.category,minutes:plan.minutes});persist();renderAll();}
- trainMenu.value=plan.title;trainDate.value=today();trainMinutes.value=plan.minutes;trainFocus.value=plan.focus||'ドリブル';trainNote.value=plan.note+'\\n\\n'+getTrainingSessionGuide(trainFocus.value,plan.difficultyLevel||2);showView('training');
+ trainMenu.value=plan.title;trainDate.value=today();trainMinutes.value=plan.minutes;trainFocus.value=plan.focus||'ドリブル';trainNote.value=plan.note+'\\n\\n'+(preferred?'過去の実績がある練習方法を優先しているよ。':getTrainingSessionGuide(trainFocus.value,plan.difficultyLevel||2));showView('training');
 }
 function getTrainingEvidenceLinkSummary(){
  const skills=['ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール','その他'];
