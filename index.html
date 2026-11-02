@@ -33,6 +33,7 @@ button,.button{border:0;border-radius:12px;padding:12px 14px;font-weight:800;fon
  </div>
  <div class="card"><h2>今日のおすすめ</h2><div id="dailyPlan"></div><div class="btnrow"><button class="secondary" onclick="showView('training')">メニューを見る</button></div></div>
  <div class="card"><h2>試合前の注目ポイント</h2><p class="tiny muted">試合の日に、意識することを3つまで確認。チェックは今日の日付で保存されます。</p><div id="matchdayFocus"></div></div>
+ <div class="card"><h2>試合前コンディション・準備メニュー</h2><p class="tiny muted">試合日・ポジション・直近の練習負荷をもとに、前日・当日・試合直前の短時間メニューを作成します。強い追い込みは行わず、疲労や痛みがある日は休む内容です。</p><div id="preMatchPreparation"></div></div>
  <div class="card"><h2>分析機能について</h2><p class="tiny muted">このアプリでは、動画の再生・コマ送り用の振り返り・時刻付きメモ・採点、フォーム確認表、映像上の姿勢ガイド表示を利用できます。背番号を自動認識して全試合から陸玖だけを追跡したり、AIが骨格を自動計測したりする機能は、別途AI解析サーバーとの接続が必要です。接続していない状態で「AIが自動判定した」と偽ることはしません。</p></div>
 </section>
 
@@ -2549,6 +2550,67 @@ function updateMatchdayReflection(id,value){
  state.settings.matchdayReflection=all;
  persist();
 }
+function updatePreMatchDate(value){
+ state.settings.preMatchDate=value||'';
+ persist();
+}
+function updatePreMatchPosition(value){
+ state.settings.preMatchPosition=value||'';
+ persist();
+}
+function createPreMatchPreparation(){
+ const host=document.getElementById('preMatchPreparation');if(!host)return;
+ const defaultDate=new Date();defaultDate.setDate(defaultDate.getDate()+7);
+ const dateValue=state.settings.preMatchDate||defaultDate.toLocaleDateString('sv-SE');
+ const matchDate=new Date(dateValue+'T00:00:00');
+ const days=Math.ceil((matchDate-new Date(today()+'T00:00:00'))/86400000);
+ const recent=(state.trainings||[]).filter(x=>String(x.date||'')<=today()&&String(x.date||'')>=new Date(Date.now()-6*86400000).toLocaleDateString('sv-SE')).sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+ const hard=recent.filter(x=>x.effort==='きつめ'||x.reviewStatus==='難しかった').length;
+ const tired=hard>=2||recent.some(x=>x.effort==='きつめ'&&String(x.date)===today());
+ const roles=['トップ','サイド','中盤','FW','MF','DF','GK'];
+ const latestRole=(state.matchAnalyses||[]).flatMap(m=>(m.candidateEvents||[]).filter(e=>e.reviewLabel==='陸玖'&&roles.includes(e.positionRole)).map(e=>({role:e.positionRole,date:m.date||''}))).sort((a,b)=>String(b.date).localeCompare(String(a.date)))[0]?.role||'';
+ const role=state.settings.preMatchPosition||latestRole||'未選択';
+ const roleLabel=role==='未選択'?'ポジション未指定':role;
+ const saved=(state.preMatchPlans||[]).find(x=>x.date===dateValue);
+ const focus=recent[0]?.focus||'ボールを受ける';
+ const isForward=['トップ','FW'].includes(role),isSide=role==='サイド',isMid=['中盤','MF'].includes(role);
+ const dayBefore={title:'前日｜軽く動いて感覚を整える',minutes:tired?5:10,menu:tired?'散歩・軽い関節運動だけ。ボール練習は休んでもOK。':'軽いボールタッチ3分→左右のインサイドパス各5回→ゆっくりドリブル2分。全力ダッシュ・強いシュートはしない。',cue:'早めに休み、睡眠と水分を優先。'};
+ const matchDay={title:'当日｜身体を起こす',minutes:tired?5:8,menu:'歩く・軽いジョグ2分→動的ストレッチ→短いパス・ボールタッチ。疲れない強さで止める。',cue:'汗をかきすぎず、身体が軽い状態で終える。'};
+ const roleCue=isForward?'前を向く準備と、ゴール方向への最初の一歩':isSide?'タッチライン際での受け方と、縦・中の選択':isMid?'周囲を見て半身で受け、次のプレーを早く選ぶ':'周囲を見て、受ける前の身体の向きを整える';
+ const immediate={title:'試合直前｜短く反応を確認',minutes:tired?3:5,menu:'軽いボールタッチ→近距離パス→短い方向転換を各数回。シュートやダッシュは必要最小限にし、チームのウォームアップを優先。',cue:roleCue+'。'};
+ const phases=[{key:'dayBefore',...dayBefore},{key:'matchDay',...matchDay},{key:'immediate',...immediate}];
+ const plan=saved||null;
+ const positionOptions=['未選択',...roles];
+ const options=positionOptions.map(x=>'<option value="'+esc(x)+'" '+(x===role?'selected':'')+'>'+esc(x==='未選択'?'指定しない':x)+'</option>').join('');
+ const dateInput='<label class="label">試合日</label><input type="date" value="'+esc(dateValue)+'" onchange="updatePreMatchDate(this.value)"><label class="label">試合でのポジション</label><select onchange="updatePreMatchPosition(this.value)">'+options+'</select>';
+ const timing=days<0?'設定した試合日は過去の日付です。':days===0?'試合当日です。':days===1?'試合は明日です。':'試合まで '+days+' 日です。';
+ const recentText=recent.length?'直近7日：練習 '+recent.length+'件／きつめ・難しかった '+hard+'件':'直近7日の練習記録なし。負荷は推測しません。';
+ const fatigue=tired?'負荷が高めの記録があるため、全メニューを短縮しています。':'疲労をためない軽い内容です。';
+ const content=phases.map(p=>{
+  const result=plan?.phases?.find(x=>x.key===p.key);
+  return '<div class="listitem" style="display:block"><b>'+esc(p.title)+'</b><div class="tiny muted">'+p.minutes+'分目安</div><div class="tiny">'+esc(p.menu)+'</div><div class="tiny muted">意識：'+esc(p.cue)+'</div><label class="label" style="margin-top:8px">実施後の評価</label><select onchange="updatePreMatchReview(\''+esc(dateValue)+'\',\''+p.key+'\',this.value)"><option value="">まだ評価していない</option><option value="軽くできた" '+(result?.review==='軽くできた'?'selected':'')+'>軽くできた</option><option value="ちょうど良い" '+(result?.review==='ちょうど良い'?'selected':'')+'>ちょうど良い</option><option value="疲れた" '+(result?.review==='疲れた'?'selected':'')+'>疲れた</option><option value="痛み・違和感あり" '+(result?.review==='痛み・違和感あり'?'selected':'')+'>痛み・違和感あり</option><option value="実施しなかった" '+(result?.review==='実施しなかった'?'selected':'')+'>実施しなかった</option></select></div>';
+ }).join('');
+ host.innerHTML=dateInput+'<div class="tiny muted" style="margin-top:8px">'+esc(timing)+' '+esc(recentText)+'</div><div class="note" style="margin-top:8px"><b>負荷調整</b><div class="tiny">'+esc(fatigue)+' ポジション：'+esc(roleLabel)+'。'+esc(roleCue)+'。</div></div><button class="secondary small" style="margin-top:8px" onclick="savePreMatchPlan()">この試合の準備メニューを保存</button>'+content+'<div class="tiny muted">※直近の練習記録と手動で選んだポジションを参考にした目安です。疲労・痛み・体調不良があれば中止し、休養を優先してください。チームのウォームアップ指示がある場合はそちらを優先。</div>';
+ window.__preMatchCurrent={date:dateValue,role,days,phases};
+}
+function savePreMatchPlan(){
+ const current=window.__preMatchCurrent;if(!current)return;
+ state.preMatchPlans=state.preMatchPlans||[];
+ const old=state.preMatchPlans.find(x=>x.date===current.date);
+ const reviews=old?.phases||[];
+ const phases=current.phases.map(p=>({...p,review:reviews.find(x=>x.key===p.key)?.review||''}));
+ const plan={id:old?.id||Date.now(),date:current.date,role:current.role,createdAt:today(),phases};
+ if(old)state.preMatchPlans=state.preMatchPlans.map(x=>x.date===current.date?plan:x);else state.preMatchPlans.unshift(plan);
+ persist();
+}
+function updatePreMatchReview(date,key,value){
+ state.preMatchPlans=state.preMatchPlans||[];
+ let plan=state.preMatchPlans.find(x=>x.date===date);
+ if(!plan){const current=window.__preMatchCurrent;if(!current||current.date!==date)return;plan={id:Date.now(),date,role:current.role,createdAt:today(),phases:current.phases.map(p=>({...p,review:''}))};state.preMatchPlans.unshift(plan);}
+ const phase=plan.phases.find(x=>x.key===key);if(phase)phase.review=value;
+ if(value==='疲れた'||value==='痛み・違和感あり')plan.loadWarning=true;
+ persist();
+}
 function renderMatchdayFocus(){
  const host=document.getElementById('matchdayFocus');if(!host)return;
  const key=today(),items=getMatchdayFocusItems(),checks=state.settings.matchdayChecklist?.[key]||{},reflections=state.settings.matchdayReflection?.[key]||{};
@@ -2558,7 +2620,7 @@ function renderMatchdayFocus(){
 }
 function renderAll(){
  if(document.getElementById('growthTrainingChart'))renderGrowthDashboard();
- state.aiFormAnalyses=state.aiFormAnalyses||[];state.matchAnalyses=state.matchAnalyses||[];let date=today(),month=date.slice(0,7),days=new Set(state.trainings.filter(x=>x.date.startsWith(month)).map(x=>x.date)).size;homeDays.innerHTML=`${days} <small>日</small>`;monthProgress.style.width=Math.min(100,days/12*100)+'%';homeVideos.innerHTML=`${state.clips.length+state.forms.length} <small>件</small>`;let sprint=state.measures.find(x=>x.type==='30m走');homeSprint.innerHTML=sprint?`${esc(sprint.value)} <small>${esc(sprint.unit)}</small>`:'—';homeNumbers.textContent=`${state.settings.jersey1} / ${state.settings.jersey2}`;const coachPlan=getCoachTrainingPlan();const weekPlan=getWeeklyCoachPlan();const weekFeedback=getPreviousWeekTrainingAdjustment(weekPlan[0].date);const weekMatchFeedback=getPreviousWeekMatchAdjustment(weekPlan[0].date);dailyPlan.innerHTML='<div class="listitem"><span class="tag good">AIコーチ提案</span><div class="grow"><b>'+esc(coachPlan.title)+'</b><div class="tiny muted">'+coachPlan.minutes+'分・'+esc(coachPlan.why)+'</div><div class="tiny">'+esc(coachPlan.note)+'</div><button class="secondary small" onclick="applyCoachTrainingPlan()">このメニューで練習を始める</button></div></div><h3 style="margin:14px 0 6px">判断力データ連動｜今週の7日間プラン</h3><div class="tiny muted">判断力レベル・次の目標・成功率の高い練習方法を反映。月〜水は短時間の自主練、木〜日はチーム活動と回復を優先します。</div>'+weekPlan.map((p,i)=>'<div class="listitem"><div class="grow"><b>'+p.day+'｜'+esc(p.title)+'</b><div class="tiny muted">'+p.date+'・'+(p.minutes?p.minutes+'分':p.rest?'休養日':'チーム活動')+'・'+esc(p.why)+'</div><div class="tiny" style="white-space:pre-line">'+esc(p.note)+'</div>'+(p.minutes?'<button class="secondary small" onclick="applyWeeklyCoachSession('+i+')">この日の練習を始める</button>':p.team?'<span class="tag">チーム活動で意識</span>':'<span class="tag">回復優先</span>')+'</div></div>').join('')+renderWeeklyAdjustmentSummary(weekFeedback,weekMatchFeedback)+renderCoachOverallAssessment()+renderIntegratedDevelopmentBrief()+renderMonthlyGrowthTrajectory();renderMatchdayFocus();
+ state.aiFormAnalyses=state.aiFormAnalyses||[];state.matchAnalyses=state.matchAnalyses||[];let date=today(),month=date.slice(0,7),days=new Set(state.trainings.filter(x=>x.date.startsWith(month)).map(x=>x.date)).size;homeDays.innerHTML=`${days} <small>日</small>`;monthProgress.style.width=Math.min(100,days/12*100)+'%';homeVideos.innerHTML=`${state.clips.length+state.forms.length} <small>件</small>`;let sprint=state.measures.find(x=>x.type==='30m走');homeSprint.innerHTML=sprint?`${esc(sprint.value)} <small>${esc(sprint.unit)}</small>`:'—';homeNumbers.textContent=`${state.settings.jersey1} / ${state.settings.jersey2}`;const coachPlan=getCoachTrainingPlan();const weekPlan=getWeeklyCoachPlan();const weekFeedback=getPreviousWeekTrainingAdjustment(weekPlan[0].date);const weekMatchFeedback=getPreviousWeekMatchAdjustment(weekPlan[0].date);dailyPlan.innerHTML='<div class="listitem"><span class="tag good">AIコーチ提案</span><div class="grow"><b>'+esc(coachPlan.title)+'</b><div class="tiny muted">'+coachPlan.minutes+'分・'+esc(coachPlan.why)+'</div><div class="tiny">'+esc(coachPlan.note)+'</div><button class="secondary small" onclick="applyCoachTrainingPlan()">このメニューで練習を始める</button></div></div><h3 style="margin:14px 0 6px">判断力データ連動｜今週の7日間プラン</h3><div class="tiny muted">判断力レベル・次の目標・成功率の高い練習方法を反映。月〜水は短時間の自主練、木〜日はチーム活動と回復を優先します。</div>'+weekPlan.map((p,i)=>'<div class="listitem"><div class="grow"><b>'+p.day+'｜'+esc(p.title)+'</b><div class="tiny muted">'+p.date+'・'+(p.minutes?p.minutes+'分':p.rest?'休養日':'チーム活動')+'・'+esc(p.why)+'</div><div class="tiny" style="white-space:pre-line">'+esc(p.note)+'</div>'+(p.minutes?'<button class="secondary small" onclick="applyWeeklyCoachSession('+i+')">この日の練習を始める</button>':p.team?'<span class="tag">チーム活動で意識</span>':'<span class="tag">回復優先</span>')+'</div></div>').join('')+renderWeeklyAdjustmentSummary(weekFeedback,weekMatchFeedback)+renderCoachOverallAssessment()+renderIntegratedDevelopmentBrief()+renderMonthlyGrowthTrajectory();renderMatchdayFocus();createPreMatchPreparation();
 trainDate.value=trainDate.value||date;measureDate.value=measureDate.value||date;
 trainMenu.innerHTML=state.menus.map((m,i)=>`<option value="${esc(m.name)}">${esc(m.category)}｜${esc(m.name)}</option>`).join('');
 menuList.innerHTML=state.menus.map((m,i)=>`<div class="listitem"><div class="grow"><b>${esc(m.name)}</b><div class="tiny muted">${esc(m.category)}・目安${m.minutes||10}分</div></div><button class="danger small" onclick="removeMenu(${i})">削除</button></div>`).join('');
