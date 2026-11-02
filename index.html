@@ -33,7 +33,7 @@ button,.button{border:0;border-radius:12px;padding:12px 14px;font-weight:800;fon
  </div>
  <div class="card"><h2>今日のおすすめ</h2><div id="dailyPlan"></div><div class="btnrow"><button class="secondary" onclick="showView('training')">メニューを見る</button></div></div>
  <div class="card"><h2>試合前の注目ポイント</h2><p class="tiny muted">試合の日に、意識することを3つまで確認。チェックは今日の日付で保存されます。</p><div id="matchdayFocus"></div></div>
- <div class="card"><h2>試合前コンディション・準備メニュー</h2><p class="tiny muted">試合日・ポジション・直近の練習負荷をもとに、前日・当日・試合直前の短時間メニューを作成します。強い追い込みは行わず、疲労や痛みがある日は休む内容です。</p><div id="preMatchPreparation"></div></div>
+ <div class="card"><h2>試合前コンディション・準備メニュー</h2><p class="tiny muted">試合日・ポジション・直近の練習負荷をもとに、前日・当日・試合直前の短時間メニューを作成します。強い追い込みは行わず、疲労や痛みがある日は休む内容です。</p><div id="preMatchPreparation"></div><div class="divider"></div><div id="postMatchRecovery"></div></div>
  <div class="card"><h2>分析機能について</h2><p class="tiny muted">このアプリでは、動画の再生・コマ送り用の振り返り・時刻付きメモ・採点、フォーム確認表、映像上の姿勢ガイド表示を利用できます。背番号を自動認識して全試合から陸玖だけを追跡したり、AIが骨格を自動計測したりする機能は、別途AI解析サーバーとの接続が必要です。接続していない状態で「AIが自動判定した」と偽ることはしません。</p></div>
 </section>
 
@@ -2666,9 +2666,53 @@ function renderMatchdayFocus(){
  const rows=items.map((item,i)=>`<div class="listitem" style="display:block"><label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer"><input type="checkbox" data-focus-id="${esc(item.id)}" ${checks[item.id]?'checked':''} onchange="toggleMatchdayFocus(this.dataset.focusId)"><span class="grow"><b>${i+1}. ${esc(item.title)}</b><div class="tiny muted">${esc(item.detail)}</div></span></label><label class="label" style="margin-top:8px">試合後の振り返り</label><select data-focus-id="${esc(item.id)}" onchange="updateMatchdayReflection(this.dataset.focusId,this.value)"><option value="">まだ振り返っていない</option><option value="できた" ${reflections[item.id]==='できた'?'selected':''}>できた</option><option value="もう少し" ${reflections[item.id]==='もう少し'?'selected':''}>もう少し</option><option value="試せなかった" ${reflections[item.id]==='試せなかった'?'selected':''}>試せなかった</option></select></div>`).join('');
  host.innerHTML='<h3>試合前に意識すること</h3>'+rows+'<div class="tiny muted">試合前チェック '+items.filter(x=>checks[x.id]).length+'/'+items.length+' ・ 試合後の振り返り '+done+'/'+items.length+'（できた '+achieved+'）</div><div class="note">「できなかった」も大切な記録。次の練習テーマを考える材料にしよう。</div>';
 }
+function getPostMatchRecoveryDecision(record){
+ const pain=record?.pain||'',sleep=record?.sleep||'',fatigue=Number(record?.fatigue||0),legs=Number(record?.legs||0);
+ if(pain&&pain!=='なし')return {key:'stop',title:'運動を中止・保護者に相談',next:'練習や自主トレは再開せず、保護者に痛みの場所・程度・始まった時期を伝えてください。強い痛み、腫れ、歩きにくさ、悪化がある場合は医療機関へ相談してください。'};
+ if(['sleep','fatigue','legs','pain'].some(k=>record?.[k]===undefined||record?.[k]===''))return {key:'pending',title:'記録を入力してください',next:'4項目すべて入力するまで、練習再開の目安は出しません。'};
+ if(sleep==='5時間未満'||fatigue>=4)return {key:'rest',title:'休養を優先',next:'翌日は練習を休み、睡眠・食事・水分を優先してください。疲労が残る場合は休養を続け、無理に日数で再開を決めないでください。'};
+ if(fatigue>=3||legs>=3||sleep==='5〜6時間')return {key:'light',title:'軽い日常活動まで',next:'疲れない範囲の日常動作にとどめ、走る・跳ぶ・強いキック・切り返しは避けてください。翌日も体調を確認します。'};
+ return {key:'normal',title:'回復を確認しながら段階的に',next:'疲労や痛みがなく普段どおりに動けることを確認し、まず短時間・低強度から。違和感が出たら中止し、通常練習へ急いで戻さないでください。'};
+}
+function updatePostMatchDate(value){
+ state.settings=state.settings||{};
+ state.settings.postMatchDate=value||today();
+ persist();
+}
+function updatePostMatchRecovery(field,value){
+ const date=state.settings?.postMatchDate||today();
+ state.postMatchRecovery=state.postMatchRecovery||{};
+ const record=state.postMatchRecovery[date]||{date};
+ record[field]=value;
+ record.updatedAt=new Date().toISOString();
+ const decision=getPostMatchRecoveryDecision(record);
+ record.decision=decision.key;
+ record.decisionLabel=decision.title;
+ state.postMatchRecovery[date]=record;
+ persist();
+}
+function renderPostMatchRecovery(){
+ const host=document.getElementById('postMatchRecovery');if(!host)return;
+ const date=state.settings?.postMatchDate||today();
+ const record=(state.postMatchRecovery||{})[date]||{date};
+ const decision=getPostMatchRecoveryDecision(record);
+ const select=(field,label,choices)=>'<label class="label" style="margin-top:8px">'+label+'</label><select onchange="updatePostMatchRecovery(\''+date+'\',\''+field+'\',this.value)"><option value="">選択してください</option>'+choices.map(x=>'<option value="'+x+'" '+(record[field]===x?'selected':'')+'>'+x+'</option>').join('')+'</select>';
+ const previous=(state.preMatchHealthChecks||{})[date];
+ const compare=previous?'<div class="tiny muted" style="margin-top:8px">試合当日との比較：試合前の疲労 '+esc(previous.fatigue??'未記録')+' → 試合後 '+esc(record.fatigue??'未入力')+' ／ 足の重さ '+esc(previous.legs??'未記録')+' → '+esc(record.legs??'未入力')+'。本人の感覚記録の比較で、医学的な評価ではありません。</div>':'<div class="tiny muted" style="margin-top:8px">同じ日付の試合前チェックはありません。試合前後の比較は、両方の記録がある場合に表示します。</div>';
+ const older=Object.values(state.postMatchRecovery||{}).filter(x=>x.date&&x.date<date).sort((a,b)=>b.date.localeCompare(a.date))[0];
+ const olderText=older?'<div class="tiny muted" style="margin-top:6px">前回の試合後（'+esc(older.date)+'）：'+esc(older.decisionLabel||getPostMatchRecoveryDecision(older).title)+'</div>':'';
+ host.innerHTML='<h3>試合後の疲労回復・練習再開サポート</h3><div class="tiny muted">試合日ごとに記録。翌日以降の過ごし方の目安を安全側に提案します。</div><label class="label" style="margin-top:8px">試合日・記録日</label><input type="date" value="'+esc(date)+'" onchange="updatePostMatchDate(this.value)">'+
+ select('fatigue','試合後の全身疲労（0＝なし、4＝とても強い）',['0','1','2','3','4'])+
+ select('legs','足の重さ（0＝軽い、4＝とても重い）',['0','1','2','3','4'])+
+ select('pain','痛み・違和感',['なし','少しある','はっきりある'])+
+ select('sleep','試合後の睡眠時間',['5時間未満','5〜6時間','6〜7時間','7〜8時間','8時間以上'])+
+ '<div class="note" style="margin-top:10px"><b>回復・再開の目安：'+esc(decision.title)+'</b><div class="tiny">'+esc(decision.next)+'</div></div>'+
+ (decision.key==='stop'?'<div class="note" style="border:1px solid var(--danger,#c44)"><b>痛み・違和感がある場合</b><div class="tiny">サッカー練習や自主トレを勧めません。保護者に必ず伝え、痛みが続く・強い・腫れや歩行困難がある場合は医療機関に相談してください。</div></div>':'')+
+ compare+olderText+'<div class="tiny muted" style="margin-top:8px">この判定は家庭での記録に基づく一般的な目安で、診断や復帰許可ではありません。通常練習への復帰は、痛みがなく日常動作が問題ないことを確認し、必要なら医療専門職・チーム指導者と相談してください。</div>';
+}
 function renderAll(){
  if(document.getElementById('growthTrainingChart'))renderGrowthDashboard();
- state.aiFormAnalyses=state.aiFormAnalyses||[];state.matchAnalyses=state.matchAnalyses||[];let date=today(),month=date.slice(0,7),days=new Set(state.trainings.filter(x=>x.date.startsWith(month)).map(x=>x.date)).size;homeDays.innerHTML=`${days} <small>日</small>`;monthProgress.style.width=Math.min(100,days/12*100)+'%';homeVideos.innerHTML=`${state.clips.length+state.forms.length} <small>件</small>`;let sprint=state.measures.find(x=>x.type==='30m走');homeSprint.innerHTML=sprint?`${esc(sprint.value)} <small>${esc(sprint.unit)}</small>`:'—';homeNumbers.textContent=`${state.settings.jersey1} / ${state.settings.jersey2}`;const coachPlan=getCoachTrainingPlan();const weekPlan=getWeeklyCoachPlan();const weekFeedback=getPreviousWeekTrainingAdjustment(weekPlan[0].date);const weekMatchFeedback=getPreviousWeekMatchAdjustment(weekPlan[0].date);dailyPlan.innerHTML='<div class="listitem"><span class="tag good">AIコーチ提案</span><div class="grow"><b>'+esc(coachPlan.title)+'</b><div class="tiny muted">'+coachPlan.minutes+'分・'+esc(coachPlan.why)+'</div><div class="tiny">'+esc(coachPlan.note)+'</div><button class="secondary small" onclick="applyCoachTrainingPlan()">このメニューで練習を始める</button></div></div><h3 style="margin:14px 0 6px">判断力データ連動｜今週の7日間プラン</h3><div class="tiny muted">判断力レベル・次の目標・成功率の高い練習方法を反映。月〜水は短時間の自主練、木〜日はチーム活動と回復を優先します。</div>'+weekPlan.map((p,i)=>'<div class="listitem"><div class="grow"><b>'+p.day+'｜'+esc(p.title)+'</b><div class="tiny muted">'+p.date+'・'+(p.minutes?p.minutes+'分':p.rest?'休養日':'チーム活動')+'・'+esc(p.why)+'</div><div class="tiny" style="white-space:pre-line">'+esc(p.note)+'</div>'+(p.minutes?'<button class="secondary small" onclick="applyWeeklyCoachSession('+i+')">この日の練習を始める</button>':p.team?'<span class="tag">チーム活動で意識</span>':'<span class="tag">回復優先</span>')+'</div></div>').join('')+renderWeeklyAdjustmentSummary(weekFeedback,weekMatchFeedback)+renderCoachOverallAssessment()+renderIntegratedDevelopmentBrief()+renderMonthlyGrowthTrajectory();renderMatchdayFocus();createPreMatchPreparation();
+ state.aiFormAnalyses=state.aiFormAnalyses||[];state.matchAnalyses=state.matchAnalyses||[];let date=today(),month=date.slice(0,7),days=new Set(state.trainings.filter(x=>x.date.startsWith(month)).map(x=>x.date)).size;homeDays.innerHTML=`${days} <small>日</small>`;monthProgress.style.width=Math.min(100,days/12*100)+'%';homeVideos.innerHTML=`${state.clips.length+state.forms.length} <small>件</small>`;let sprint=state.measures.find(x=>x.type==='30m走');homeSprint.innerHTML=sprint?`${esc(sprint.value)} <small>${esc(sprint.unit)}</small>`:'—';homeNumbers.textContent=`${state.settings.jersey1} / ${state.settings.jersey2}`;const coachPlan=getCoachTrainingPlan();const weekPlan=getWeeklyCoachPlan();const weekFeedback=getPreviousWeekTrainingAdjustment(weekPlan[0].date);const weekMatchFeedback=getPreviousWeekMatchAdjustment(weekPlan[0].date);dailyPlan.innerHTML='<div class="listitem"><span class="tag good">AIコーチ提案</span><div class="grow"><b>'+esc(coachPlan.title)+'</b><div class="tiny muted">'+coachPlan.minutes+'分・'+esc(coachPlan.why)+'</div><div class="tiny">'+esc(coachPlan.note)+'</div><button class="secondary small" onclick="applyCoachTrainingPlan()">このメニューで練習を始める</button></div></div><h3 style="margin:14px 0 6px">判断力データ連動｜今週の7日間プラン</h3><div class="tiny muted">判断力レベル・次の目標・成功率の高い練習方法を反映。月〜水は短時間の自主練、木〜日はチーム活動と回復を優先します。</div>'+weekPlan.map((p,i)=>'<div class="listitem"><div class="grow"><b>'+p.day+'｜'+esc(p.title)+'</b><div class="tiny muted">'+p.date+'・'+(p.minutes?p.minutes+'分':p.rest?'休養日':'チーム活動')+'・'+esc(p.why)+'</div><div class="tiny" style="white-space:pre-line">'+esc(p.note)+'</div>'+(p.minutes?'<button class="secondary small" onclick="applyWeeklyCoachSession('+i+')">この日の練習を始める</button>':p.team?'<span class="tag">チーム活動で意識</span>':'<span class="tag">回復優先</span>')+'</div></div>').join('')+renderWeeklyAdjustmentSummary(weekFeedback,weekMatchFeedback)+renderCoachOverallAssessment()+renderIntegratedDevelopmentBrief()+renderMonthlyGrowthTrajectory();renderMatchdayFocus();createPreMatchPreparation();renderPostMatchRecovery();
 trainDate.value=trainDate.value||date;measureDate.value=measureDate.value||date;
 trainMenu.innerHTML=state.menus.map((m,i)=>`<option value="${esc(m.name)}">${esc(m.category)}｜${esc(m.name)}</option>`).join('');
 menuList.innerHTML=state.menus.map((m,i)=>`<div class="listitem"><div class="grow"><b>${esc(m.name)}</b><div class="tiny muted">${esc(m.category)}・目安${m.minutes||10}分</div></div><button class="danger small" onclick="removeMenu(${i})">削除</button></div>`).join('');
