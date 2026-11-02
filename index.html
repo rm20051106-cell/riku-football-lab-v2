@@ -982,7 +982,7 @@ function getAdaptiveCoachAdjustment(focus){
  const history=(state.trainings||[]).filter(t=>(t.focus||inferTrainingFocus(t.menu,t.category))===focus).slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||Number(b.id||0)-Number(a.id||0)).slice(0,6);
  const profile=getTrainingDifficultyProfile(focus);
  const groups=new Map();
- history.filter(t=>t.sourceMatch?.issueKey).forEach(t=>{
+ history.filter(t=>t.sourceMatch?.issueKey&&t.sourceMatch?.linkedManuallyConfirmed===true&&t.sourceMatch?.matchId&&t.sourceMatch?.eventId).forEach(t=>{
   const key=t.sourceMatch.issueKey;
   const follow=getImprovementFollowup(t);
   const unresolved=t.reviewStatus==='難しかった'||t.reviewStatus==='まだ試せていない'||t.matchTransferStatus==='まだ'||(follow&&follow.assessed>0&&follow.improve>follow.good);
