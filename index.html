@@ -1022,6 +1022,14 @@ function renderMonthlyGrowthReport(monthKey){
  const measures=(state.measures||[]).filter(m=>String(m.date||'').startsWith(key));
  const measureSummary=measures.length?measures.map(m=>'<div class="tiny">'+esc(m.type)+'：'+esc(m.value)+' '+esc(m.unit||'')+'（'+esc(m.date)+'）</div>').join(''):'<div class="tiny muted">この月の測定記録はありません。</div>';
  let html='<div class="grid"><div class="card"><div class="tiny muted">練習記録</div><div class="stat">'+trainings.length+'<small>回</small></div></div><div class="card"><div class="tiny muted">本人確認した試合場面</div><div class="stat">'+events.length+'<small>場面</small></div></div><div class="card"><div class="tiny muted">良かった／改善したい</div><div class="stat">'+good.length+' / '+improve.length+'</div></div></div>';
+ const trainingDays=new Set(trainings.map(t=>t.date).filter(Boolean)).size;
+ const trainingMinutes=trainings.reduce((sum,t)=>sum+(Number(t.minutes)||0),0);
+ const stepTotal=trainings.reduce((sum,t)=>sum+(Array.isArray(t.steps)?t.steps.length:0),0);
+ const stepDone=trainings.reduce((sum,t)=>sum+(Array.isArray(t.stepsDone)?t.stepsDone.length:0),0);
+ const manualForms=(state.forms||[]).filter(x=>String(x.date||'').startsWith(key)).length;
+ const aiForms=(state.aiFormAnalyses||[]).filter(x=>String(x.date||'').startsWith(key)).length;
+ const scanCount=monthMatches.length;
+ html+='<h4 style="margin-top:14px">月間活動の全体像</h4><div class="grid"><div class="card"><div class="tiny muted">練習した日</div><div class="stat">'+trainingDays+'<small>日</small></div></div><div class="card"><div class="tiny muted">練習時間の合計</div><div class="stat">'+trainingMinutes+'<small>分</small></div></div><div class="card"><div class="tiny muted">練習チェック達成</div><div class="stat">'+stepDone+'<small> / '+stepTotal+'項目</small></div></div><div class="card"><div class="tiny muted">試合動画解析記録</div><div class="stat">'+scanCount+'<small>件</small></div></div><div class="card"><div class="tiny muted">フォーム記録</div><div class="stat">'+manualForms+'<small>件</small></div></div><div class="card"><div class="tiny muted">AIフォーム解析</div><div class="stat">'+aiForms+'<small>件</small></div></div></div><div class="tiny muted">練習時間は入力された分数の合計。チェック達成は練習メニュー内で完了にした項目数です。動画・フォーム件数は保存記録数で、技術の良し悪しや上達度を示す点数ではありません。</div>';
  const reflectionRows=Object.entries(state.settings?.matchdayReflection||{}).filter(([date])=>String(date).startsWith(key)).flatMap(([date,values])=>Object.entries(values||{}).filter(([,value])=>['できた','もう少し','試せなかった'].includes(value)).map(([id,value])=>({date,id,value})));
  const reflectionGroups={};
  reflectionRows.forEach(row=>{const focus=row.id.startsWith('training-')?row.id.slice(9):row.id==='strength-dribble'?'ドリブル':row.id==='team-play'?'味方との連携':'その他';const label=focus==='team-play'?'味方との連携':focus;reflectionGroups[label]=reflectionGroups[label]||{done:0,more:0,notTried:0,total:0};const g=reflectionGroups[label];g.total++;if(row.value==='できた')g.done++;else if(row.value==='もう少し')g.more++;else g.notTried++;});
