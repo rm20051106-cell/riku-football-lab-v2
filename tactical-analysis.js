@@ -11,6 +11,7 @@ const fields=[
  {id:'support',label:'味方を助けるサポート角度',options:['映像で確認できない','前方斜め','横方向','後方斜め','真後ろ','パスコースを作れていない']},
  {id:'movement',label:'スペースへの動き出し',options:['映像で確認できない','スペースへ動いた','足元に受けに来た','相手を引きつけた','動き出しなし']},
  {id:'decision',label:'その場面で選べたプレー',options:['映像で確認できない','パス','ドリブル','シュート','キープ','その他']},
+ {id:'choiceCount',label:'その場面で確認できた選択肢の数',options:['映像で確認できない','1つ','2つ','3つ以上']},
  {id:'outcome',label:'実際のプレー結果',options:['映像で確認できない','前進できた','味方につながった','シュートにつながった','ボールを失った','チャンスを作れた']},
  {id:'opponentDefense',label:'相手の守備の特徴',options:['映像で確認できない','高い位置から守備','中央を固める守備','サイドへ誘導する守備','最終ラインが低い','1人が対応','複数人で囲む','その他']},
  {id:'pressure',label:'ボールを持った時の相手のプレス',options:['映像で確認できない','強いプレスなし','前からプレス','横から寄せ','後ろから追われる','複数人に囲まれる']},
@@ -263,6 +264,9 @@ function renderTacticalMatchReports(){
   const outcomeCounts={};
   scenes.forEach(ev=>{const f=ev.tacticalReview.fields;if(f.decision&&f.decision!=='映像で確認できない'&&f.outcome&&f.outcome!=='映像で確認できない'){const key=f.decision+' → '+f.outcome;outcomeCounts[key]=(outcomeCounts[key]||0)+1;}});
   const outcomeHtml=Object.keys(outcomeCounts).length?'<div class="tiny muted"><b>選択と結果の記録（良否の判定ではありません）</b></div>'+Object.entries(outcomeCounts).sort((a,b)=>b[1]-a[1]).map(([k,n])=>'<div class="tiny">'+escT(k)+'：'+n+'件</div>').join(''):'<div class="tiny muted">選択と結果の両方が確認できた場面はありません。</div>';
+  const choiceCountCounts={};
+  scenes.forEach(ev=>{const v=ev.tacticalReview.fields.choiceCount;if(['1つ','2つ','3つ以上'].includes(v))choiceCountCounts[v]=(choiceCountCounts[v]||0)+1;});
+  const choiceCountHtml=Object.keys(choiceCountCounts).length?'<div class="tiny muted"><b>確認できた選択肢の数（未確認は除外）</b></div>'+['1つ','2つ','3つ以上'].filter(k=>choiceCountCounts[k]).map(k=>'<div class="tiny">'+k+'：'+choiceCountCounts[k]+'場面</div>').join(''):'<div class="tiny muted">選択肢の数はまだ記録されていません。</div>';
   const factHtml=facts.map(x=>'<div class="listitem"><div class="grow"><b>'+escT(labels[x.id])+'</b><div class="tiny muted">'+(enough?'確認できた '+x.observed+'場面｜良い行動 '+x.good+'件｜改善サイン '+x.weak+'件':'評価保留：試合内の本人確認済み場面が3件未満（'+scenes.length+'件）')+'</div></div></div>').join('');
   const sceneHtml=scenes.map(ev=>{
    const f=ev.tacticalReview.fields;
@@ -272,7 +276,7 @@ function renderTacticalMatchReports(){
    const outcome=f.outcome&&f.outcome!=='映像で確認できない'?'結果 '+f.outcome:'結果 評価保留';
    return '<div class="tiny" style="padding:7px 0;border-bottom:1px solid #29384b"><b>'+escT(time)+'｜'+escT(ev.actionType||ev.label||'確認場面')+'</b><div>'+escT(picked.join('／')||'行動項目は評価保留')+'</div><div class="muted">'+escT(choice)+'｜'+escT(outcome)+'</div></div>';
   }).join('');
-  return {match,scenes,enough,strengths,weaknesses,goals,factHtml,outcomeHtml,sceneHtml};
+  return {match,scenes,enough,strengths,weaknesses,goals,factHtml,outcomeHtml,choiceCountHtml,sceneHtml};
  });
  const content=reports.length?reports.map((r,i)=>{
   const title=(r.match.date||'日付不明')+'｜'+(r.match.title||'試合動画');
@@ -281,7 +285,7 @@ function renderTacticalMatchReports(){
   const goals=r.goals.map((g,j)=>'<div class="listitem"><div class="grow"><b>目標 '+(j+1)+'｜'+escT(g.text)+'</b><div class="tiny muted">'+escT(g.status)+'・'+escT(g.source)+'</div></div></div>').join('');
   const strengthsBlock=r.enough?strengths:'<div class="tiny muted">評価保留：本人確認済み場面が3件以上になると傾向を表示します。</div>';
   const weaknessesBlock=r.enough?weaknesses:'<div class="tiny muted">評価保留：本人確認済み場面が3件以上になると傾向を表示します。</div>';
-  return '<div class="card" style="margin-top:12px"><h3>'+escT(title)+'</h3><div class="tiny muted">手動確認済み '+r.scenes.length+'場面'+(r.enough?'':'｜評価保留：3場面以上必要')+'</div><div class="divider"></div><b>良かった判断・行動</b>'+strengthsBlock+'<div style="margin-top:10px"><b>改善したい判断・行動</b>'+weaknessesBlock+'</div><div style="margin-top:10px"><b>得意な状況</b>'+(r.enough?strengths:'<div class="tiny muted">評価保留</div>')+'<div style="margin-top:10px"><b>苦手な状況</b>'+(r.enough?weaknesses:'<div class="tiny muted">評価保留</div>')+'<div style="margin-top:10px"><b>次の試合の目標3つ</b>'+goals+'<div style="margin-top:10px">'+r.outcomeHtml+'</div><details style="margin-top:10px"><summary class="tiny">確認した場面の内訳を見る</summary>'+r.sceneHtml+'</details><div class="tiny muted" style="margin-top:10px">判断の良否は映像状況全体を見ずに断定しません。ここでは手動入力された行動傾向と、選択・結果の記録を分けて表示しています。</div></div>';
+  return '<div class="card" style="margin-top:12px"><h3>'+escT(title)+'</h3><div class="tiny muted">手動確認済み '+r.scenes.length+'場面'+(r.enough?'':'｜評価保留：3場面以上必要')+'</div><div class="divider"></div><b>良かった判断・行動</b>'+strengthsBlock+'<div style="margin-top:10px"><b>改善したい判断・行動</b>'+weaknessesBlock+'</div><div style="margin-top:10px"><b>得意な状況</b>'+(r.enough?strengths:'<div class="tiny muted">評価保留</div>')+'<div style="margin-top:10px"><b>苦手な状況</b>'+(r.enough?weaknesses:'<div class="tiny muted">評価保留</div>')+'<div style="margin-top:10px"><b>次の試合の目標3つ</b>'+goals+'<div style="margin-top:10px">'+r.outcomeHtml+'</div><div style="margin-top:10px"><b>判断の選択肢</b>'+r.choiceCountHtml+'</div><details style="margin-top:10px"><summary class="tiny">確認した場面の内訳を見る</summary>'+r.sceneHtml+'</details><div class="tiny muted" style="margin-top:10px">判断の良否は映像状況全体を見ずに断定しません。ここでは手動入力された行動傾向と、選択・結果の記録を分けて表示しています。</div></div>';
  }).join(''):'<div class="empty">手動確認済みの試合場面がまだありません。試合分析で陸玖本人として確認し、各場面の判断・ポジショニングを保存するとレポートが作成されます。</div>';
  host.innerHTML='<h2>⑧ 試合別・場面別の改善レポート</h2><p class="tiny muted">試合ごとに、陸玖本人として確認し、手動保存した場面だけを集計します。映像で確認できない項目は評価から除外します。</p>'+content;
  const graph=document.getElementById('tacticalGrowthGraph');
