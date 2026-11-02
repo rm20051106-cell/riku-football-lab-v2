@@ -592,7 +592,7 @@ function renderMatchEventTimeline(events,matchId){
   const decisionStatus=person==='陸玖'?getMatchDecisionRecordStatus(ev):null;
   const decisionStatusHtml=decisionStatus?'<div class="tiny" style="margin-top:5px;color:'+(decisionStatus.complete?'var(--good,#27834a)':'var(--muted,#687386)')+'">判断記録 '+decisionStatus.count+'/'+decisionStatus.total+'項目'+(decisionStatus.complete?'・入力完了':'・未入力：'+decisionStatus.missing.join('、'))+'</div>':'';
   const eventIdArg=Number.isFinite(Number(ev.id))?String(Number(ev.id)):"'"+String(ev.id).replace(/\\/g,"\\\\").replace(/'/g,"\\'")+"'";
-  const searchable=[ev.label,ev.reason,ev.note,action,assessment,status,match?.title,match?.date].filter(Boolean).join(' ');
+  const searchable=[ev.label,ev.reason,ev.note,action,assessment,status,ev.situationType,ev.situationLabel,(ev.availableOptions||[]).join(' '),ev.actualChoice,ev.outcome,ev.decisionQuality,match?.title,match?.date].filter(Boolean).join(' ');
   const drillButton=person==='陸玖'?'<div class="tiny muted" id="match-event-link-status-'+matchId+'-'+String(ev.id)+'"></div><div class="btnrow"><button class="secondary small" onclick="applyMatchEventTraining('+Number(matchId)+','+eventIdArg+')">この場面から練習メニューを作る</button><button class="secondary small" onclick="linkMatchEventToTraining('+Number(matchId)+','+eventIdArg+')">直近の同テーマ練習と結びつける</button></div>':'';
   const editId='match-event-edit-'+matchId+'-'+String(ev.id);
   const reviewOptions=['陸玖','別の選手','未確認'].map(v=>'<option value="'+v+'"'+(person===v?' selected':'')+'>'+v+'</option>').join('');
