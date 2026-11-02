@@ -44,6 +44,7 @@ function selectHtml(f,v){
 }
 function render(){
  renderTacticalGrowthGraph();
+ renderTacticalMatchReports();
  let host=document.getElementById(PANEL_ID);
  if(!host){
   const history=document.getElementById('matchScanRecords');
@@ -198,6 +199,67 @@ function renderTacticalGrowthGraph(){
  host.innerHTML='<h2>⑦ 陸玖の判断力・ポジショニング成長グラフ</h2><p class="tiny muted">陸玖本人として確認し、手動保存した場面だけを集計。日ごとの平均を時系列で比較します。映像で確認できない項目・未選択項目は除外します。</p><div class="tiny muted">点数は記録上の行動を見える化する目安（0〜100）で、プレーの正解率や選手としての総合評価ではありません。</div><div style="overflow-x:auto;margin-top:10px"><svg viewBox="0 0 '+width+' '+height+'" role="img" aria-label="周囲の確認、立ち位置、サポート角度、スペースへの動きの時系列グラフ" style="width:100%;min-width:320px;height:auto">'+grid+lineSeries+xLabels+'</svg></div><div>'+legend+'</div>'+detail+decisionHtml+'<div class="tiny muted" style="margin-top:10px">評価開始条件：各項目で有効な確認が3場面以上、かつ2日以上。プレー選択は状況や味方・相手の位置で正解が変わるため、選択肢の件数だけを表示し、良否の点数にはしません。</div>';
  const tactical=document.getElementById(PANEL_ID);
  if(tactical)tactical.insertAdjacentElement('afterend',host);else videoView.appendChild(host);
+}
+
+
+function renderTacticalMatchReports(){
+ const videoView=document.getElementById('video');if(!videoView)return;
+ let host=document.getElementById('tacticalMatchReports');
+ if(!host){host=document.createElement('section');host.id='tacticalMatchReports';host.className='card';}
+ const matches=(typeof state!=='undefined'&&Array.isArray(state.matchAnalyses))?state.matchAnalyses:[];
+ const reportMatches=matches.map(match=>{
+  const scenes=(match.candidateEvents||[]).filter(ev=>ev.reviewLabel==='陸玖'&&ev.tacticalReview?.reviewedAt&&ev.tacticalReview?.fields);
+  return {match,scenes};
+ }).filter(x=>x.scenes.length);
+ const labels={scan:'受ける前の周囲確認',orientation:'受ける時の身体の向き',position:'立ち位置',support:'サポート角度',movement:'スペースへの動き出し'};
+ const rules=[
+  {id:'scan',good:['左右を確認','前方を確認','複数方向を確認'],weak:['確認したが首振りなし'],goodText:'受ける前に周囲を確認',weakText:'受ける前の確認を増やす',goal:'パスが出る前に左右・前方を見てから受ける'},
+  {id:'orientation',good:['前向き','半身'],weak:['後ろ向き'],goodText:'前向き・半身で受けた',weakText:'半身で受ける準備をする',goal:'身体を半身にして前方を見ながら受ける'},
+  {id:'position',good:['相手と相手の間','相手の背後','外側のスペース'],weak:['味方と位置が重なる'],goodText:'相手の間・背後・外側に立てた',weakText:'味方と違うレーンを取る',goal:'味方と位置が重ならない別のレーンへ移動する'},
+  {id:'support',good:['前方斜め','横方向','後方斜め'],weak:['真後ろ','パスコースを作れていない'],goodText:'斜め・横のパスコースを作れた',weakText:'保持者から角度をつけてサポートする',goal:'保持者の真後ろを避け、斜めのパスコースを作る'},
+  {id:'movement',good:['スペースへ動いた','相手を引きつけた'],weak:['動き出しなし'],goodText:'スペースへ動く・相手を引きつけた',weakText:'空いた場所への動き出しを増やす',goal:'味方が顔を上げる前に空いたスペースへ動き出す'}
+ ];
+ const reports=reportMatches.map(({match,scenes})=>{
+  const enough=scenes.length>=3;
+  const facts=rules.map(rule=>{
+   const observed=scenes.filter(ev=>{const v=ev.tacticalReview.fields[rule.id];return v&&v!=='映像で確認できない'&&!String(v).includes('不明');});
+   const good=observed.filter(ev=>rule.good.includes(ev.tacticalReview.fields[rule.id])).length;
+   const weak=observed.filter(ev=>rule.weak.includes(ev.tacticalReview.fields[rule.id])).length;
+   return {...rule,observed:observed.length,good,weak};
+  });
+  const strengths=facts.filter(x=>x.observed>=2&&x.good>=2&&x.good>x.weak).sort((a,b)=>b.good-a.good);
+  const weaknesses=facts.filter(x=>x.observed>=2&&x.weak>=2&&x.weak>=x.good).sort((a,b)=>b.weak-a.weak);
+  const goals=[];
+  weaknesses.forEach(x=>{if(goals.length<3)goals.push({text:x.goal,source:x.weak+'場面で確認',status:'改善テーマ'});});
+  strengths.forEach(x=>{if(goals.length<3)goals.push({text:x.goal.replace('受ける','受ける動き')+'を次の試合でも再現する',source:x.good+'場面で確認',status:'継続目標'});});
+  while(goals.length<3)goals.push({text:'次の試合でも受ける前・受ける瞬間・受けた後を撮影し、'+(goals.length===0?'周囲の確認':goals.length===1?'立ち位置':'サポートと動き出し')+'を確認する',source:'この項目はまだ十分な傾向がありません',status:'観察目標・評価保留'});
+  const outcomeCounts={};
+  scenes.forEach(ev=>{const f=ev.tacticalReview.fields;if(f.decision&&f.decision!=='映像で確認できない'&&f.outcome&&f.outcome!=='映像で確認できない'){const key=f.decision+' → '+f.outcome;outcomeCounts[key]=(outcomeCounts[key]||0)+1;}});
+  const outcomeHtml=Object.keys(outcomeCounts).length?'<div class="tiny muted"><b>選択と結果の記録（良否の判定ではありません）</b></div>'+Object.entries(outcomeCounts).sort((a,b)=>b[1]-a[1]).map(([k,n])=>'<div class="tiny">'+escT(k)+'：'+n+'件</div>').join(''):'<div class="tiny muted">選択と結果の両方が確認できた場面はありません。</div>';
+  const factHtml=facts.map(x=>'<div class="listitem"><div class="grow"><b>'+escT(labels[x.id])+'</b><div class="tiny muted">'+(enough?'確認できた '+x.observed+'場面｜良い行動 '+x.good+'件｜改善サイン '+x.weak+'件':'評価保留：試合内の本人確認済み場面が3件未満（'+scenes.length+'件）')+'</div></div></div>').join('');
+  const sceneHtml=scenes.map(ev=>{
+   const f=ev.tacticalReview.fields;
+   const time=typeof formatMatchTime==='function'?formatMatchTime(ev.time):ev.time;
+   const picked=rules.filter(r=>f[r.id]&&f[r.id]!=='映像で確認できない').map(r=>labels[r.id]+'：'+f[r.id]);
+   const choice=f.decision&&f.decision!=='映像で確認できない'?'選択 '+f.decision:'選択 評価保留';
+   const outcome=f.outcome&&f.outcome!=='映像で確認できない'?'結果 '+f.outcome:'結果 評価保留';
+   return '<div class="tiny" style="padding:7px 0;border-bottom:1px solid #29384b"><b>'+escT(time)+'｜'+escT(ev.actionType||ev.label||'確認場面')+'</b><div>'+escT(picked.join('／')||'行動項目は評価保留')+'</div><div class="muted">'+escT(choice)+'｜'+escT(outcome)+'</div></div>';
+  }).join('');
+  return {match,scenes,enough,strengths,weaknesses,goals,factHtml,outcomeHtml,sceneHtml};
+ });
+ const content=reports.length?reports.map((r,i)=>{
+  const title=(r.match.date||'日付不明')+'｜'+(r.match.title||'試合動画');
+  const strengths=r.enough&&r.strengths.length?r.strengths.map(x=>'<div class="tiny">・'+escT(x.goodText)+'（'+x.good+'場面）</div>').join(''):'<div class="tiny muted">評価保留：良かった判断の傾向を示すには、同じ項目で複数場面の確認が必要です。</div>';
+  const weaknesses=r.enough&&r.weaknesses.length?r.weaknesses.map(x=>'<div class="tiny">・'+escT(x.weakText)+'（'+x.weak+'場面）</div>').join(''):'<div class="tiny muted">評価保留：苦手な状況と断定できる繰り返しの記録はありません。</div>';
+  const goals=r.goals.map((g,j)=>'<div class="listitem"><div class="grow"><b>目標 '+(j+1)+'｜'+escT(g.text)+'</b><div class="tiny muted">'+escT(g.status)+'・'+escT(g.source)+'</div></div></div>').join('');
+  const strengthsBlock=r.enough?strengths:'<div class="tiny muted">評価保留：本人確認済み場面が3件以上になると傾向を表示します。</div>';
+  const weaknessesBlock=r.enough?weaknesses:'<div class="tiny muted">評価保留：本人確認済み場面が3件以上になると傾向を表示します。</div>';
+  return '<div class="card" style="margin-top:12px"><h3>'+escT(title)+'</h3><div class="tiny muted">手動確認済み '+r.scenes.length+'場面'+(r.enough?'':'｜評価保留：3場面以上必要')+'</div><div class="divider"></div><b>良かった判断・行動</b>'+strengthsBlock+'<div style="margin-top:10px"><b>改善したい判断・行動</b>'+weaknessesBlock+'</div><div style="margin-top:10px"><b>得意な状況</b>'+(r.enough?strengths:'<div class="tiny muted">評価保留</div>')+'<div style="margin-top:10px"><b>苦手な状況</b>'+(r.enough?weaknesses:'<div class="tiny muted">評価保留</div>')+'<div style="margin-top:10px"><b>次の試合の目標3つ</b>'+goals+'<div style="margin-top:10px">'+r.outcomeHtml+'</div><details style="margin-top:10px"><summary class="tiny">確認した場面の内訳を見る</summary>'+r.sceneHtml+'</details><div class="tiny muted" style="margin-top:10px">判断の良否は映像状況全体を見ずに断定しません。ここでは手動入力された行動傾向と、選択・結果の記録を分けて表示しています。</div></div>';
+ }).join(''):'<div class="empty">手動確認済みの試合場面がまだありません。試合分析で陸玖本人として確認し、各場面の判断・ポジショニングを保存するとレポートが作成されます。</div>';
+ host.innerHTML='<h2>⑧ 試合別・場面別の改善レポート</h2><p class="tiny muted">試合ごとに、陸玖本人として確認し、手動保存した場面だけを集計します。映像で確認できない項目は評価から除外します。</p>'+content;
+ const graph=document.getElementById('tacticalGrowthGraph');
+ const tactical=document.getElementById(PANEL_ID);
+ if(graph)graph.insertAdjacentElement('afterend',host);else if(tactical)tactical.insertAdjacentElement('afterend',host);else videoView.appendChild(host);
 }
 
 function install(){
