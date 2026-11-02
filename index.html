@@ -254,6 +254,36 @@ function linkMatchEventToTraining(matchId,eventId){
  persist();
  alert('「'+training.menu+'」の練習記録に、'+match.title+' '+formatMatchTime(ev.time)+' の場面を結びつけたよ。');
 }
+function getMatchImprovementPlan(ev){
+ const focus=getTrainingFocusForMatchEvent(ev);
+ const plans={
+  'ドリブル':{title:'試合課題｜突破・切り返し',category:'突破・ドリブル',minutes:15,note:'試合の改善場面を再現。相手の重心を見て逆を取り、切り返した後の2〜3歩を加速する。最後は親子1対1で判断まで確認。'},
+  'パス':{title:'試合課題｜パス・受ける前の確認',category:'パス・判断',minutes:12,note:'試合の場面を再現。受ける前に左右を確認し、半身で受けて味方の足元・スペースへ正確につなぐ。'},
+  'ボールを受ける':{title:'試合課題｜首振り＋前向きトラップ',category:'受ける動き',minutes:12,note:'試合の場面を再現。パスが出る前に左右を確認し、半身で受けて前へ置くファーストタッチを繰り返す。'},
+  'シュート':{title:'試合課題｜シュートの軸足とミート',category:'シュート',minutes:15,note:'試合の場面を再現。軸足の位置・上体・ミートを一つずつ確認し、近い距離からコースを狙って蹴る。'},
+  '守備・プレス':{title:'試合課題｜寄せ方とコース限定',category:'守備',minutes:12,note:'試合の場面を再現。飛び込まずに距離を保ち、体の向きで相手の進行方向を限定する。'},
+  'オフザボール':{title:'試合課題｜動き出しと受ける角度',category:'オフザボール',minutes:12,note:'味方が顔を上げる前に動き出し、相手の背中や視野の外から受ける角度を作る。'},
+  'その他':{title:'試合課題｜場面の再現トレーニング',category:'判断・基礎',minutes:10,note:'試合映像を親子で見返し、改善する動きを一つ決めてゆっくり再現。その後、短い対人形式で試す。'}
+ };
+ return {focus,...(plans[focus]||plans['その他'])};
+}
+function renderMatchImprovementSuggestion(match,ev){
+ if(ev.reviewLabel!=='陸玖'||ev.assessment!=='改善したい')return '';
+ const p=getMatchImprovementPlan(ev);
+ return '<div class="note" style="margin-top:8px"><b>🎯 次回練習の自動提案</b><div class="tiny">'+esc(p.title)+'｜'+p.minutes+'分</div><div class="tiny muted">'+esc(p.note)+'</div><div class="btnrow"><button class="primary small" onclick="applyMatchImprovementPlan('+Number(match.id)+',\''+String(ev.id).replace(/\\/g,'\\\\').replace(/'/g,"\\'")+'\')">このメニューで練習を作成</button></div><div class="tiny muted">試合の改善評価とテーマを引き継ぎます。保存前に内容を編集できます。</div></div>';
+}
+function applyMatchImprovementPlan(matchId,eventId){
+ const match=(state.matchAnalyses||[]).find(x=>String(x.id)===String(matchId));
+ const ev=(match?.candidateEvents||[]).find(x=>String(x.id)===String(eventId));
+ if(!match||!ev||ev.reviewLabel!=='陸玖'||ev.assessment!=='改善したい'){alert('陸玖本人として確認し、「改善したい」と評価した場面を選んでください。');return}
+ const p=getMatchImprovementPlan(ev);
+ if(!state.menus.some(x=>x.name===p.title)){state.menus.unshift({name:p.title,category:p.category,minutes:p.minutes});persist();}
+ renderAll();
+ trainMenu.value=p.title;trainDate.value=today();trainMinutes.value=p.minutes;trainFocus.value=p.focus==='パス'?'ボールを受ける':p.focus;
+ trainNote.value='【試合からの改善課題】'+match.date+'｜'+(match.title||'試合動画')+'｜'+formatMatchTime(ev.time)+'\n場面：'+(ev.label||ev.reason||'映像で確認した場面')+'\n評価：改善したい\n\n【次回メニュー】'+p.note;
+ pendingTrainingSource={matchId:match.id,eventId:ev.id,matchDate:match.date,matchTitle:match.title||'試合動画',time:ev.time??null,focus:p.focus,assessment:ev.assessment};
+ showView('training');
+}
 function renderMatchLibrary(){
  const host=document.getElementById('matchLibrary');if(!host)return;
  const query=(document.getElementById('matchLibrarySearch')?.value||'').trim().toLowerCase();
@@ -271,7 +301,7 @@ function renderMatchLibrary(){
   const idArg=Number.isFinite(Number(ev.id))?String(Number(ev.id)):"'"+String(ev.id).replace(/\\/g,"\\\\").replace(/'/g,"\\'")+"'";
   const status=ev.reviewLabel==='陸玖'?'陸玖確認済み':ev.reviewLabel==='別の選手'?'別の選手':'未確認';
   const canPick=ev.reviewLabel==='陸玖'&&ev.assessment==='良かった'&&ev.clipAvailable&&ev.clipUrl&&match.jobId;
-  return '<article class="listitem" style="display:block;margin-top:8px"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>'+formatMatchTime(ev.time)+'｜'+esc(ev.actionType||'分類未設定')+'</b><span class="tiny">'+esc(status)+'</span></div><div class="tiny muted">'+esc(match.date)+'｜'+esc(match.title)+'</div><div class="tiny">'+esc(ev.label||ev.reason||'動きの変化候補')+'</div>'+(ev.assessment&&ev.assessment!=='未選択'?'<div class="tiny">評価：'+esc(ev.assessment)+'</div>':'')+(ev.note?'<div class="tiny muted">メモ：'+esc(ev.note)+'</div>':'')+(ev.clipAvailable&&ev.clipUrl?'<video controls playsinline preload="none" style="width:100%;max-width:520px;border-radius:10px;margin-top:8px" src="'+getApiUrl()+esc(ev.clipUrl)+'"></video><div class="tiny muted">切り抜き動画はサーバー一時保存です。大切な場面は再生後にiPhoneへ保存してください。</div>':'<div class="tiny muted">この場面の切り抜き動画はありません。元の試合記録から前後の映像を確認できます。</div>')+(canPick?'<label class="tiny" style="display:flex;align-items:center;gap:7px;margin:8px 0"><input class="cross-match-highlight-choice" type="checkbox" data-job-id="'+esc(match.jobId)+'" data-clip-id="'+esc(ev.id)+'">ベストプレー集に入れる</label>':'')+'<div class="btnrow"><button class="secondary small" onclick="openMatchEventInHistory('+Number(match.id)+','+idArg+')">元の試合記録を開く</button>'+(ev.clipAvailable&&ev.clipUrl?'<span class="tiny muted">切り抜き再生は試合記録内</span>':'')+'</div></article>';
+  return '<article class="listitem" style="display:block;margin-top:8px"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>'+formatMatchTime(ev.time)+'｜'+esc(ev.actionType||'分類未設定')+'</b><span class="tiny">'+esc(status)+'</span></div><div class="tiny muted">'+esc(match.date)+'｜'+esc(match.title)+'</div><div class="tiny">'+esc(ev.label||ev.reason||'動きの変化候補')+'</div>'+(ev.assessment&&ev.assessment!=='未選択'?'<div class="tiny">評価：'+esc(ev.assessment)+'</div>':'')+renderMatchImprovementSuggestion(match,ev)+(ev.note?'<div class="tiny muted">メモ：'+esc(ev.note)+'</div>':'')+(ev.clipAvailable&&ev.clipUrl?'<video controls playsinline preload="none" style="width:100%;max-width:520px;border-radius:10px;margin-top:8px" src="'+getApiUrl()+esc(ev.clipUrl)+'"></video><div class="tiny muted">切り抜き動画はサーバー一時保存です。大切な場面は再生後にiPhoneへ保存してください。</div>':'<div class="tiny muted">この場面の切り抜き動画はありません。元の試合記録から前後の映像を確認できます。</div>')+(canPick?'<label class="tiny" style="display:flex;align-items:center;gap:7px;margin:8px 0"><input class="cross-match-highlight-choice" type="checkbox" data-job-id="'+esc(match.jobId)+'" data-clip-id="'+esc(ev.id)+'">ベストプレー集に入れる</label>':'')+'<div class="btnrow"><button class="secondary small" onclick="openMatchEventInHistory('+Number(match.id)+','+idArg+')">元の試合記録を開く</button>'+(ev.clipAvailable&&ev.clipUrl?'<span class="tiny muted">切り抜き再生は試合記録内</span>':'')+'</div></article>';
  }).join(''):'<div class="empty">条件に合う場面がありません。検索語や絞り込みを変えてみてね。</div>')+'<div class="tiny muted" style="margin-top:8px">場面候補はAIが抽出した動きの変化です。プレーの内容や陸玖本人かどうかは、映像を見て確認してください。複数試合の動画は、同じサーバー上に切り抜きが残っている場合に限り連結できます。</div>';
 }
 async function createCrossMatchHighlight(){
