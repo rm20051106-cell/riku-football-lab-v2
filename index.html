@@ -188,7 +188,7 @@ function saveTrainingReflectionSnapshot(record){
 }
 function getTrainingCycleSummary(training){
  const followup=getImprovementFollowup(training);
- const steps=Array.isArray(training?.steps)?training.steps:[];
+ const steps=Array.isArray(training?.steps)&&training.steps.length?training.steps:getTrainingSteps(training?.focus||inferTrainingFocus(training?.menu,training?.category));
  const done=getCompletedTrainingStepIndexes(training,steps);
  return {issueKey:training?.sourceMatch?.issueKey||getTrainingIssueKey({focus:training?.focus,actionType:training?.sourceMatch?.actionType,positionRole:training?.sourceMatch?.positionRole}),stepsTotal:steps.length,stepsDone:done.length,completion:steps.length?Math.round(done.length/steps.length*100):0,reflection:training?.reflectionSnapshot||null,followup};
 }
@@ -467,7 +467,7 @@ function getTrainingDecisionComparison(training){
   else if(!deltas.length){trend='練習後の評価を記録';detail='練習前後の判断評価を比較するには、両方の試合で判断・周囲確認の評価が必要です。';}
   else {const delta=deltas.reduce((a,b)=>a+b,0)/deltas.length;trend=delta>0?'改善方向':delta<0?'再確認ポイントあり':'同水準';detail='練習前後の評価率の差を比較。練習の効果を断定するものではありません。';}
  }
- return {focus,before,after,prevQ,nextQ,prevS,nextS,trend,detail,done:getCompletedTrainingStepIndexes(training,Array.isArray(training.steps)&&training.steps.length?training.steps:getTrainingSteps(focus)).length,total:(training.steps||getTrainingSteps(focus)).length};
+ return {focus,before,after,prevQ,nextQ,prevS,nextS,trend,detail,done:getCompletedTrainingStepIndexes(training,Array.isArray(training.steps)&&training.steps.length?training.steps:getTrainingSteps(focus)).length,total:(Array.isArray(training.steps)&&training.steps.length?training.steps:getTrainingSteps(focus)).length};
 }
 function renderTrainingDecisionComparison(training){
  const r=getTrainingDecisionComparison(training);if(!r)return '';
@@ -2055,7 +2055,7 @@ function getCompletedTrainingStepIndexes(record,stepsOverride){
 function buildTrainingReflection(record){
  const focus=record?.focus||inferTrainingFocus(record?.menu,record?.category);
  const steps=Array.isArray(record?.steps)&&record.steps.length?record.steps:getTrainingSteps(focus);
- const done=Array.isArray(record?.stepsDone)?record.stepsDone:[];
+ const done=getCompletedTrainingStepIndexes(record,steps);
  const rate=steps.length?Math.round(done.length/steps.length*100):0;
  const linked=getValidatedTrainingMatchEvents(record);
  const good=[],improve=[],next=[];
