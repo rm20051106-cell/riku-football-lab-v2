@@ -317,64 +317,24 @@ class RikuBrowserE2ETests(unittest.TestCase):
             context = browser.new_context(viewport={"width": 390, "height": 844})
             page = context.new_page()
             page.goto(self.base_url, wait_until="load")
-            page.wait_for_function("typeof openVideoDB === 'function'")
-            result = page.evaluate("""() => new Promise(resolve => {
-                let request;
+            page.wait_for_function("typeof storeClipVideo === 'function' and typeof getClipVideo === 'function'")
+            result = page.evaluate("""async () => {
                 try {
-                    request = indexedDB.open('rikuWebKitCompatibilitySmoke', 1);
+                    const blob = new Blob([new Uint8Array([7, 8, 9])], {type: 'video/mp4'});
+                    await storeClipVideo('webkit-smoke', blob);
+                    const saved = await getClipVideo('webkit-smoke');
+                    return {
+                        opened: true,
+                        blobSupported: saved?.blob instanceof Blob,
+                        bytes: saved?.blob?.size || 0,
+                        quotaApi: !!navigator.storage?.estimate,
+                        progress: !!document.getElementById('videoSaveProgressBar'),
+                        importProgress: !!document.getElementById('videoImportProgressBar')
+                    };
                 } catch (error) {
-                    resolve({opened: false, error: String(error)});
-                    return;
+                    return {opened: false, error: String(error)};
                 }
-                request.onupgradeneeded = () => {
-                    if (!request.result.objectStoreNames.contains('videos')) {
-                        request.result.createObjectStore('videos');
-                    }
-                };
-                request.onerror = () => resolve({opened: false, error: String(request.error)});
-                request.onsuccess = () => {
-                    const db = request.result;
-                    try {
-                        const tx = db.transaction('videos', 'readwrite');
-                        const blob = new Blob([new Uint8Array([7, 8, 9])], {type: 'video/mp4'});
-                        const put = tx.objectStore('videos').put({blob, name: 'webkit-smoke.mp4'}, 'webkit-smoke');
-                        put.onerror = event => {
-                            const error = event.target?.error || put.error;
-                            resolve({opened: true, stage: 'put', error: error ? String(error) : 'put request error without DOMException'});
-                            db.close();
-                        };
-                        tx.oncomplete = () => {
-                            const read = db.transaction('videos', 'readonly').objectStore('videos').get('webkit-smoke');
-                            read.onsuccess = () => {
-                                const saved = read.result;
-                                resolve({
-                                    opened: true,
-                                    blobSupported: saved?.blob instanceof Blob,
-                                    bytes: saved?.blob?.size || 0,
-                                    quotaApi: !!navigator.storage?.estimate,
-                                    progress: !!document.getElementById('videoSaveProgressBar'),
-                                    importProgress: !!document.getElementById('videoImportProgressBar')
-                                });
-                                db.close();
-                            };
-                            read.onerror = () => { resolve({opened: true, error: String(read.error)}); db.close(); };
-                        };
-                        tx.onerror = event => {
-                            const error = event.target?.error || tx.error;
-                            resolve({opened: true, stage: 'transaction', error: error ? String(error) : 'transaction error event without DOMException'});
-                            db.close();
-                        };
-                        tx.onabort = event => {
-                            const error = event.target?.error || tx.error;
-                            resolve({opened: true, stage: 'abort', error: error ? String(error) : 'transaction aborted without DOMException'});
-                            db.close();
-                        };
-                    } catch (error) {
-                        resolve({opened: true, error: String(error)});
-                        db.close();
-                    }
-                };
-            })""")
+            }""")
             self.assertTrue(result.get("opened") and result.get("blobSupported"), result)
             self.assertEqual(result.get("bytes"), 3, result)
             self.assertTrue(result.get("progress") and result.get("importProgress"), result)
