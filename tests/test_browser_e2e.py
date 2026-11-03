@@ -310,8 +310,6 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertFalse(page.evaluate("state.clips[0].hasVideo"))
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
 
     def test_webkit_safari_compatibility_smoke(self):
         browser = self.playwright.webkit.launch(headless=True)
@@ -347,3 +345,7 @@ if __name__ == "__main__":
             context.close()
         finally:
             browser.close()
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
