@@ -3912,7 +3912,7 @@ function renderPhaseAlignedKickComparison(newer,older){
  const phaseDefs=[['approach','助走'],['plant','軸足接地'],['swing','蹴り脚の振り出し'],['impact','インパクト'],['follow_through','フォロースルー']];
  const nearest=(record,time)=>{
   const samples=Array.isArray(record.phaseTimeline)&&record.phaseTimeline.length?record.phaseTimeline:(record.timeline||[]);
-  const candidates=samples.filter(x=>Number.isFinite(Number(x.time))&&Number(x.visible)>=20);
+  const candidates=samples.filter(x=>x.time!==null&&x.time!==undefined&&Number.isFinite(Number(x.time))&&Number(x.visible)>=20);
   if(!candidates.length)return null;
   const best=candidates.reduce((a,b)=>Math.abs(Number(a.time)-time)<=Math.abs(Number(b.time)-time)?a:b);
   const interval=Number(record.samplingIntervalSeconds)||0.5;
