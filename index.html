@@ -2409,6 +2409,13 @@ function getWeeklyCoachPlan(){
   primary.why+='／本人確認済みの複数試合で同じ課題を確認';
   primary.sourceMatch={...(primary.sourceMatch||{}),positioningDecisionPractice:true,positioningIssue:p.key,positioningLabel:p.label,positioningEvidence:p.assessed,positioningMatches:p.matchCount};
  }
+ const growthPriority=getMatchGrowthPriorityBoard().find(x=>x.priority>=3&&x.latest&&x.latest.total>=2);
+ if(growthPriority&&!growthGoal){
+  primary.title='試合成長課題｜'+growthPriority.key;primary.focus=growthPriority.trainingFocus;primary.minutes=Math.min(primary.minutes||12,12);primary.category='本人確認済み課題の優先練習';
+  primary.note+='\\n【試合評価からの優先課題】'+growthPriority.reason+'\\n【練習目標】'+growthPriority.goal+'\\n手動評価 '+growthPriority.evidenceCount+'場面。未確認映像やAI候補は使用していません。';
+  primary.why+='／本人確認済みの複数場面から課題を優先';
+  primary.sourceMatch={...(primary.sourceMatch||{}),growthPriority:true,growthFocus:growthPriority.key,growthEvidenceCount:growthPriority.evidenceCount};
+ }
  if(feedback.assessed){primary.minutes=Math.max(8,primary.minutes+(feedback.level===1?-3:feedback.level===3?2:0));primary.title=(feedback.level===1?'基礎から再調整｜':feedback.level===3?'応用へステップアップ｜':'継続・安定｜')+primary.title;primary.note+='\n【前週の結果】'+feedback.reason+'。'+(feedback.avgCompletion===null?'':'平均チェック達成 '+feedback.avgCompletion+'%。');primary.why+='／前週の振り返り '+feedback.assessed+'件を反映';}
  if(growthGoal){primary.title='試合成長目標｜'+(growthGoal.growthFocus||growthGoal.focus);primary.focus=growthGoal.focus;primary.minutes=growthGoal.focus==='ドリブル'?15:growthGoal.focus==='オフザボール'?12:12;primary.category='試合成長目標';primary.note='【本人確認済み試合から選んだ最優先目標】'+goalText+'\n'+primary.note;primary.why='本人確認済みの試合成長目標を最優先で翌週計画へ反映';primary.sourceMatch={...(primary.sourceMatch||{}),matchGrowthGoal:true,growthFocus:growthGoal.growthFocus||growthGoal.focus};}
  const days=[
@@ -3477,6 +3484,32 @@ function getMatchGrowthRecommendations(){
   return {...item,priority,reason,goal:item.key==='加速ドリブル'?'相手の位置を見て加速し、抜いた後の2〜3歩も前へ運ぶ':item.key==='切り返し'?'相手の重心を見て方向を選び、切り返した直後に加速する':item.key==='判断力'?'受ける前に周囲を確認し、前進・パス・キープから選んだ理由を試合後に振り返る':'味方と相手の位置を見て、受けられる角度とスペースを作る'};
  }).sort((a,b)=>b.priority-a.priority||String(b.latest?.date||'').localeCompare(String(a.latest?.date||'')));
 }
+function getLongTermGrowthSummary(){
+ return getMatchGrowthTimelineData().map(item=>{
+  const valid=item.rows.filter(row=>row.total>=2&&Number.isFinite(row.rate));
+  if(valid.length<2)return {...item,comparable:false,validMatches:valid.length};
+  const first=valid[0],last=valid[valid.length-1],delta=last.rate-first.rate;
+  const between=valid.filter(row=>row.date>first.date&&row.date<=last.date);
+  return {...item,comparable:true,validMatches:valid.length,firstDate:first.date,lastDate:last.date,firstRate:first.rate,lastRate:last.rate,firstScenes:first.total,lastScenes:last.total,delta,trainingSessions:between.reduce((n,row)=>n+row.trainingSessions,0),trainingMinutes:between.reduce((n,row)=>n+row.trainingMinutes,0),status:delta>=15?'長期的な上向き傾向':delta<=-15?'長期的な再確認候補':'大きな変化は未確認'};
+ });
+}
+function getMatchGrowthPriorityBoard(){
+ return getMatchGrowthTimelineData().map(item=>{
+  const latest=item.latest;
+  if(!latest||latest.total<2)return {...item,priority:0,priorityLabel:'評価蓄積中',reason:'本人確認済みの手動評価が2場面以上そろうまで優先順位を付けません。',evidenceCount:latest?.total||0};
+  const repeated=item.repeatedIssues.filter(x=>x.status==='再確認が必要'&&x.lastCount>=2).sort((a,b)=>String(b.last).localeCompare(String(a.last)))[0]||null;
+  let priority=1,priorityLabel='継続確認',reason='次の試合でも同じ観点を確認します。';
+  if(repeated){priority=4;priorityLabel='最優先';reason='同じ手動入力課題「'+repeated.key+'」が複数試合で再確認候補。直近 '+repeated.lastRate+'%（'+repeated.lastCount+'場面）。';}
+  else if(latest.improve>latest.good){priority=3;priorityLabel='優先';reason='直近試合で改善したい '+latest.improve+'／'+latest.total+'場面。手動評価に基づく練習候補です。';}
+  else if(item.repeatedIssues.some(x=>x.lastCount>=2)){priority=2;priorityLabel='経過確認';reason='同じ課題タグの複数試合記録があります。次の試合でも再現性を確認します。';}
+  return {...item,priority,priorityLabel,reason,evidenceCount:latest.total,latestDate:latest.date};
+ }).sort((a,b)=>b.priority-a.priority||String(b.latestDate||'').localeCompare(String(a.latestDate||'')));
+}
+function renderLongTermGrowthSummary(){
+ const rows=getLongTermGrowthSummary().filter(x=>x.comparable);
+ if(!rows.length)return '<div class="empty">長期比較には、同じ分類で各試合2場面以上の本人確認済み手動評価が2試合分以上必要です。</div>';
+ return rows.map(x=>'<div class="listitem" style="display:block"><b>'+esc(x.key)+'｜'+esc(x.status)+'</b><div class="tiny muted">'+esc(x.firstDate)+' '+x.firstRate+'%（'+x.firstScenes+'場面）→ '+esc(x.lastDate)+' '+x.lastRate+'%（'+x.lastScenes+'場面）｜差 '+(x.delta>0?'+':'')+x.delta+'pt</div><div class="tiny muted">比較期間内の練習記録 '+x.trainingSessions+'回・'+x.trainingMinutes+'分（上達の原因を示すものではありません）</div></div>').join('');
+}
 function renderGrowthTrendChart(rows){
  const points=(rows||[]).filter(row=>row.total>=2&&Number.isFinite(row.rate)).slice(-6);
  if(points.length<2)return '<div class="tiny muted">グラフ表示には各試合2場面以上の手動評価が2試合分必要です。</div>';
@@ -3504,8 +3537,8 @@ function renderMatchGrowthTimeline(){
   const issues=item.repeatedIssues.length?item.repeatedIssues.slice(0,3).map(x=>'<div class="tiny muted">同じ課題「'+esc(x.key)+'」：'+esc(x.first)+' '+x.firstRate+'% → '+esc(x.last)+' '+x.lastRate+'%｜'+esc(x.status)+(x.delta===null?'':'（'+(x.delta>0?'+':'')+x.delta+'pt）')+'</div>').join(''):'<div class="tiny muted">同じ課題タグを付けた複数試合の比較はまだありません。</div>';
   return '<div class="card" style="margin-top:8px"><div class="brand"><b>'+esc(item.key)+'</b><span class="tiny muted">'+item.rows.length+'試合記録</span></div><div class="tiny muted">'+esc(item.description)+'</div>'+renderGrowthTrendChart(item.rows)+compare+issues+'<div style="margin-top:8px"><b class="tiny">試合ごとの推移（最新6試合）</b>'+trend+'</div><div class="tiny muted" style="margin-top:7px">分類・課題タグ・評価は陸玖本人として確認した映像を見て手動入力したものだけ。練習回数やチェック数は取り組み記録であり、上達の原因や技術レベルを証明するものではありません。</div></div>';
  }).join('');
- const recommendations=getMatchGrowthRecommendations().filter(x=>x.latest&&x.latest.total>0).slice(0,2);
- const goals=recommendations.map((item,index)=>'<div class="listitem" style="display:block"><b>目標候補 '+(index+1)+'｜'+esc(item.key)+'</b><div class="tiny">'+esc(item.goal)+'</div><div class="tiny muted">'+esc(item.reason)+'</div><button class="secondary small" onclick="applyMatchGrowthGoal('+JSON.stringify(item.key)+')">次の試合の目標に設定</button></div>').join('');
+ const recommendations=getMatchGrowthPriorityBoard().filter(x=>x.latest&&x.latest.total>=2).slice(0,2);
+ const goals=recommendations.map((item,index)=>'<div class="listitem" style="display:block"><b>優先度 '+esc(item.priorityLabel)+'｜'+esc(item.key)+'</b><div class="tiny">'+esc(item.goal)+'</div><div class="tiny muted">'+esc(item.reason)+'（手動評価 '+item.evidenceCount+'場面）</div><button class="secondary small" onclick="applyMatchGrowthGoal('+JSON.stringify(item.key)+')">次の試合の目標に設定</button></div>').join('');
  return '<h3 style="margin-top:14px">試合ごとの成長タイムライン</h3><div class="tiny muted">加速ドリブル・切り返し・判断力・ポジショニングを分けて比較。本人確認済み映像に対して手動で選んだ分類・課題タグ・評価だけを集計します。AI候補のラベルや未確認映像は成長評価に含めません。</div>'+cards+'<h3 style="margin-top:14px">次の試合で試す目標候補</h3>'+(goals||'<div class="empty">手動確認済みの試合評価が蓄積されると、次の目標候補を表示します。</div>');
 }
 function applyMatchGrowthGoal(focus){
@@ -3528,7 +3561,7 @@ function renderIntegratedGrowthReport(){
  const good=assessed.filter(e=>e.assessment==='良かった').length;
  const metricTypes=['30m走','アジリティ','立ち幅跳び'];
  const metrics=metricTypes.map(type=>{const a=measures.filter(x=>x.type===type&&x.value!==null&&x.value!==undefined&&x.value!==''&&Number.isFinite(Number(x.value))).sort((x,y)=>String(y.date||'').localeCompare(String(x.date||'')));return {type,latest:a[0],previous:a[1]};});
- host.innerHTML=renderMatchGrowthTimeline()+'<div class="grid3"><div class="stat"><b>'+trainings.length+'</b><span>練習記録</span></div><div class="stat"><b>'+assessed.length+'</b><span>本人確認済み評価場面</span></div><div class="stat"><b>'+(completion===null?'—':completion+'%')+'</b><span>練習チェック完了率</span></div></div><div class="tiny muted" style="margin:8px 0">試合評価：良かった '+good+'場面／改善したい '+(assessed.length-good)+'場面。評価対象 '+assessed.length+'場面。</div><h3>測定値の最新比較</h3>'+metrics.map(x=>{const delta=x.latest&&x.previous?Number(x.latest.value)-Number(x.previous.value):null;const unit=x.latest?.unit||x.previous?.unit||'';return '<div class="listitem"><div class="grow"><b>'+x.type+'</b><div class="tiny muted">'+(x.latest?esc(x.latest.date)+' 最新':'記録なし')+'</div></div><b>'+(x.latest?esc(x.latest.value)+' '+esc(x.latest.unit):'—')+'</b><span class="tiny muted">'+(x.previous?'前回 '+esc(x.previous.value)+' '+esc(x.previous.unit)+(delta===null?'':'／差 '+(delta>0?'+':'')+delta.toFixed(2)+' '+esc(unit)):'比較対象なし')+'</span></div>'}).join('')+'<div class="note">測定値の差は数値の変化のみを表示します。30m走・アジリティは短いほど、立ち幅跳びは長いほど良い方向ですが、測定条件が異なる場合は単純比較できません。練習回数や試合評価だけで技術向上を断定しません。</div>';
+ host.innerHTML=renderMatchGrowthTimeline()+'<h3 style="margin-top:14px">長期成長比較</h3><div class="tiny muted">各試合2場面以上の本人確認済み手動評価のみ。練習量は同期間の記録であり、因果関係は示しません。</div>'+renderLongTermGrowthSummary()+'<div class="grid3"><div class="stat"><b>'+trainings.length+'</b><span>練習記録</span></div><div class="stat"><b>'+assessed.length+'</b><span>本人確認済み評価場面</span></div><div class="stat"><b>'+(completion===null?'—':completion+'%')+'</b><span>練習チェック完了率</span></div></div><div class="tiny muted" style="margin:8px 0">試合評価：良かった '+good+'場面／改善したい '+(assessed.length-good)+'場面。評価対象 '+assessed.length+'場面。</div><h3>測定値の最新比較</h3>'+metrics.map(x=>{const delta=x.latest&&x.previous?Number(x.latest.value)-Number(x.previous.value):null;const unit=x.latest?.unit||x.previous?.unit||'';return '<div class="listitem"><div class="grow"><b>'+x.type+'</b><div class="tiny muted">'+(x.latest?esc(x.latest.date)+' 最新':'記録なし')+'</div></div><b>'+(x.latest?esc(x.latest.value)+' '+esc(x.latest.unit):'—')+'</b><span class="tiny muted">'+(x.previous?'前回 '+esc(x.previous.value)+' '+esc(x.previous.unit)+(delta===null?'':'／差 '+(delta>0?'+':'')+delta.toFixed(2)+' '+esc(unit)):'比較対象なし')+'</span></div>'}).join('')+'<div class="note">測定値の差は数値の変化のみを表示します。30m走・アジリティは短いほど、立ち幅跳びは長いほど良い方向ですが、測定条件が異なる場合は単純比較できません。練習回数や試合評価だけで技術向上を断定しません。</div>';
 }
 function renderAiFormPracticePlan(){
  const el=document.getElementById('aiFormPracticePlan');if(!el)return;
