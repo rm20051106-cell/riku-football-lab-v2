@@ -2029,12 +2029,29 @@ function getTrainingTransferSummary(){
  records.forEach(t=>{const focus=t.focus||inferTrainingFocus(t.menu,t.category);groups[focus]=groups[focus]||{done:0,partial:0,notYet:0,total:0};const g=groups[focus];g.total++;if(t.matchTransferStatus==='できた')g.done++;else if(t.matchTransferStatus==='少しできた')g.partial++;else g.notYet++;});
  return Object.entries(groups).map(([focus,v])=>({focus,...v})).sort((a,b)=>b.total-a.total);
 }
+function getValidatedTrainingMatchEvents(record){
+ const links=Array.isArray(record?.linkedMatchEvents)?record.linkedMatchEvents:[];
+ const seen=new Set(),validated=[];
+ links.forEach(link=>{
+  if(!link||link.matchId==null||link.eventId==null)return;
+  const key=String(link.matchId)+'|'+String(link.eventId);
+  if(seen.has(key))return;
+  seen.add(key);
+  const match=(state.matchAnalyses||[]).find(item=>String(item.id)===String(link.matchId));
+  if(!match||!match.date||!record?.date||String(match.date)<=String(record.date))return;
+  const event=(match.candidateEvents||[]).find(item=>String(item.id)===String(link.eventId));
+  if(!event||!isManuallyReviewedMatchEvent(event)||!event.actionType||event.actionType==='未選択')return;
+  if(event.assessmentSource!=='manual'||!['良かった','改善したい'].includes(event.assessment))return;
+  validated.push(event);
+ });
+ return validated;
+}
 function buildTrainingReflection(record){
  const focus=record?.focus||inferTrainingFocus(record?.menu,record?.category);
  const steps=Array.isArray(record?.steps)&&record.steps.length?record.steps:getTrainingSteps(focus);
  const done=Array.isArray(record?.stepsDone)?record.stepsDone:[];
  const rate=steps.length?Math.round(done.length/steps.length*100):0;
- const linked=Array.isArray(record?.linkedMatchEvents)?record.linkedMatchEvents:[];
+ const linked=getValidatedTrainingMatchEvents(record);
  const good=[],improve=[],next=[];
  const prompts={
   'ドリブル':{good:'相手を見て運ぶ・切り返す動きを練習テーマにできた',improve:'相手の重心を見て方向を選ぶことと、抜いた後の加速をもう一度確認',next:'親子1対1で相手の立ち位置を変え、左右どちらへ突破するか選んでから加速する'},
