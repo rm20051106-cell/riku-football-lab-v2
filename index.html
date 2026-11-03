@@ -3704,7 +3704,7 @@ function renderAiFormPracticePlan(){
   'パスキック':{title:'正確なインパクトと蹴った後の準備',warm:'近距離のインサイドパスを左右各5回（2分）',main:'目標を決め、軸足を横に置いて正確にパス。左右各4回（5分）',game:'親が立つ位置を変え、目標を見てからパスを出す（4分）',cue:'相手の位置を見て、正確に届ける。'}
  };
  const p=plans[kind]||plans['シュート'];
- const sameSetup=x=>(x.cameraAngle||'未選択')===(latest.cameraAngle||'未選択')&&(x.kind||'シュート')===kind&&(x.foot||'右足')===foot;
+ const sameSetup=x=>getKickCameraSetup(x)===getKickCameraSetup(latest);
  const previous=all.slice(1).find(sameSetup);
  const metricNames=[['膝',latest.knee,previous?.knee],['股関節',latest.hip,previous?.hip],['体幹',latest.trunk,previous?.trunk]];
  const comparison=previous?'<div class="tiny muted">前回（'+esc(previous.date)+'）との数値差：'+metricNames.map(([n,a,b])=>n+' '+(Number.isFinite(a)&&Number.isFinite(b)?(a-b>0?'+':'')+(a-b).toFixed(1)+'°':'比較不可')).join(' ／ ')+'。差の大小だけを示し、改善・悪化とは判定しません。</div>':'<div class="tiny muted">同条件の過去記録が増えると、数値差も練習の振り返り材料に加わります。</div>';
@@ -3732,7 +3732,7 @@ function getAiFormPhaseValue(record,marker){
  const list=Array.isArray(record?.timeline)?record.timeline:[];if(!list.length)return null;
  let nearest=list[0];for(const item of list){if(Math.abs(Number(item.time)-marker.timeSeconds)<Math.abs(Number(nearest.time)-marker.timeSeconds))nearest=item;}
  const average=(a,b)=>a!==null&&a!==undefined&&b!==null&&b!==undefined&&Number.isFinite(Number(a))&&Number.isFinite(Number(b))?(Number(a)+Number(b))/2:null;
- return {knee:average(nearest.leftKnee,nearest.rightKnee),hip:average(nearest.leftHip,nearest.rightHip),trunk:nearest.trunk!==null&&nearest.trunk!==undefined&&Number.isFinite(Number(nearest.trunk))?Number(nearest.trunk):null,sampleTime:nearest.time};
+ return {leftKnee:nearest.leftKnee??null,rightKnee:nearest.rightKnee??null,leftHip:nearest.leftHip??null,rightHip:nearest.rightHip??null,knee:average(nearest.leftKnee,nearest.rightKnee),hip:average(nearest.leftHip,nearest.rightHip),trunk:nearest.trunk!==null&&nearest.trunk!==undefined&&Number.isFinite(Number(nearest.trunk))?Number(nearest.trunk):null,leftFootMotion:nearest.leftFootMotion??null,rightFootMotion:nearest.rightFootMotion??null,sampleTime:nearest.time,visible:nearest.visible??null};
 }
 const KICK_REVIEW_ITEMS=[
  {id:'plantBallDistance',name:'軸足とボールの距離',mode:'手動確認',note:'軸足がボールの横に置かれているか。画面の遠近だけで実距離を推定しない。'},
@@ -3774,7 +3774,7 @@ function renderAiFormCompare(){
  if(!newer){el.innerHTML='<div class="empty">AI解析を保存すると比較できます。</div>';return}
  const sameSetup=x=>getKickCameraSetup(x)===getKickCameraSetup(newer);
  const older=all.slice(1).find(sameSetup);
- if(!older){el.innerHTML='<div class="empty">同じ撮影角度・キック種別・利き足の過去解析がありません。条件をそろえて撮影すると、より公平に比較できます。</div>';return}
+ if(!older){el.innerHTML='<div class="empty">同じ撮影角度・距離・画角・キック種別・利き足の過去解析がありません。条件をそろえて撮影すると、より公平に比較できます。</div>';return}
  const metrics=[['膝角度',newer.knee,older.knee],['股関節角度',newer.hip,older.hip],['体幹傾き',newer.trunk,older.trunk]];
  const summaryHtml=metrics.map(m=>{if(!Number.isFinite(m[1])||!Number.isFinite(m[2]))return '<div class="listitem"><b>'+m[0]+'</b><span class="tiny muted">比較データ不足</span></div>';let d=m[1]-m[2],sign=d>0?'+':'';return '<div class="listitem"><div class="grow"><b>'+m[0]+'</b><div class="tiny">今回 '+m[1]+'°　前回 '+m[2]+'°</div></div><b>'+sign+d.toFixed(1)+'°</b></div>'}).join('');
  const newerTimeline=Array.isArray(newer.timeline)?newer.timeline:[],olderTimeline=Array.isArray(older.timeline)?older.timeline:[];
@@ -3788,8 +3788,10 @@ function renderAiFormCompare(){
  const markerNames=['助走開始','軸足接地','蹴り足振り始め','インパクト','フォロースルー終了'];
   const newMarkers=new Map((newer.phaseMarkers||[]).filter(x=>x.confirmedBy==='manual').map(x=>[x.phase,x]));
   const oldMarkers=new Map((older.phaseMarkers||[]).filter(x=>x.confirmedBy==='manual').map(x=>[x.phase,x]));
-  const markerRows=markerNames.filter(name=>newMarkers.has(name)||oldMarkers.has(name)).map(name=>{const n=newMarkers.get(name),o=oldMarkers.get(name),nv=n?getAiFormPhaseValue(newer,n):null,ov=o?getAiFormPhaseValue(older,o):null;return '<tr><td>'+name+'</td><td>'+(n?n.timeSeconds.toFixed(2)+'秒':'未確認')+'</td><td>'+(o?o.timeSeconds.toFixed(2)+'秒':'未確認')+'</td><td>'+fmtPair(nv?.knee,ov?.knee)+'</td><td>'+fmtPair(nv?.hip,ov?.hip)+'</td><td>'+fmtPair(nv?.trunk,ov?.trunk)+'</td></tr>';}).join('');
-  const manualPhaseHtml=markerRows?'<h4 style="margin-top:14px">手動確認した同じ動作の節目で比較</h4><div class="tiny muted">節目の時刻は保護者が動画を見て登録したものです。数値はその時刻に最も近いAI姿勢サンプルで、節目そのものの瞬間値とは限りません。</div><div style="overflow-x:auto"><table class="table"><thead><tr><th>節目</th><th>今回</th><th>前回</th><th>膝 今回/前回</th><th>股関節</th><th>体幹</th></tr></thead><tbody>'+markerRows+'</tbody></table></div>':'<div class="tiny muted">今回と前回の動画で動作の節目を手動登録すると、同じ節目で比較できます。</div>';
+  const markerRows=markerNames.filter(name=>newMarkers.has(name)||oldMarkers.has(name)).map(name=>{const n=newMarkers.get(name),o=oldMarkers.get(name),nv=n?getAiFormPhaseValue(newer,n):null,ov=o?getAiFormPhaseValue(older,o):null;return '<tr><td>'+name+'</td><td>'+(n?n.timeSeconds.toFixed(2)+'秒':'未確認')+'</td><td>'+(o?o.timeSeconds.toFixed(2)+'秒':'未確認')+'</td><td>'+fmtPair(nv?.rightKnee,ov?.rightKnee)+'</td><td>'+fmtPair(nv?.leftKnee,ov?.leftKnee)+'</td><td>'+fmtPair(nv?.rightHip,ov?.rightHip)+'</td><td>'+fmtPair(nv?.leftHip,ov?.leftHip)+'</td><td>'+fmtPair(nv?.trunk,ov?.trunk)+'</td><td>'+fmtPair(nv?.rightFootMotion,ov?.rightFootMotion)+'</td><td>'+fmtPair(nv?.leftFootMotion,ov?.leftFootMotion)+'</td></tr>';}).join('');
+  const orderedMarkers=markerNames.map(name=>({name,n:newMarkers.get(name),o:oldMarkers.get(name)}));
+  const durationRows=orderedMarkers.slice(1).map((item,i)=>{const prev=orderedMarkers[i],nd=item.n&&prev.n?item.n.timeSeconds-prev.n.timeSeconds:null,od=item.o&&prev.o?item.o.timeSeconds-prev.o.timeSeconds:null;return '<tr><td>'+prev.name+' → '+item.name+'</td><td>'+(nd==null?'未確認':nd.toFixed(2)+'秒')+'</td><td>'+(od==null?'未確認':od.toFixed(2)+'秒')+'</td></tr>';}).join('');
+  const manualPhaseHtml=markerRows?'<h4 style="margin-top:14px">動作局面ごとの姿勢サンプル比較</h4><div class="tiny muted">節目は保護者が手動登録。各値はその時刻に最も近い姿勢サンプルです。足先の移動量は画像上の参考値で、足先の正確な位置や接触を示しません。欠測値は未確認です。</div><div style="overflow-x:auto"><table class="table"><thead><tr><th>局面</th><th>今回時刻</th><th>前回時刻</th><th>右膝</th><th>左膝</th><th>右股関節</th><th>左股関節</th><th>体幹</th><th>右足先移動</th><th>左足先移動</th></tr></thead><tbody>'+markerRows+'</tbody></table></div><h4>局面間の時間</h4><div class="tiny muted">節目が両方そろっている区間のみ表示。動作速度の良否は判定しません。</div><table class="table"><thead><tr><th>区間</th><th>今回</th><th>前回</th></tr></thead><tbody>'+durationRows+'</tbody></table>':'<div class="tiny muted">今回と前回の動画で動作の節目を手動登録すると、同じ局面ごとに比較できます。</div>';
   const qualityFrames=Array.isArray(newer.timeline)?newer.timeline:[],qualityCount=qualityFrames.filter(x=>Number(x.visible)>=20).length;
   const qualityHtml='<div class="note"><b>今回の撮影・計測品質</b><div class="tiny">姿勢サンプル '+qualityFrames.length+'件／全身ランドマーク20個以上を検出したサンプル '+qualityCount+'件</div><div class="tiny">品質が不足する角度は無理に比較せず、撮影条件を整えて再撮影してください。これはフォームの上手さの点数ではありません。</div></div>';
   const history=all.filter(x=>x!==newer&&sameSetup(x)).slice(0,5);const historyHtml=history.length?'<h4 style="margin-top:14px">同条件の過去記録（最大5件）</h4><div class="tiny muted">今回の最新記録と数値を並べた履歴。角度差は改善判定ではありません。</div><div style="overflow-x:auto"><table class="table"><thead><tr><th>日付</th><th>膝</th><th>股関節</th><th>体幹</th><th>フレーム</th></tr></thead><tbody>'+history.map(x=>'<tr><td>'+esc(x.date||'日付なし')+'</td><td>'+(Number.isFinite(x.knee)?x.knee+'°':'—')+'</td><td>'+(Number.isFinite(x.hip)?x.hip+'°':'—')+'</td><td>'+(Number.isFinite(x.trunk)?x.trunk+'°':'—')+'</td><td>'+(Number.isFinite(x.frames)?x.frames:'—')+'</td></tr>').join('')+'</tbody></table></div>':'<div class="tiny muted">同条件の過去記録は1件のみです。複数回記録すると履歴比較できます。</div>';
