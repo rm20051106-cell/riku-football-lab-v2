@@ -3938,6 +3938,41 @@ function renderKickSetConsistency(allGroupRecords,selectedRecords,latest){
  if(summaries.some(s=>(s.key==='kind'||s.key==='foot')&&s.missing))notices.push('キック種別または利き足が未記録の動画があります。条件一致を確認できません');
  return '<section class="note" style="margin:10px 0"><b>同一キック撮影セットの条件チェック</b><div class="tiny">同一キックID内 '+allGroupRecords.length+'件／統合表示 '+selectedRecords.length+'件／条件不一致で除外 '+excluded+'件</div>'+rows+(notices.length?'<div class="tiny" style="margin-top:6px"><b>確認事項：</b>'+notices.map(esc).join('。')+'</div>':'<div class="tiny">記録された条件に明確な差は見つかりませんでした。映像の実際の位置・距離が一致する保証ではありません。</div>')+'<div class="tiny muted">距離・画角の違いは警告として表示し、角度ごとの動画や手動確認記録は削除・上書きしません。条件が異なる動画を同一条件の成長比較には使いません。</div></section>';
 }
+function renderKickSetReadiness(records,officialAngles){
+ const phaseDefs=[['approach','助走'],['plant','軸足接地'],['swing','蹴り脚の振り出し'],['impact','インパクト'],['follow_through','フォロースルー']];
+ const latestByAngle=new Map();
+ officialAngles.forEach(angle=>{
+  const matches=records.filter(r=>String(r.cameraAngle||'')===angle).slice().sort((a,b)=>String(a.date||'').localeCompare(String(b.date||''))||Number(a.id)-Number(b.id));
+  if(matches.length)latestByAngle.set(angle,matches[matches.length-1]);
+ });
+ const viewCount=latestByAngle.size;
+ const phaseTotal=officialAngles.length*phaseDefs.length;
+ let phaseConfirmed=0,phaseUnobservable=0,phasePending=0;
+ phaseDefs.forEach(([key])=>officialAngles.forEach(angle=>{
+  const p=latestByAngle.get(angle)?.reviewedKickPhases?.[key];
+  if(p?.confirmedBy!=='parent_manual_review'){phasePending++;return;}
+  if(p.status==='確認済み'&&Number.isFinite(p.timeSeconds)){phaseConfirmed++;return;}
+  if(p.status==='映像で確認できず'){phaseUnobservable++;return;}
+  phasePending++;
+ }));
+ const metadataKeys=['kind','foot','cameraDistance','framing'];
+ let metadataComplete=0;
+ const metadataTotal=viewCount*metadataKeys.length;
+ latestByAngle.forEach(r=>metadataKeys.forEach(key=>{if(String(r[key]??'').trim())metadataComplete++;}));
+ const missingViews=officialAngles.filter(a=>!latestByAngle.has(a));
+ const actions=[];
+ if(missingViews.length)actions.push('未撮影視点を追加：'+missingViews.join('・'));
+ if(phasePending)actions.push('撮影済み動画の未確認節目を手動確認：'+phasePending+'セル');
+ if(phaseUnobservable)actions.push('映像で確認できない節目は別角度で確認するか、確認不可のまま保持：'+phaseUnobservable+'セル');
+ if(metadataComplete<metadataTotal)actions.push('撮影条件の未記録を入力：'+(metadataTotal-metadataComplete)+'項目');
+ if(!actions.length)actions.push('5視点・25節目・撮影条件が記録されています。比較前に実際のカメラ位置と動画内容を確認してください。');
+ const phaseRows=phaseDefs.map(([key,label])=>{
+  let confirmed=0,unobservable=0,pending=0;
+  officialAngles.forEach(angle=>{const p=latestByAngle.get(angle)?.reviewedKickPhases?.[key];if(p?.confirmedBy==='parent_manual_review'&&p.status==='確認済み'&&Number.isFinite(p.timeSeconds))confirmed++;else if(p?.confirmedBy==='parent_manual_review'&&p.status==='映像で確認できず')unobservable++;else pending++;});
+  return '<div class="tiny"><b>'+label+'：</b>確認済み '+confirmed+'／'+officialAngles.length+'・映像で確認できず '+unobservable+'・未確認 '+pending+'</div>';
+ }).join('');
+ return '<section class="listitem" style="display:block;margin:10px 0"><b>キック撮影セットの記録充実度</b><div class="tiny">視点カバー '+viewCount+'/'+officialAngles.length+' ／ 手動確認済み節目 '+phaseConfirmed+'/'+phaseTotal+' ／ 撮影条件入力 '+metadataComplete+'/'+metadataTotal+'</div><div style="margin-top:6px">'+phaseRows+'</div><div class="tiny" style="margin-top:7px"><b>次に行うこと</b></div>'+actions.map(a=>'<div class="tiny">・'+esc(a)+'</div>').join('')+'<div class="tiny muted" style="margin-top:6px">これは記録の充実度であり、キック技術・フォームの良し悪し・成長度を点数化したものではありません。映像で確認できない項目は未確認のまま扱います。</div></section>';
+}
 function renderMultiAngleKickReview(){
  const host=document.getElementById('multiAngleKickReview');if(!host)return;
  const all=(state.aiFormAnalyses||[]);
@@ -3994,7 +4029,7 @@ function renderMultiAngleKickReview(){
  const countByAngle=officialAngles.map(name=>({name,count:records.filter(r=>r.cameraAngle===name).length}));
  const angleSummary=countByAngle.map(x=>x.name+' '+x.count+'件').join(' ／ ');
  const comparisonNotice='AI数値は撮影角度ごとに個別表示しています。異なる角度の数値を平均・合算せず、角度が異なる記録同士の数値比較は行いません。異なる撮影角度の関節角度・移動量を直接比較したり、改善判定したりしません。同じ角度でも撮影距離・画角・キック条件が一致しない場合は比較しません。';
- host.innerHTML='<div class="note"><b>統合フォーム記録｜同一キックID：'+esc(groupId)+'</b><div class="tiny">'+esc(latest.kind||'シュート')+'・'+esc(latest.foot||'右足')+'の同一キックに紐づく動画 '+records.length+'件。'+angleSummary+'</div><div class="tiny">'+comparisonNotice+'</div></div>'+renderKickSetConsistency(allGroupRecords,records,latest)+renderFiveViewCoverageGuidance(records,officialAngles)+renderFiveViewPhaseEvidenceMatrix(records,officialAngles)+'<h4>角度別の証拠と動画</h4>'+angleCards+'<h4 style="margin-top:14px">項目ごとの確認証拠一覧</h4><div class="tiny muted">同じ項目を複数角度で確認できた場合、角度・日付・手動確認内容をそれぞれ残します。</div>'+(evidenceByItem||'<div class="empty">手動確認済みの項目はまだありません。</div>')+'<h4 style="margin-top:14px">動作節目の角度別・手動時刻一覧</h4>'+(phaseEvidence||'<div class="empty">動作時刻の手動確認はまだありません。</div>')+improvementHtml;
+ host.innerHTML='<div class="note"><b>統合フォーム記録｜同一キックID：'+esc(groupId)+'</b><div class="tiny">'+esc(latest.kind||'シュート')+'・'+esc(latest.foot||'右足')+'の同一キックに紐づく動画 '+records.length+'件。'+angleSummary+'</div><div class="tiny">'+comparisonNotice+'</div></div>'+renderKickSetConsistency(allGroupRecords,records,latest)+renderKickSetReadiness(records,officialAngles)+renderFiveViewCoverageGuidance(records,officialAngles)+renderFiveViewPhaseEvidenceMatrix(records,officialAngles)+'<h4>角度別の証拠と動画</h4>'+angleCards+'<h4 style="margin-top:14px">項目ごとの確認証拠一覧</h4><div class="tiny muted">同じ項目を複数角度で確認できた場合、角度・日付・手動確認内容をそれぞれ残します。</div>'+(evidenceByItem||'<div class="empty">手動確認済みの項目はまだありません。</div>')+'<h4 style="margin-top:14px">動作節目の角度別・手動時刻一覧</h4>'+(phaseEvidence||'<div class="empty">動作時刻の手動確認はまだありません。</div>')+improvementHtml;
 }
 
 
