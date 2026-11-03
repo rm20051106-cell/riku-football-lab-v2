@@ -231,7 +231,7 @@ class FrontendDataFlowContracts(unittest.TestCase):
         self.assertIn("isManuallyReviewedMatchEvent(ev)", fn)
         self.assertIn("!ev.positionRole||!ev.actionType", fn)
         self.assertIn("ev.positioningReview", fn)
-        self.assertIn("row.scenes>=2", fn)
+        self.assertIn("x.scenes>=2", fn)
 
     def test_stage17_ai_form_history_compares_only_matching_capture_setup(self):
         start = HTML.index("function renderAiFormCompare()")
@@ -247,7 +247,7 @@ class FrontendDataFlowContracts(unittest.TestCase):
         end = HTML.index("\nfunction ", start + 20)
         fn = HTML[start:end]
         self.assertIn("getTrainingMatchCorrelationData()", fn)
-        self.assertIn("trainingCorrelation.count>=2", fn)
+        self.assertIn("filter(x=>x.count>=2)", fn)
         self.assertIn("練習の因果効果を示すものではなく", fn)
 
     def test_stage17_backup_restore_preserves_all_growth_evidence_and_rolls_back(self):
