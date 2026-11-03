@@ -3729,7 +3729,7 @@ function markAiFormPhase(){
 function getAiFormPhaseValue(record,marker){
  const list=Array.isArray(record?.timeline)?record.timeline:[];if(!list.length)return null;
  let nearest=list[0];for(const item of list){if(Math.abs(Number(item.time)-marker.timeSeconds)<Math.abs(Number(nearest.time)-marker.timeSeconds))nearest=item;}
- const average=(a,b)=>Number.isFinite(Number(a))&&Number.isFinite(Number(b))?(Number(a)+Number(b))/2:null;
+ const average=(a,b)=>a!==null&&a!==undefined&&b!==null&&b!==undefined&&Number.isFinite(Number(a))&&Number.isFinite(Number(b))?(Number(a)+Number(b))/2:null;
  return {knee:average(nearest.leftKnee,nearest.rightKnee),hip:average(nearest.leftHip,nearest.rightHip),trunk:Number.isFinite(Number(nearest.trunk))?Number(nearest.trunk):null,sampleTime:nearest.time};
 }
 function renderAiFormCompare(){
