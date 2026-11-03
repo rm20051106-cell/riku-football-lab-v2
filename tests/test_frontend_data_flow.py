@@ -35,6 +35,11 @@ class FrontendDataFlowContracts(unittest.TestCase):
         self.assertIn("ev.assessmentSource==='manual'", HTML)
         self.assertIn("const allMatchDates=[...new Set(matches.map(m=>String(m.date||'')).filter(Boolean))].sort();", HTML)
 
+    def test_manual_match_assessment_provenance_survives_initial_scan_save(self):
+        self.assertIn("if(field==='assessment'){event.assessment_source='manual';", HTML)
+        self.assertIn("assessmentSource:ev.assessment_source==='manual'?'manual':null", HTML)
+        self.assertIn("manualAssessmentAt:ev.manual_assessment_at||null", HTML)
+
     def test_training_reflection_resolves_only_current_manually_confirmed_match_evidence(self):
         self.assertIn("function getValidatedTrainingMatchEvents(record)", HTML)
         self.assertIn("isManuallyReviewedMatchEvent(event)", HTML)
