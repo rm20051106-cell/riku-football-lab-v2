@@ -1392,7 +1392,7 @@ function getMonthlyGrowthReport(monthKey){
 }
 function getPlayerDossierSummary(){
  const matches=state.matchAnalyses||[],trainings=state.trainings||[],measures=state.measures||[];
- const reviewed=matches.flatMap(match=>(match.candidateEvents||[]).filter(event=>isManuallyReviewedMatchEvent(event)&&event.assessmentSource==='manual'&&['良かった','改善したい'].includes(event.assessment)).map(event=>({...event,matchDate:match.date||'',matchTitle:match.title||'試合'})));
+ const reviewed=matches.flatMap(match=>(match.candidateEvents||[]).filter(event=>isManuallyReviewedMatchEvent(event)&&event.assessmentSource==='manual'&&['良かった','改善したい'].includes(event.assessment)).map(event=>({...event,matchId:match.id,matchDate:match.date||'',matchTitle:match.title||'試合'})));
  const grouped={};
  reviewed.forEach(event=>{
   const key=String(event.manualGrowthFocus||event.actionType||'').trim();
