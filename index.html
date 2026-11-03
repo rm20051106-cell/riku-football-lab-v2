@@ -3495,14 +3495,14 @@ function getLongTermGrowthSummary(){
 }
 function getMatchGrowthPriorityBoard(){
  return getMatchGrowthTimelineData().map(item=>{
-  const latest=item.latest;
-  if(!latest||latest.total<2)return {...item,priority:0,priorityLabel:'評価蓄積中',reason:'本人確認済みの手動評価が2場面以上そろうまで優先順位を付けません。',evidenceCount:latest?.total||0};
+  const latest=item.latest,goal=getMatchGrowthRecommendations().find(x=>x.key===item.key)?.goal||'次の試合でも同じ観点を確認する';
+  if(!latest||latest.total<2)return {...item,goal,priority:0,priorityLabel:'評価蓄積中',reason:'本人確認済みの手動評価が2場面以上そろうまで優先順位を付けません。',evidenceCount:latest?.total||0};
   const repeated=item.repeatedIssues.filter(x=>x.status==='再確認が必要'&&x.lastCount>=2).sort((a,b)=>String(b.last).localeCompare(String(a.last)))[0]||null;
   let priority=1,priorityLabel='継続確認',reason='次の試合でも同じ観点を確認します。';
   if(repeated){priority=4;priorityLabel='最優先';reason='同じ手動入力課題「'+repeated.key+'」が複数試合で再確認候補。直近 '+repeated.lastRate+'%（'+repeated.lastCount+'場面）。';}
   else if(latest.improve>latest.good){priority=3;priorityLabel='優先';reason='直近試合で改善したい '+latest.improve+'／'+latest.total+'場面。手動評価に基づく練習候補です。';}
   else if(item.repeatedIssues.some(x=>x.lastCount>=2)){priority=2;priorityLabel='経過確認';reason='同じ課題タグの複数試合記録があります。次の試合でも再現性を確認します。';}
-  return {...item,priority,priorityLabel,reason,evidenceCount:latest.total,latestDate:latest.date};
+  return {...item,goal,priority,priorityLabel,reason,evidenceCount:latest.total,latestDate:latest.date};
  }).sort((a,b)=>b.priority-a.priority||String(b.latestDate||'').localeCompare(String(a.latestDate||'')));
 }
 function renderLongTermGrowthSummary(){
