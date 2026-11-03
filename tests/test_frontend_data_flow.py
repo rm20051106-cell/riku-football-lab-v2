@@ -47,7 +47,7 @@ class FrontendDataFlowContracts(unittest.TestCase):
 
     def test_next_match_growth_goal_expires_after_seven_days(self):
         start = HTML.index("function getWeeklyCoachPlan()")
-        end = HTML.index("\\nfunction ", start + 15)
+        end = HTML.index("\nfunction ", start + 15)
         plan = HTML[start:end]
         self.assertIn("growthGoalAgeDays>=0&&growthGoalAgeDays<7?growthGoalCandidate:null", plan)
         self.assertIn("growthGoalCandidate?.date", plan)
@@ -65,7 +65,7 @@ class FrontendDataFlowContracts(unittest.TestCase):
 
     def test_training_step_save_failure_rolls_back_progress(self):
         start = HTML.index("function updateTrainingStep(")
-        end = HTML.index("\\nfunction ", start + 15)
+        end = HTML.index("\nfunction ", start + 15)
         handler = HTML[start:end]
         self.assertIn("const original=JSON.parse(JSON.stringify(record));", handler)
         self.assertIn("if(!persist())", handler)
