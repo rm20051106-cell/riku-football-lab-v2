@@ -468,5 +468,60 @@ class FrontendDataFlowContracts(unittest.TestCase):
         self.assertIn("growthGoalPlan={id:goalId", HTML)
 
 
+    def test_stage22_postmatch_goal_review_requires_exact_goal_id_manual_identity_and_manual_assessment(self):
+        start = HTML.index("function getGrowthGoalPostMatchReview(")
+        end = HTML.index("\nfunction ", start + 20)
+        fn = HTML[start:end]
+        for token in ("ev.goalEvidenceRelation==='related'", "ev.growthGoalId||'')===String(goal.id)", "isManuallyReviewedMatchEvent(ev)", "ev.reviewSource==='manual'", "ev.assessmentSource==='manual'", "ev.manualGrowthFocus===goal.growthFocus", "String(match.date)>String(goal.date||'')"):
+            self.assertIn(token, fn)
+
+    def test_stage22_insufficient_postmatch_evidence_stays_unconfirmed(self):
+        start = HTML.index("function getGrowthGoalPostMatchReview(")
+        end = HTML.index("\nfunction ", start + 20)
+        fn = HTML[start:end]
+        self.assertIn("if(assessed.length<2)return {status:'未確認'", fn)
+        self.assertIn("手動評価が2場面未満のため判定を保留", fn)
+
+    def test_stage22_manual_goal_relation_requires_confirmed_player_and_matching_focus(self):
+        start = HTML.index("function saveMatchEventEdits(")
+        end = HTML.index("\nfunction ", start + 20)
+        fn = HTML[start:end]
+        self.assertIn("relation==='related'", fn)
+        self.assertIn("review!=='陸玖'", fn)
+        self.assertIn("read('manualGrowthFocus')!==goal.growthFocus", fn)
+        self.assertIn("ev.growthGoalId=relation==='related'?goal.id:null", fn)
+
+    def test_stage22_goal_review_dashboard_is_rendered_and_labels_evidence_limits(self):
+        self.assertIn('id="growthGoalPostMatchReview"', HTML)
+        self.assertIn("renderGrowthGoalPostMatchReview();", HTML)
+        self.assertIn("2場面未満は未確認です", HTML)
+        self.assertIn("改善判定は技術向上の確定や目標達成を意味しません", HTML)
+
+    def test_stage22_weekly_plan_uses_only_confirmed_postmatch_status(self):
+        start = HTML.index("function getWeeklyCoachPlan()")
+        end = HTML.index("\nfunction ", start + 20)
+        fn = HTML[start:end]
+        self.assertIn("getGrowthGoalPostMatchReview(state.settings?.growthGoalPlan)", fn)
+        self.assertIn("postMatchGoalReview?.status==='継続'", fn)
+        self.assertIn("postMatchGoalReview?.status==='改善'", fn)
+        self.assertIn("本人確認済みの試合後評価", fn)
+
+    def test_stage22_monthly_report_includes_postmatch_goal_review_summary(self):
+        start = HTML.index("function renderMonthlyGrowthReport()")
+        end = HTML.index("\nfunction ", start + 20)
+        fn = HTML[start:end]
+        self.assertIn("getGrowthGoalPostMatchReview(state.settings?.growthGoalPlan,picker.value)", fn)
+        self.assertIn("monthlyGoalSummary", fn)
+        self.assertIn("host.innerHTML=monthlyIntegrated+monthlyGoalSummary+", fn)
+
+    def test_stage22_video_ai_candidates_without_manual_relation_are_not_counted(self):
+        start = HTML.index("function getGrowthGoalPostMatchReview(")
+        end = HTML.index("\nfunction ", start + 20)
+        fn = HTML[start:end]
+        self.assertIn("ev.goalEvidenceRelation==='related'", fn)
+        self.assertIn("ev.reviewSource==='manual'", fn)
+        self.assertIn("ev.assessmentSource==='manual'", fn)
+
+
 if __name__ == "__main__":
     unittest.main()
