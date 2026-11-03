@@ -20,6 +20,11 @@ class Stage24FormPhaseTests(unittest.TestCase):
         for token in ["function getAiFormPhaseValue(record,marker)", "newer.phaseMarkers", "older.phaseMarkers", "手動確認した同じ動作の節目で比較", "節目そのものの瞬間値とは限りません"]:
             self.assertIn(token, HTML)
 
+    def test_original_source_identity_survives_local_compression(self):
+        self.assertIn("const originalSourceVideoKey=getVideoSourceKey(file)", HTML)
+        self.assertIn("sourceVideoKey:originalSourceVideoKey", HTML)
+        self.assertIn("getVideoSourceKey(file)!==latest.sourceVideoKey", HTML)
+
     def test_missing_metrics_are_not_zero(self):
         self.assertIn("a!==null&&a!==undefined&&b!==null&&b!==undefined", HTML)
 
