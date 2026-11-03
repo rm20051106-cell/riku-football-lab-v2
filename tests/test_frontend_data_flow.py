@@ -395,7 +395,7 @@ class FrontendDataFlowContracts(unittest.TestCase):
 
     def test_stage20_dossier_filters_measurements_to_valid_iso_dates(self):
         start = HTML.index("function getPlayerDossierSummary()")
-        end = HTML.index("\\nfunction ", start + 20)
+        end = HTML.index("\nfunction ", start + 20)
         fn = HTML[start:end]
         self.assertIn("latestMeasures=metricTypes.map", fn)
         self.assertIn("Number.isFinite(Number(item.value))", fn)
