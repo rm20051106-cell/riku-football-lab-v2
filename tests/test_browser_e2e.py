@@ -393,5 +393,41 @@ class RikuBrowserE2ETests(unittest.TestCase):
             browser.close()
 
 
+    def test_training_reflection_ignores_stale_unconfirmed_and_unlinked_match_evidence(self):
+        result = self.page.evaluate("""() => {
+            const training = {
+                id: 7001, date: '2026-11-01', focus: 'ドリブル',
+                steps: ['step'], stepsDone: [],
+                linkedMatchEvents: [
+                    {matchId: 7002, eventId: 'same-event', assessment: '良かった'},
+                    {matchId: 7003, eventId: 'same-event', assessment: '良かった'},
+                    {matchId: 7004, eventId: 'old-event', assessment: '改善したい'}
+                ]
+            };
+            state.matchAnalyses = [
+                {id: 7002, date: '2026-11-02', candidateEvents: [{
+                    id: 'same-event', reviewLabel: '陸玖', reviewSource: 'manual',
+                    actionType: 'ドリブル', assessment: '良かった', assessmentSource: 'manual'
+                }]},
+                {id: 7003, date: '2026-11-02', candidateEvents: [{
+                    id: 'same-event', reviewLabel: '別の選手', reviewSource: 'manual',
+                    actionType: 'ドリブル', assessment: '良かった', assessmentSource: 'manual'
+                }]},
+                {id: 7004, date: '2026-10-31', candidateEvents: [{
+                    id: 'old-event', reviewLabel: '陸玖', reviewSource: 'manual',
+                    actionType: 'ドリブル', assessment: '改善したい', assessmentSource: 'manual'
+                }]}
+            ];
+            const before = getValidatedTrainingMatchEvents(training).map(x => x.id);
+            const reflection = buildTrainingReflection(training);
+            state.matchAnalyses[0].candidateEvents[0].reviewLabel = '別の選手';
+            const afterIdentityChange = getValidatedTrainingMatchEvents(training).length;
+            return {before, reflection, afterIdentityChange};
+        }""")
+        self.assertEqual(result["before"], ["same-event"])
+        self.assertIn("連携した試合場面に「良かった」の評価あり", result["reflection"]["good"])
+        self.assertEqual(result["afterIdentityChange"], 0)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
