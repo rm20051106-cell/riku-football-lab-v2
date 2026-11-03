@@ -957,6 +957,7 @@ async function compressVideoForAI(file, resultElement){
  }
 }
 async function postVideoToAI(file, endpoint, extra, resultElement){
+ const originalSourceVideoKey=getVideoSourceKey(file);
  let u=getApiUrl();
  if(!u){resultElement.textContent='AIサーバーURLが未設定です。設定画面でURLを保存してください。';return}
  if(!file){resultElement.textContent='先に動画ファイルを選択してください。';return}
@@ -995,7 +996,7 @@ async function postVideoToAI(file, endpoint, extra, resultElement){
    const stride=Math.max(1,Math.ceil(rawFrames.length/8));
    const timeline=rawFrames.filter((_,i)=>i%stride===0).slice(0,8).map(fr=>({time:fr.time_seconds??null,leftKnee:fr.left_knee_angle_deg??null,rightKnee:fr.right_knee_angle_deg??null,leftHip:fr.left_hip_angle_deg??null,rightHip:fr.right_hip_angle_deg??null,trunk:fr.trunk_lean_image_angle_deg??null,leftFootMotion:fr.left_foot_image_motion_per_sec??null,rightFootMotion:fr.right_foot_image_motion_per_sec??null,visible:fr.visible_landmarks??null}));
    const previousAiFormAnalyses=JSON.parse(JSON.stringify(state.aiFormAnalyses)),previousMatchAnalyses=JSON.parse(JSON.stringify(state.matchAnalyses||[]));
-   const analysis={id:nextUniqueRecordId(state.aiFormAnalyses,state.forms,state.clips,state.matchAnalyses),date:today(),title:formTitle.value.trim()||file.name||'フォーム動画',kind:extra.kick_type||'シュート',foot:extra.dominant_foot||'右足',sourceVideoKey:getVideoSourceKey(file),formId:null,videoStorageKey:null,frames:sm.sampled_pose_frames??null,knee:sm.average_left_right_knee_angle_deg??null,hip:sm.average_left_right_hip_angle_deg??null,trunk:sm.average_trunk_lean_image_angle_deg??null,feedback:sm.feedback||[],cameraAngle:sm.camera_angle||extra.camera_angle||'未選択',cameraGuidance:sm.camera_angle_guidance||[],items:aiItems,timeline};
+   const analysis={id:nextUniqueRecordId(state.aiFormAnalyses,state.forms,state.clips,state.matchAnalyses),date:today(),title:formTitle.value.trim()||file.name||'フォーム動画',kind:extra.kick_type||'シュート',foot:extra.dominant_foot||'右足',sourceVideoKey:originalSourceVideoKey,formId:null,videoStorageKey:null,frames:sm.sampled_pose_frames??null,knee:sm.average_left_right_knee_angle_deg??null,hip:sm.average_left_right_hip_angle_deg??null,trunk:sm.average_trunk_lean_image_angle_deg??null,feedback:sm.feedback||[],cameraAngle:sm.camera_angle||extra.camera_angle||'未選択',cameraGuidance:sm.camera_angle_guidance||[],items:aiItems,timeline};
    state.aiFormAnalyses.unshift(analysis);
    const linkedForm=(state.forms||[]).find(form=>form.sourceVideoKey&&form.sourceVideoKey===analysis.sourceVideoKey);
    if(linkedForm)connectAiFormAnalysisToForm(analysis,linkedForm);
@@ -3730,7 +3731,7 @@ function getAiFormPhaseValue(record,marker){
  const list=Array.isArray(record?.timeline)?record.timeline:[];if(!list.length)return null;
  let nearest=list[0];for(const item of list){if(Math.abs(Number(item.time)-marker.timeSeconds)<Math.abs(Number(nearest.time)-marker.timeSeconds))nearest=item;}
  const average=(a,b)=>a!==null&&a!==undefined&&b!==null&&b!==undefined&&Number.isFinite(Number(a))&&Number.isFinite(Number(b))?(Number(a)+Number(b))/2:null;
- return {knee:average(nearest.leftKnee,nearest.rightKnee),hip:average(nearest.leftHip,nearest.rightHip),trunk:Number.isFinite(Number(nearest.trunk))?Number(nearest.trunk):null,sampleTime:nearest.time};
+ return {knee:average(nearest.leftKnee,nearest.rightKnee),hip:average(nearest.leftHip,nearest.rightHip),trunk:nearest.trunk!==null&&nearest.trunk!==undefined&&Number.isFinite(Number(nearest.trunk))?Number(nearest.trunk):null,sampleTime:nearest.time};
 }
 function renderAiFormCompare(){
  const el=document.getElementById('aiFormCompare');if(!el)return;
