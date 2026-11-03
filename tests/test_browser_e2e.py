@@ -554,5 +554,89 @@ class RikuBrowserE2ETests(unittest.TestCase):
         page.wait_for_function("document.getElementById('matchVideo').readyState >= 2", timeout=10000)
 
 
+    def test_positioning_summary_and_weekly_plan_use_only_confirmed_manual_reviews(self):
+        result = self.page.evaluate("""() => {
+            state.trainings = [];
+            state.settings = {...(state.settings || {}), nextMatchGoal: null};
+            state.matchAnalyses = [
+                {
+                    id: 9301, date: today(), title: 'ポジショニング確認1',
+                    candidateEvents: [
+                        {id: 'p1', reviewLabel: '陸玖', reviewSource: 'manual',
+                         positioningReview: {scanBeforeReceive: '改善したい'}},
+                        {id: 'p2', reviewLabel: '陸玖', reviewSource: 'manual',
+                         positioningReview: {scanBeforeReceive: '改善したい'}},
+                        {id: 'not-confirmed', reviewLabel: '未確認', reviewSource: null,
+                         positioningReview: {scanBeforeReceive: '改善したい'}}
+                    ]
+                },
+                {
+                    id: 9302, date: today(), title: 'ポジショニング確認2',
+                    candidateEvents: [
+                        {id: 'p3', reviewLabel: '陸玖', reviewSource: 'manual',
+                         positioningReview: {scanBeforeReceive: '良かった'}},
+                        {id: 'not-visible', reviewLabel: '陸玖', reviewSource: 'manual',
+                         positioningReview: {scanBeforeReceive: '映像で確認できない'}},
+                        {id: 'other-player', reviewLabel: '別の選手', reviewSource: 'manual',
+                         positioningReview: {scanBeforeReceive: '改善したい'}}
+                    ]
+                }
+            ];
+            const profile = getMatchPositioningAnalysis();
+            const row = profile.rows.find(x => x.key === 'scanBeforeReceive');
+            const plan = getWeeklyCoachPlan()[0];
+            const saved = persist();
+            return {
+                assessed: row.assessed,
+                good: row.good,
+                improve: row.improve,
+                matchCount: row.matchCount,
+                priority: profile.priority?.key || null,
+                planIssue: plan.sourceMatch?.positioningIssue || null,
+                saved
+            };
+        }""")
+        self.assertEqual(result["assessed"], 3, result)
+        self.assertEqual(result["good"], 1, result)
+        self.assertEqual(result["improve"], 2, result)
+        self.assertEqual(result["matchCount"], 2, result)
+        self.assertEqual(result["priority"], "scanBeforeReceive", result)
+        self.assertEqual(result["planIssue"], "scanBeforeReceive", result)
+        self.assertTrue(result["saved"], result)
+
+
+    def test_positioning_review_save_failure_restores_original_value(self):
+        result = self.page.evaluate("""() => {
+            state.matchAnalyses = [{
+                id: 9401, date: today(), title: '評価保存失敗',
+                candidateEvents: [{
+                    id: 'position-event', reviewLabel: '陸玖', reviewSource: 'manual',
+                    positioningReview: {scanBeforeReceive: '良かった'}
+                }]
+            }];
+            const event = state.matchAnalyses[0].candidateEvents[0];
+            const original = Storage.prototype.setItem;
+            Object.defineProperty(Storage.prototype, 'setItem', {
+                configurable: true,
+                writable: true,
+                value: function(key, value) {
+                    if (key === 'rikuFootballLab_v3') {
+                        throw new DOMException('simulated localStorage quota', 'QuotaExceededError');
+                    }
+                    return original.call(this, key, value);
+                }
+            });
+            window.__positioningAlert = '';
+            window.alert = message => { window.__positioningAlert = String(message); };
+            updateMatchPositioning(9401, 'position-event', 'scanBeforeReceive', '改善したい');
+            return {
+                value: event.positioningReview.scanBeforeReceive,
+                alert: window.__positioningAlert
+            };
+        }""")
+        self.assertEqual(result["value"], "良かった", result)
+        self.assertIn("保存できませんでした", result["alert"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
