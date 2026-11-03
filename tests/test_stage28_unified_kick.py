@@ -45,6 +45,13 @@ class Stage28UnifiedKickTests(unittest.TestCase):
         for token in ["confirmedBy:'manual'", "function markAiFormPhase()", "function saveKickManualReview()", "kickGroupId:String(extra.kick_group_id||'').trim().slice(0,40)"]:
             self.assertIn(token, HTML)
 
+    def test_manual_visibility_controls_render_only_once(self):
+        start = HTML.index("function renderKickManualReview()")
+        end = HTML.index("\nfunction saveKickManualReview()", start)
+        render = HTML[start:end]
+        self.assertIn("host.innerHTML=qualityHtml+visibilityHtml+KICK_REVIEW_ITEMS.map", render)
+        self.assertNotIn("}).join('')+visibilityHtml+", render)
+
     def test_inline_javascript_syntax(self):
         scripts = re.findall(r"<script[^>]*>(.*?)</script>", HTML, re.I | re.S)
         self.assertTrue(scripts, "inline script not found")
