@@ -337,7 +337,12 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     try {
                         const tx = db.transaction('videos', 'readwrite');
                         const blob = new Blob([new Uint8Array([7, 8, 9])], {type: 'video/mp4'});
-                        tx.objectStore('videos').put({blob, name: 'webkit-smoke.mp4'}, 'webkit-smoke');
+                        const put = tx.objectStore('videos').put({blob, name: 'webkit-smoke.mp4'}, 'webkit-smoke');
+                        put.onerror = event => {
+                            const error = event.target?.error || put.error;
+                            resolve({opened: true, stage: 'put', error: error ? String(error) : 'put request error without DOMException'});
+                            db.close();
+                        };
                         tx.oncomplete = () => {
                             const read = db.transaction('videos', 'readonly').objectStore('videos').get('webkit-smoke');
                             read.onsuccess = () => {
@@ -354,7 +359,16 @@ class RikuBrowserE2ETests(unittest.TestCase):
                             };
                             read.onerror = () => { resolve({opened: true, error: String(read.error)}); db.close(); };
                         };
-                        tx.onerror = () => { resolve({opened: true, error: String(tx.error)}); db.close(); };
+                        tx.onerror = event => {
+                            const error = event.target?.error || tx.error;
+                            resolve({opened: true, stage: 'transaction', error: error ? String(error) : 'transaction error event without DOMException'});
+                            db.close();
+                        };
+                        tx.onabort = event => {
+                            const error = event.target?.error || tx.error;
+                            resolve({opened: true, stage: 'abort', error: error ? String(error) : 'transaction aborted without DOMException'});
+                            db.close();
+                        };
                     } catch (error) {
                         resolve({opened: true, error: String(error)});
                         db.close();
