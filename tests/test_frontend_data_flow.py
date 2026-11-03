@@ -63,6 +63,15 @@ class FrontendDataFlowContracts(unittest.TestCase):
         self.assertIn("primary.sourceMatch={...(primary.sourceMatch||{}),matchGrowthGoal:true", plan)
         self.assertLess(plan.index("if(feedback.assessed)"), plan.index("if(growthGoal){primary.title="))
 
+    def test_training_step_save_failure_rolls_back_progress(self):
+        start = HTML.index("function updateTrainingStep(")
+        end = HTML.index("\\nfunction ", start + 15)
+        handler = HTML[start:end]
+        self.assertIn("const original=JSON.parse(JSON.stringify(record));", handler)
+        self.assertIn("if(!persist())", handler)
+        self.assertIn("Object.keys(record).forEach(key=>delete record[key]);Object.assign(record,original);", handler)
+        self.assertIn("変更前の記録に戻しました", handler)
+
     def test_training_save_failure_preserves_form_and_source_link(self):
         self.assertIn("if(!persist()){\n  state.trainings=state.trainings.filter", HTML)
         self.assertIn("pendingTrainingSource=source;renderAll();", HTML)
