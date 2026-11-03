@@ -93,7 +93,7 @@ button:focus-visible,.button:focus-visible,a:focus-visible,input:focus-visible,s
  <div class="card"><h2>フォーム動画</h2><label class="label" for="formTitle">動画タイトル</label><input id="formTitle" placeholder="例：インステップシュート 右足"><label class="label">同一キックID（複数角度の動画で同じ文字列を入力）</label><input id="formKickGroupId" maxlength="40" placeholder="例：2026-11-03-FK-01"><div class="tiny muted">同じシュート／FKを別角度で撮影した動画には、同じIDを入力してください。</div><label class="label">撮影角度</label><select id="formCameraAngle"><option>斜め後ろから</option><option>横から</option><option>正面から</option><option>斜め前から</option><option>未選択</option></select><div class="two"><div><label class="label">撮影距離</label><select id="formCameraDistance"><option value="近距離">近距離（全身とボール）</option><option value="中距離" selected>中距離</option><option value="遠距離">遠距離</option><option value="未確認">未確認</option></select></div><div><label class="label">画角・映り方</label><select id="formFraming"><option value="全身とボール">全身とボールが常に映る</option><option value="一部が隠れる">一部が隠れる</option><option value="足元が切れる">足元が画面外</option><option value="未確認">未確認</option></select></div></div><label class="label" for="formFile">動画ファイル</label><input type="file" id="formFile" accept="video/*"><div class="video-wrap"><video id="formVideo" controls playsinline preload="metadata"></video><div id="formVideoPlaybackStatus" class="tiny muted" aria-live="polite"></div><div id="formSaveProgress" class="video-task-progress" role="status" aria-live="polite" hidden><span class="tiny muted" id="formSaveProgressText">フォーム動画を保存しています…</span><progress id="formSaveProgressBar" max="100" value="0" aria-label="フォーム動画保存の進行状況"></progress></div><div class="overlay-guide" id="formOverlay"><div class="silhouette"></div><div class="guide-label">姿勢ガイド（位置は手動で比較）</div></div></div><div class="btnrow"><button class="secondary small" onclick="seekForm(-1)">↶ 1秒戻る</button><button class="secondary small" onclick="seekForm(1)">1秒進む ↷</button><button class="secondary small" onclick="toggleFormGuide()">姿勢ガイド ON/OFF</button></div><div class="note" style="margin-top:10px"><b>動作の節目を手動で記録</b><p class="tiny">動画を一時停止し、該当する瞬間で登録します。AIがインパクトなどを勝手に決めることはありません。</p><div class="two"><select id="formPhaseSelect"><option value="助走開始">助走開始</option><option value="軸足接地">軸足接地</option><option value="蹴り足振り始め">蹴り足振り始め</option><option value="インパクト">インパクト</option><option value="フォロースルー終了">フォロースルー終了</option></select><button class="secondary" onclick="markAiFormPhase()">現在位置を記録</button></div><div id="formPhaseMarkerStatus" class="tiny muted">AI解析を保存した動画を選択してから記録できます。</div></div></div>
  <div class="card"><h2>フォーム確認表</h2><div class="two"><div><label class="label">分析対象</label><select id="formKind"><option>シュート</option><option>フリーキック</option><option>ロングキック</option><option>パスキック</option></select></div><div><label class="label">利き足</label><select id="formFoot"><option>右足</option><option>左足</option><option>両足</option></select></div></div><div id="formChecks"></div><div class="scoreline" style="margin-top:12px"><div class="scorebig" id="formScore">0%</div><div class="grow"><b>フォーム確認スコア</b><div class="progress"><span id="formProgress"></span></div><div class="tiny muted">チェック済み項目の割合。AIによる骨格計測スコアではありません。</div></div></div><label class="label">動画で気づいたこと</label><textarea id="formNote" placeholder="例：軸足がボールから遠い。次はボール横に置く"></textarea><div class="btnrow"><button onclick="saveForm()">フォーム分析を保存</button><button class="secondary" onclick="sendFormToAI()">AIサーバーでフォーム解析</button></div><div id="formAiResult" class="tiny muted" style="margin-top:10px"></div><div class="note"><b>右足キック専用・保護者の映像確認</b><p class="tiny muted">AIの自動計測ではありません。動画を確認して各項目を選んでください。判断できない場合は「未確認」のまま保存できます。</p><div id="kickManualReview"></div><button class="secondary" onclick="saveKickManualReview()">手動フォーム評価を保存</button><div id="kickManualReviewStatus" class="tiny muted"></div></div></div>
  <div class="card"><h2>改善ポイントの目安</h2><div id="formAdvice"></div></div>
- <div class="card"><h2>過去のフォーム分析</h2><div id="formRecords"></div></div><div class="card"><h2>前回との比較</h2><div id="aiFormCompare"><div class="empty">解析を2回以上保存すると比較できます</div></div></div><div class="card"><h2>同一キック・複数角度の確認</h2><div id="multiAngleKickReview"><div class="empty">同じキックIDを付けた動画を複数角度で保存すると、節目と可視性を並べて確認できます。</div></div></div>
+ <div class="card"><h2>過去のフォーム分析</h2><div id="formRecords"></div></div><div class="card"><h2>前回との比較</h2><div id="aiFormCompare"><div class="empty">解析を2回以上保存すると比較できます</div></div></div><div class="card"><h2>フォーム成長比較｜角度別</h2><div id="kickFormGrowthCompare"><div class="empty">同じ撮影条件のフォーム記録が2件以上になると比較できます。</div></div></div><div class="card"><h2>同一キック・複数角度の確認</h2><div id="multiAngleKickReview"><div class="empty">同じキックIDを付けた動画を複数角度で保存すると、節目と可視性を並べて確認できます。</div></div></div>
 <div class="card"><h2>AIコーチの次回練習プラン</h2><div id="aiFormPracticePlan"><div class="empty">AIフォーム解析を保存すると、次の練習メニューを提案します。</div></div></div>
  <div class="card"><h2>AIフォーム解析の履歴</h2><div id="aiFormRecords"></div></div>
  <div class="note">AIは姿勢の検出と関節角度の参考値を表示します。軸足とボールの距離、インパクト、蹴り足の接触・振り抜きはまだ自動判定しません。数値だけでフォームの良し悪しを決めず、同じ位置・角度から撮影した動画同士で比較してください。</div>
@@ -3528,6 +3528,7 @@ renderRikuCoachReport();
 clipRecords.innerHTML=state.clips.length?state.clips.map(x=>`<div class="listitem"><div class="scorebig">${x.score}</div><div class="grow"><b>${esc(x.title)}｜${esc(x.type)}</b><div class="tiny muted">${x.date}${x.time!==null?'・'+x.time+'秒':''}・評価 ${x.score}/100</div>${x.good?`<div class="tiny">👍 ${esc(x.good)}</div>`:''}${x.improve?`<div class="tiny">🎯 ${esc(x.improve)}</div>`:''}<button class="secondary small" id="clip-detail-btn-${x.id}" onclick="toggleClipDetail(${x.id})">詳細を見る</button><div id="clip-detail-${x.id}" hidden><div class="tiny muted">評価内訳</div><div class="tiny">判断・準備：${x.scores?.[0]??'-'}/5　技術・実行：${x.scores?.[1]??'-'}/5</div><div class="tiny">スピード・強度：${x.scores?.[2]??'-'}/5　チーム貢献：${x.scores?.[3]??'-'}/5</div><div class="tiny">👍 良かった点：${esc(x.good||'未入力')}</div><div class="tiny">🎯 改善点：${esc(x.improve||'未入力')}</div><div class="tiny muted">${x.hasVideo?'<button class="secondary small" onclick="playSavedClip('+x.id+','+(x.time??0)+')">保存動画を再生</button>':'動画ファイルは未保存の記録です。'}</div></div></div><button class="danger small" onclick="deleteItem('clips',${x.id})">削除</button></div>`).join(''):'<div class="empty">保存したプレー分析はありません</div>';
 formRecords.innerHTML=state.forms.length?state.forms.map(x=>`<div class="listitem"><div class="scorebig">${x.score}%</div><div class="grow"><b>${esc(x.title)}｜${esc(x.kind)}</b><div class="tiny muted">${x.date}・${esc(x.foot)}・${x.checked.length}/${x.total}項目</div>${x.note?`<div class="tiny">${esc(x.note)}</div>`:''}${x.hasVideo?'<button class="secondary small" onclick="playSavedForm('+x.id+')">保存動画を再生</button>':'<div class="tiny muted">動画ファイルは未保存の記録です。</div>'}</div><button class="danger small" onclick="deleteItem('forms',${x.id})">削除</button></div>`).join(''):'<div class="empty">フォーム分析の記録はありません</div>';
  renderAiFormCompare();
+ renderKickFormGrowthComparison();
  renderAiFormPracticePlan();
  renderKickManualReview();renderMultiAngleKickReview();
  aiFormRecords.innerHTML=state.aiFormAnalyses.length?state.aiFormAnalyses.map(x=>`<div class="listitem"><div class="grow"><b>${esc(x.title)}｜${esc(x.kind)}</b><div class="tiny muted">${esc(x.date)}・${esc(x.foot)}・撮影：${esc(x.cameraAngle||"未選択")}・姿勢フレーム ${x.frames??'—'}</div><div class="tiny">膝 ${x.knee??'—'}°　股関節 ${x.hip??'—'}°　体幹傾き ${x.trunk??'—'}°</div><div class="tiny muted" style="margin-top:10px"><b>時間ごとの姿勢変化（最大8地点）</b></div><div class="tiny muted">※動画全体から等間隔に抜き出した参考値。インパクト時刻を自動特定したものではありません。</div><div style="overflow-x:auto"><table class="table"><thead><tr><th>時刻</th><th>左膝</th><th>右膝</th><th>左股</th><th>右股</th><th>体幹</th><th>左足先移動</th><th>右足先移動</th></tr></thead><tbody>${(x.timeline||[]).map(t=>`<tr><td>${t.time==null?'—':Number(t.time).toFixed(1)+'秒'}</td><td>${t.leftKnee??'—'}</td><td>${t.rightKnee??'—'}</td><td>${t.leftHip??'—'}</td><td>${t.rightHip??'—'}</td><td>${t.trunk??'—'}°</td><td>${t.leftFootMotion??'—'}</td><td>${t.rightFootMotion??'—'}</td></tr>`).join('')}</tbody></table></div><div class="tiny muted" style="margin-top:8px"><b>8項目チェック（計測値と未判定を区別）</b></div>${(x.items||[]).map((it,i)=>`<div class="listitem"><div class="grow"><b>${i+1}. ${esc(it.name)}</b><div class="tiny">${esc(it.status)}：${esc(it.detail)}</div><div class="tiny muted">${esc(it.source)}</div></div></div>`).join('')||'<div class="tiny muted">この過去記録には8項目の詳細はありません。再解析すると表示されます。</div>'}${(x.cameraGuidance||[]).map(t=>`<div class="tiny" style="margin-top:4px">📷 ${esc(t)}</div>`).join('')}${(x.feedback||[]).map(t=>`<div class="tiny muted">${esc(t)}</div>`).join('')}</div><button class="danger small" onclick="deleteAiFormAnalysis(${x.id})">削除</button></div>`).join(''):'<div class="empty">AI解析の履歴はまだありません</div>';
@@ -3770,7 +3771,7 @@ function saveKickManualReview(){
  else if(latest.manualImprovementReview?.source==='parent_manual_kick_review')delete latest.manualImprovementReview;
  if(!persist()){if(previous)latest.kickFormReview=previous;else delete latest.kickFormReview;if(previousVisibility)latest.angleVisibility=previousVisibility;else delete latest.angleVisibility;if(previousImprovement)latest.manualImprovementReview=previousImprovement;else delete latest.manualImprovementReview;alert('保存できませんでした。元の解析記録を維持しています。');return;}
  const status=document.getElementById('kickManualReviewStatus');if(status)status.textContent='保護者の手動確認を保存しました。未確認の項目は評価に含めていません。';
- renderAiFormCompare();renderAiFormPracticePlan();renderMultiAngleKickReview();
+ renderAiFormCompare();renderKickFormGrowthComparison();renderAiFormPracticePlan();renderMultiAngleKickReview();
 }
 function renderMultiAngleKickReview(){
  const host=document.getElementById('multiAngleKickReview');if(!host)return;
@@ -3821,6 +3822,48 @@ function renderMultiAngleKickReview(){
  const angleSummary=countByAngle.map(x=>x.name+' '+x.count+'件').join(' ／ ');
  const comparisonNotice='AI数値は撮影角度ごとに個別表示しています。異なる角度の数値を平均・合算せず、角度が異なる記録同士の数値比較は行いません。異なる撮影角度の関節角度・移動量を直接比較したり、改善判定したりしません。同じ角度でも撮影距離・画角・キック条件が一致しない場合は比較しません。';
  host.innerHTML='<div class="note"><b>統合フォーム記録｜同一キックID：'+esc(groupId)+'</b><div class="tiny">右足の同一キックに紐づく動画 '+records.length+'件。'+angleSummary+'</div><div class="tiny">'+comparisonNotice+'</div></div><h4>角度別の証拠と動画</h4>'+angleCards+'<h4 style="margin-top:14px">項目ごとの確認証拠一覧</h4><div class="tiny muted">同じ項目を複数角度で確認できた場合、角度・日付・手動確認内容をそれぞれ残します。</div>'+(evidenceByItem||'<div class="empty">手動確認済みの項目はまだありません。</div>')+improvementHtml;
+}
+
+
+function renderKickFormGrowthComparison(){
+ const host=document.getElementById('kickFormGrowthCompare');if(!host)return;
+ const all=(state.aiFormAnalyses||[]).filter(x=>(x.foot||'右足')==='右足'&&(x.kind||'シュート')!=='');
+ if(!all.length){host.innerHTML='<div class="empty">AIフォーム解析の記録がありません。</div>';return;}
+ const angleNames=['横','正面','斜め後ろ'];
+ const itemDefs=Array.isArray(KICK_REVIEW_ITEMS)?KICK_REVIEW_ITEMS:[];
+ const groups=[];
+ angleNames.forEach(angle=>{
+  const angleRecords=all.filter(x=>String(x.cameraAngle||'').includes(angle));
+  const setups=[...new Set(angleRecords.map(getKickCameraSetup))];
+  setups.forEach(setup=>{
+   const records=angleRecords.filter(x=>getKickCameraSetup(x)===setup).slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||Number(b.id)-Number(a.id));
+   if(records.length>=2)groups.push({angle,records});
+  });
+ });
+ if(!groups.length){host.innerHTML='<div class="empty">同じ角度・撮影距離・画角・キック種別・利き足の記録が2件以上ありません。撮影条件をそろえて記録してください。異なる角度や条件の数値は比較しません。</div>';return;}
+ const renderGroup=group=>{
+  const newer=group.records[0],older=group.records[1];
+  const manualA=newer.kickFormReview||{},manualB=older.kickFormReview||{};
+  const manualBoth=manualA.confirmedBy==='parent_manual_review'&&manualB.confirmedBy==='parent_manual_review';
+  const manualRows=itemDefs.map(item=>{
+   if(!manualBoth)return '';
+   const a=manualA[item.id]||{},b=manualB[item.id]||{};
+   if(!a.status||!b.status||a.status==='未確認'||b.status==='未確認')return '';
+   const changed=a.status!==b.status;
+   return '<tr><td>'+esc(item.name)+'</td><td>'+esc(b.status)+(b.note?'｜'+esc(b.note):'')+'</td><td>'+esc(a.status)+(a.note?'｜'+esc(a.note):'')+'</td><td>'+(changed?'状態が変化':'同じ状態')+'</td></tr>';
+  }).join('');
+  const metricRows=[['膝角度',newer.knee,older.knee],['股関節角度',newer.hip,older.hip],['体幹傾き',newer.trunk,older.trunk]].map(([label,a,b])=>{
+   const valid=Number.isFinite(a)&&Number.isFinite(b);
+   if(!valid)return '<tr><td>'+label+'</td><td>未確認</td><td>未確認</td><td>比較不可</td></tr>';
+   const delta=a-b,sign=delta>0?'+':'';
+   return '<tr><td>'+label+'</td><td>'+b.toFixed(1)+'°</td><td>'+a.toFixed(1)+'°</td><td>'+sign+delta.toFixed(1)+'°（参考値）</td></tr>';
+  }).join('');
+  const newerQuality=(newer.timeline||[]).filter(x=>Number(x.visible)>=20).length;
+  const olderQuality=(older.timeline||[]).filter(x=>Number(x.visible)>=20).length;
+  const manualHtml=manualRows?'<h4>保護者が手動確認した項目の変化</h4><div class="tiny muted">両方の記録で手動確認済み、かつ未確認以外の項目だけを比較。状態変化は記録上の変化であり、自動的な上達判定ではありません。</div><div style="overflow-x:auto"><table class="table"><thead><tr><th>項目</th><th>前回</th><th>今回</th><th>記録上の変化</th></tr></thead><tbody>'+manualRows+'</tbody></table></div>': '<div class="tiny muted">両方の記録で手動確認済みの項目がそろっていないため、手動評価の成長比較は行いません。</div>';
+  return '<section class="listitem" style="display:block;margin:10px 0"><b>'+esc(group.angle)+'｜'+esc(newer.kind||'シュート')+'</b><div class="tiny muted">前回 '+esc(older.date||'日付なし')+' → 今回 '+esc(newer.date||'日付なし')+'</div><div class="tiny muted">撮影条件一致：'+esc(newer.cameraAngle||'未設定')+'／'+esc(newer.cameraDistance||'未確認')+'／'+esc(newer.framing||'未確認')+'。同一条件の記録だけを比較しています。</div>'+manualHtml+'<h4>AI姿勢数値の参考比較</h4><div class="tiny muted">同じ角度・距離・画角・キック種別・利き足での値のみ。数値差はフォームの良否や上達を自動判定しません。</div><div style="overflow-x:auto"><table class="table"><thead><tr><th>項目</th><th>前回</th><th>今回</th><th>差</th></tr></thead><tbody>'+metricRows+'</tbody></table></div><div class="tiny muted">全身ランドマーク20個以上の姿勢サンプル：前回 '+olderQuality+'/'+(older.timeline||[]).length+'件、今回 '+newerQuality+'/'+(newer.timeline||[]).length+'件。欠測は比較対象外。</div></section>';
+ };
+ host.innerHTML='<div class="note"><b>フォーム成長の確認ルール</b><div class="tiny">角度ごとに独立して比較。撮影条件が違う記録は除外。AI数値の差だけで改善判定せず、手動確認記録の変化を根拠として残します。</div></div>'+groups.map(renderGroup).join('');
 }
 
 function getKickCameraSetup(record){
