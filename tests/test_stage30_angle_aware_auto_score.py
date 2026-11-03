@@ -5,8 +5,10 @@ HTML = (ROOT / 'index.html').read_text(encoding='utf-8')
 BACKEND = (ROOT / 'backend' / 'main.py').read_text(encoding='utf-8')
 class Stage30Tests(unittest.TestCase):
     def test_three_camera_angles(self):
-        for angle in ('横から', '斜め後ろから', '後ろから'):
+        for angle in ('右側から', '左側から', '斜め右後ろから', '斜め左後ろから', '後ろから'):
             self.assertIn('<option>' + angle + '</option>', HTML)
+        self.assertIn("const definitions={'右側から':sideMetrics", HTML)
+        self.assertIn("'後ろから':rearMetrics", HTML)
     def test_auto_score_is_saved_and_explained(self):
         self.assertIn('function buildAiFormAutoScore(sm,cameraAngle)', HTML)
         self.assertIn('autoScore:buildAiFormAutoScore', HTML)
