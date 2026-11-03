@@ -15,10 +15,11 @@ class Stage29KickFormGrowthTests(unittest.TestCase):
         self.assertIn("renderKickFormGrowthComparison();", HTML)
 
     def test_comparisons_are_separated_by_angle_and_exact_setup(self):
-        self.assertIn("const angleNames=['横','正面','斜め後ろ']", HTML)
+        self.assertIn("const angleNames=['右側から','左側から','斜め右後ろから','斜め左後ろから','後ろから']", HTML)
         self.assertIn("getKickCameraSetup(x)===setup", HTML)
         self.assertIn("撮影条件が違う記録は除外", HTML)
-        self.assertIn("同じ角度・撮影距離・画角・キック種別・利き足", HTML)
+        self.assertIn("同じ角度・距離・画角・キック種別・利き足", HTML)
+        self.assertIn("const angleRecords=all.filter(x=>String(x.cameraAngle||'')===angle)", HTML)
 
     def test_manual_growth_requires_both_parent_confirmations(self):
         self.assertIn("manualA.confirmedBy==='parent_manual_review'&&manualB.confirmedBy==='parent_manual_review'", HTML)
