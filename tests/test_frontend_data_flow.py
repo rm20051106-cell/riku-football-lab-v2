@@ -410,5 +410,47 @@ class FrontendDataFlowContracts(unittest.TestCase):
         self.assertNotIn("monthlyIntegrated", dossier)
         self.assertIn("host.innerHTML=monthlyIntegrated+", monthly)
 
+
+    def test_stage21_growth_goal_linkage_uses_only_manual_goal_and_exact_training_links(self):
+        start = HTML.index("function getGrowthGoalTrainingLinkage()")
+        end = HTML.index("\\nfunction ", start + 20)
+        fn = HTML[start:end]
+        self.assertIn("goal.source!=='manual-reviewed-match-growth'", fn)
+        self.assertIn("item.sourceMatch?.growthGoalId===goal.id", fn)
+        self.assertIn("getCompletedTrainingStepIndexes", fn)
+
+    def test_stage21_manual_match_goal_creates_persisted_plan_and_rolls_back(self):
+        start = HTML.index("function applyMatchGrowthGoal(")
+        end = HTML.index("\\nfunction ", start + 20)
+        fn = HTML[start:end]
+        self.assertIn("getMatchGrowthRecommendations()", fn)
+        self.assertIn("source:'manual-reviewed-match-growth'", fn)
+        self.assertIn("state.settings.growthGoalPlan", fn)
+        self.assertIn("if(!persist())", fn)
+        self.assertIn("元の目標を維持しています", fn)
+
+    def test_stage21_weekly_training_session_keeps_goal_identity(self):
+        start = HTML.index("function applyWeeklyCoachSession(")
+        end = HTML.index("\\nfunction ", start + 20)
+        fn = HTML[start:end]
+        self.assertIn("pendingTrainingSource?.matchGrowthGoal", fn)
+        self.assertIn("growthGoalId", fn)
+        self.assertIn("state.settings?.growthGoalPlan?.id", fn)
+
+    def test_stage21_goal_linkage_is_rendered_in_growth_dashboard(self):
+        self.assertIn('id="growthGoalTrainingLinkage"', HTML)
+        self.assertIn("renderGrowthGoalTrainingLinkage();", HTML)
+        self.assertIn("updateGrowthGoalStatus('completed')", HTML)
+        self.assertIn("技術向上や試合での成功を自動判定するものではありません", HTML)
+
+    def test_stage21_goal_status_save_failure_restores_previous_goal(self):
+        start = HTML.index("function updateGrowthGoalStatus(")
+        end = HTML.index("\\nfunction ", start + 20)
+        fn = HTML[start:end]
+        self.assertIn("const previous={...current}", fn)
+        self.assertIn("if(!persist())", fn)
+        self.assertIn("state.settings.growthGoalPlan=previous", fn)
+
+
 if __name__ == "__main__":
     unittest.main()
