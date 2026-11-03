@@ -1406,8 +1406,8 @@ function getPlayerDossierSummary(){
  const strengths=categories.filter(row=>row.total>=2&&row.good>=2&&row.good>row.improve).sort((a,b)=>b.good-a.good||b.goodRate-a.goodRate);
  const issues=categories.filter(row=>row.total>=2&&row.improve>=2&&row.improve>row.good).sort((a,b)=>b.improve-a.improve||b.total-a.total);
  const metricTypes=['30m走','アジリティ','立ち幅跳び'];
- const latestMeasures=metricTypes.map(type=>({type,record:measures.filter(item=>item.type===type&&item.value!==''&&item.value!==null&&Number.isFinite(Number(item.value))&&/^\d{4}-\\d{2}-\\d{2}$/.test(String(item.date||''))).sort((a,b)=>String(b.date).localeCompare(String(a.date)))[0]||null}));
- return {matchCount:matches.filter(match=>/^\d{4}-\\d{2}-\\d{2}$/.test(String(match.date||''))).length,reviewedMatchCount:reviewed.length,trainingCount:trainings.length,trainingMinutes:trainings.reduce((sum,item)=>sum+Math.max(0,Number(item.minutes)||0),0),measureCount:measures.length,formCount:(state.aiFormAnalyses||[]).length,clipCount:(state.clips||[]).length,formRecordCount:(state.forms||[]).length,strengths,issues,latestMeasures};
+ const latestMeasures=metricTypes.map(type=>({type,record:measures.filter(item=>item.type===type&&item.value!==''&&item.value!==null&&Number.isFinite(Number(item.value))&&/^\d{4}-\d{2}-\d{2}$/.test(String(item.date||''))).sort((a,b)=>String(b.date).localeCompare(String(a.date)))[0]||null}));
+ return {matchCount:matches.filter(match=>/^\d{4}-\d{2}-\d{2}$/.test(String(match.date||''))).length,reviewedMatchCount:reviewed.length,trainingCount:trainings.length,trainingMinutes:trainings.reduce((sum,item)=>sum+Math.max(0,Number(item.minutes)||0),0),measureCount:measures.length,formCount:(state.aiFormAnalyses||[]).length,clipCount:(state.clips||[]).length,formRecordCount:(state.forms||[]).length,strengths,issues,latestMeasures};
 }
 function renderPlayerDossier(){
  const host=document.getElementById('playerDossier');if(!host)return;
@@ -1541,7 +1541,7 @@ function getMonthlyTrainingDecisionChange(){
   if(seen.has(pair))return;
   seen.add(pair);
   const month=String(training.date).slice(0,7);
-  if(!/^\d{4}-\\d{2}$/.test(month))return;
+  if(!/^\d{4}-\d{2}$/.test(month))return;
   const row=months[month]||(months[month]={month,quality:[],scan:[],pairs:0});
   let used=false;
   if(result.prevQ&&result.nextQ){row.quality.push(result.nextQ.rate-result.prevQ.rate);used=true;}
