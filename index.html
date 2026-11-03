@@ -366,9 +366,10 @@ function linkMatchEventToTraining(matchId,eventId){
  const match=(state.matchAnalyses||[]).find(x=>Number(x.id)===Number(matchId));
  const ev=(match?.candidateEvents||[]).find(x=>String(x.id)===String(eventId));
  if(!match||!ev||!isManuallyReviewedMatchEvent(ev)){alert('陸玖本人として手動確認した場面だけを結びつけられます。');return}
+ const originalTrainings=JSON.parse(JSON.stringify(state.trainings||[]));
  const training=syncTrainingMatchEventLink(match,ev);
- if(!training){alert('この試合より前に、同じテーマの練習記録がありません。先に練習記録を保存してね。');return}
- persist();
+ if(!training){state.trainings=originalTrainings;alert('この試合より前に、同じテーマの練習記録がありません。既存の連携記録は変更していません。先に練習記録を保存してね。');return}
+ if(!persist()){state.trainings=originalTrainings;renderAll();alert('試合場面の連携を端末に保存できませんでした。元の練習記録と連携状態に戻しました。空き容量を確認して、もう一度お試しください。');return}
  alert('「'+training.menu+'」の練習記録に、'+match.title+' '+formatMatchTime(ev.time)+' の場面を結びつけたよ。');
 }
 function getRepeatedIssueAdjustment(focus,matchDate){
@@ -378,7 +379,7 @@ function getRepeatedIssueAdjustment(focus,matchDate){
  }).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||Number(b.id||0)-Number(a.id||0));
  const previous=candidates[0];if(!previous)return null;
  const steps=Array.isArray(previous.steps)&&previous.steps.length?previous.steps:getTrainingSteps(focus);
- const done=Array.isArray(previous.stepsDone)?previous.stepsDone.length:0;
+ const done=getCompletedTrainingStepIndexes(previous,steps).length;
  const completion=steps.length?done/steps.length:0;
  const reflection=buildTrainingReflection(previous);
  const review=previous.reviewStatus||'未入力';
@@ -466,7 +467,7 @@ function getTrainingDecisionComparison(training){
   else if(!deltas.length){trend='練習後の評価を記録';detail='練習前後の判断評価を比較するには、両方の試合で判断・周囲確認の評価が必要です。';}
   else {const delta=deltas.reduce((a,b)=>a+b,0)/deltas.length;trend=delta>0?'改善方向':delta<0?'再確認ポイントあり':'同水準';detail='練習前後の評価率の差を比較。練習の効果を断定するものではありません。';}
  }
- return {focus,before,after,prevQ,nextQ,prevS,nextS,trend,detail,done:(training.stepsDone||[]).length,total:(training.steps||getTrainingSteps(focus)).length};
+ return {focus,before,after,prevQ,nextQ,prevS,nextS,trend,detail,done:getCompletedTrainingStepIndexes(training,Array.isArray(training.steps)&&training.steps.length?training.steps:getTrainingSteps(focus)).length,total:(training.steps||getTrainingSteps(focus)).length};
 }
 function renderTrainingDecisionComparison(training){
  const r=getTrainingDecisionComparison(training);if(!r)return '';
@@ -1108,7 +1109,7 @@ function getTrainingDifficultyProfile(focus){
  const transferPartial=transfers.filter(t=>t.matchTransferStatus==='少しできた').length;
  const transferNot=transfers.filter(t=>t.matchTransferStatus==='まだ').length;
  const completionRecords=recent.filter(t=>Array.isArray(t.steps)&&t.steps.length);
- const completionRate=completionRecords.length?completionRecords.reduce((n,t)=>n+Math.round((Array.isArray(t.stepsDone)?t.stepsDone.length:0)/t.steps.length*100),0)/completionRecords.length:null;
+ const completionRate=completionRecords.length?completionRecords.reduce((n,t)=>n+Math.round(getCompletedTrainingStepIndexes(t,t.steps).length/t.steps.length*100),0)/completionRecords.length:null;
  const hardEffort=recent.filter(t=>t.effort==='きつめ').length;
  let level=2,reason='基本レベルでフォームと判断を安定させる';
  if(reviewed.length>=2&&(hard>=2||notTried>=2)||hardEffort>=2||completionRecords.length>=2&&completionRate<50){level=1;reason='難しさ・疲労・未完了が続いているため、回数と判断の負荷を下げて成功体験を作る';}
@@ -1236,7 +1237,7 @@ function getThemeImprovementStats(){
   const g=groups[focus]||(groups[focus]={theme:focus,chains:0,improved:0,needsWork:0,pending:0,practiceDone:0,practiceTotal:0,practiceSessions:0,preGood:0,preNeeds:0,preCount:0,postGood:0,postNeeds:0,postCount:0,paired:0,deltaTotal:0});
   g.chains++;
   const steps=Array.isArray(training.steps)&&training.steps.length?training.steps:getTrainingSteps(focus);
-  g.practiceDone+=(training.stepsDone||[]).length;
+  g.practiceDone+=getCompletedTrainingStepIndexes(training,steps).length;
   g.practiceTotal+=steps.length;
   if(steps.length)g.practiceSessions++;
   const follow=getImprovementFollowup(training);
@@ -1282,7 +1283,7 @@ function getMonthlyGrowthReport(monthKey){
  const linked=trainings.filter(t=>t.sourceMatch);let linkedImproved=0,linkedNeeds=0,linkedPending=0;
  linked.forEach(t=>{const f=getImprovementFollowup(t);if(f?.status==='改善の兆しあり')linkedImproved++;else if(f?.status==='まだ改善課題あり')linkedNeeds++;else linkedPending++;});
  const stepsTotal=trainings.reduce((n,t)=>n+(Array.isArray(t.steps)&&t.steps.length?t.steps.length:getTrainingSteps(t.focus||inferTrainingFocus(t.menu,t.category)).length),0);
- const stepsDone=trainings.reduce((n,t)=>n+(Array.isArray(t.stepsDone)?t.stepsDone.length:0),0);
+ const stepsDone=trainings.reduce((n,t)=>n+getCompletedTrainingStepIndexes(t,Array.isArray(t.steps)&&t.steps.length?t.steps:getTrainingSteps(t.focus||inferTrainingFocus(t.menu,t.category))).length,0);
  const measures=(state.measures||[]).filter(m=>String(m.date||'')>=start&&String(m.date||'')<end);
  const measureSummary=['30m走','アジリティ','立ち幅跳び'].map(type=>{const list=measures.filter(m=>m.type===type&&Number.isFinite(Number(m.value))).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));if(!list.length)return null;const first=list[0],last=list[list.length-1];return {type,first,last,delta:list.length>1?Number(last.value)-Number(first.value):null,unit:last.unit||(type==='立ち幅跳び'?'cm':'秒'),count:list.length};}).filter(Boolean);
  const goodThemes={};assessed.filter(e=>e.assessment==='良かった').forEach(e=>{const k=e.actionType||'その他';goodThemes[k]=(goodThemes[k]||0)+1;});
@@ -1534,7 +1535,7 @@ function renderDecisionPracticeMethodStats(){
 }
 function getAlternativeDecisionRetryPlan(training,effect){
  const steps=Array.isArray(training.steps)&&training.steps.length?training.steps:getTrainingSteps(training.focus);
- const completion=steps.length?(training.stepsDone||[]).length/steps.length:0;
+ const completion=steps.length?getCompletedTrainingStepIndexes(training,steps).length/steps.length:0;
  const review=training.reviewStatus||'未入力',transfer=training.matchTransferStatus||'未入力';
  const easier=review==='難しかった'||review==='まだ試せていない'||training.effort==='きつめ'||completion<0.5||transfer==='まだ';
  const level=easier?1:review==='できた'&&completion>=0.8&&transfer==='できた'?3:2;
@@ -1613,7 +1614,7 @@ function getDecisionGrowthLevel(){
  let done=0,total=0,transferGood=0,transferAssessed=0;
  linked.forEach(t=>{
   const steps=Array.isArray(t.steps)&&t.steps.length?t.steps:getTrainingSteps(t.focus);
-  done+=(t.stepsDone||[]).length;total+=steps.length;
+  done+=getCompletedTrainingStepIndexes(t,steps).length;total+=steps.length;
   const follow=getImprovementFollowup(t);
   if(follow?.status==='改善の兆しあり'){transferGood++;transferAssessed++;}
   else if(follow?.status==='まだ改善課題あり')transferAssessed++;
@@ -1867,7 +1868,7 @@ function getPlayerSkillProfile(asOfDate=null){
   const transferPartial=transfer.filter(t=>t.matchTransferStatus==='少しできた').length;
   const transferNotYet=transfer.filter(t=>t.matchTransferStatus==='まだ').length;
   const steps=sessions.reduce((n,t)=>n+(Array.isArray(t.steps)&&t.steps.length?t.steps.length:getTrainingSteps(focus).length),0);
-  const done=sessions.reduce((n,t)=>n+(Array.isArray(t.stepsDone)?t.stepsDone.length:0),0);
+  const done=sessions.reduce((n,t)=>n+getCompletedTrainingStepIndexes(t,Array.isArray(t.steps)&&t.steps.length?t.steps:getTrainingSteps(t.focus||inferTrainingFocus(t.menu,t.category))).length,0);
   const completion=steps?Math.round(done/steps*100):null;
   const components=[];
   if(assessed.length)components.push({value:good/assessed.length*100,weight:.65,label:'試合評価'});
@@ -2184,9 +2185,9 @@ function getWeeklyLoadAssessment(){
  const fourteen=new Date(today()+'T00:00:00');fourteen.setDate(fourteen.getDate()-13);
  const fourteenText=fourteen.getFullYear()+'-'+String(fourteen.getMonth()+1).padStart(2,'0')+'-'+String(fourteen.getDate()).padStart(2,'0');
  const recent14=records.filter(x=>x.date>=fourteenText&&x.date<=today());
- const reviewed=recent14.filter(x=>x.reviewStatus||x.matchTransferStatus||(Array.isArray(x.stepsDone)&&x.stepsDone.length>0));
- const incomplete=recent14.filter(x=>['難しかった','まだ試せていない'].includes(x.reviewStatus)||x.effort==='きつめ'||(Array.isArray(x.steps)&&x.steps.length>0&&((x.stepsDone||[]).length/x.steps.length)<.5));
- const comfortable=reviewed.filter(x=>x.reviewStatus==='できた'&&x.effort!=='きつめ'&&Array.isArray(x.steps)&&x.steps.length>0&&(x.stepsDone||[]).length/x.steps.length>=.75);
+ const reviewed=recent14.filter(x=>x.reviewStatus||x.matchTransferStatus||getCompletedTrainingStepIndexes(x,Array.isArray(x.steps)&&x.steps.length?x.steps:getTrainingSteps(x.focus||inferTrainingFocus(x.menu,x.category))).length>0);
+ const incomplete=recent14.filter(x=>['難しかった','まだ試せていない'].includes(x.reviewStatus)||x.effort==='きつめ'||(Array.isArray(x.steps)&&x.steps.length>0&&(getCompletedTrainingStepIndexes(x,x.steps).length/x.steps.length)<.5));
+ const comfortable=reviewed.filter(x=>x.reviewStatus==='できた'&&x.effort!=='きつめ'&&Array.isArray(x.steps)&&x.steps.length>0&&getCompletedTrainingStepIndexes(x,x.steps).length/x.steps.length>=.75);
  const recovery=Object.values(state.postMatchRecovery||{}),recentRecovery=recovery.filter(x=>x.date>=recentStartText&&x.date<=today());
  const safety=getRecoverySafetySummary(today()),evidence=reviewed.length>=2&&recentRecovery.length>=1;
  const teamCount=dates.filter(d=>teamDays.includes(new Date(d+'T00:00:00').getDay())).length;
@@ -2302,7 +2303,7 @@ function getTrainingEvidenceLinkSummary(){
  const rows=skills.map(focus=>{
   const sessions=trainings.filter(t=>(t.focus||inferTrainingFocus(t.menu,t.category))===focus);
   const linked=sessions.map(t=>{
-   const steps=t.steps||getTrainingSteps(focus),done=Array.isArray(t.stepsDone)?t.stepsDone.length:0;
+   const steps=Array.isArray(t.steps)&&t.steps.length?t.steps:getTrainingSteps(focus),done=getCompletedTrainingStepIndexes(t,steps).length;
    const events=(Array.isArray(t.linkedMatchEvents)?t.linkedMatchEvents:[]).filter(link=>{
     const key=String(link.matchId)+'|'+String(link.eventId);
     if(seen.has(key))return false;
@@ -2366,7 +2367,7 @@ function getTrainingTransferTimeline(){
  return trainings.slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||String(b.id).localeCompare(String(a.id))).map(t=>{
   const focus=t.focus||inferTrainingFocus(t.menu,t.category);
   const linked=(linkedByTraining.get(String(t.id))||[]).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||''))||Number(a.time||0)-Number(b.time||0));
-  const steps=t.steps||getTrainingSteps(focus),done=Array.isArray(t.stepsDone)?t.stepsDone.length:0;
+  const steps=Array.isArray(t.steps)&&t.steps.length?t.steps:getTrainingSteps(focus),done=getCompletedTrainingStepIndexes(t,steps).length;
   return {id:t.id,date:t.date,menu:t.menu,focus,minutes:t.minutes||0,completion:steps.length?Math.round(done/steps.length*100):0,linked,matchTransferStatus:t.matchTransferStatus||'',reviewStatus:t.reviewStatus||''};
  }).filter(t=>t.linked.length||t.matchTransferStatus||t.reviewStatus).slice(0,12);
 }
@@ -2456,7 +2457,7 @@ function renderMonthlyGrowthReport(monthKey){
  const trainingDays=new Set(trainings.map(t=>t.date).filter(Boolean)).size;
  const trainingMinutes=trainings.reduce((sum,t)=>sum+(Number(t.minutes)||0),0);
  const stepTotal=trainings.reduce((sum,t)=>sum+(Array.isArray(t.steps)?t.steps.length:0),0);
- const stepDone=trainings.reduce((sum,t)=>sum+(Array.isArray(t.stepsDone)?t.stepsDone.length:0),0);
+ const stepDone=trainings.reduce((sum,t)=>sum+getCompletedTrainingStepIndexes(t,Array.isArray(t.steps)&&t.steps.length?t.steps:getTrainingSteps(t.focus||inferTrainingFocus(t.menu,t.category))).length,0);
  const manualForms=(state.forms||[]).filter(x=>String(x.date||'').startsWith(key)).length;
  const aiForms=(state.aiFormAnalyses||[]).filter(x=>String(x.date||'').startsWith(key)).length;
  const scanCount=monthMatches.length;
@@ -2720,7 +2721,7 @@ function renderNextMatchGrowthBrief(priorities,events){
   const recent30=sessions.filter(t=>{const d=Date.parse(String(t.date||'')+'T00:00:00');return Number.isFinite(d)&&d<=Date.now()&&Date.now()-d<30*86400000;});
   const minutes=recent30.reduce((n,t)=>n+(Number(t.minutes)||0),0);
   const steps=recent30.reduce((n,t)=>n+(Array.isArray(t.steps)?t.steps.length:getTrainingSteps(focus).length),0);
-  const done=recent30.reduce((n,t)=>n+(Array.isArray(t.stepsDone)?t.stepsDone.length:0),0);
+  const done=recent30.reduce((n,t)=>n+getCompletedTrainingStepIndexes(t,Array.isArray(t.steps)&&t.steps.length?t.steps:getTrainingSteps(t.focus||inferTrainingFocus(t.menu,t.category))).length,0);
   const latestReview=sessions.find(t=>t.reviewStatus||t.matchTransferStatus);
   const reviewText=latestReview?('直近の振り返り：'+(latestReview.reviewStatus||'未入力')+'／試合での再現：'+(latestReview.matchTransferStatus||'未入力')):'練習後の振り返りは未入力';
   const scenes=related.slice(0,3);
@@ -2911,7 +2912,7 @@ function renderAnnualGrowthReport(yearValue){
  const trainingDays=new Set(trainings.map(t=>t.date).filter(Boolean)).size;
  const trainingMinutes=trainings.reduce((sum,t)=>sum+(Number(t.minutes)||0),0);
  const stepTotal=trainings.reduce((sum,t)=>sum+(Array.isArray(t.steps)?t.steps.length:0),0);
- const stepDone=trainings.reduce((sum,t)=>sum+(Array.isArray(t.stepsDone)?t.stepsDone.length:0),0);
+ const stepDone=trainings.reduce((sum,t)=>sum+getCompletedTrainingStepIndexes(t,Array.isArray(t.steps)&&t.steps.length?t.steps:getTrainingSteps(t.focus||inferTrainingFocus(t.menu,t.category))).length,0);
  const manualForms=(state.forms||[]).filter(x=>String(x.date||'').startsWith(year)).length;
  const aiForms=(state.aiFormAnalyses||[]).filter(x=>String(x.date||'').startsWith(year)).length;
  const goalHistory=(state.settings?.nextMatchGoalHistory||[]).filter(x=>String(x.reviewDate||x.matchDate||x.date||'').startsWith(year)&&x.result);
@@ -3220,7 +3221,7 @@ function renderAll(){
 trainDate.value=trainDate.value||date;measureDate.value=measureDate.value||date;
 trainMenu.innerHTML=state.menus.map((m,i)=>`<option value="${esc(m.name)}">${esc(m.category)}｜${esc(m.name)}</option>`).join('');
 menuList.innerHTML=state.menus.map((m,i)=>`<div class="listitem"><div class="grow"><b>${esc(m.name)}</b><div class="tiny muted">${esc(m.category)}・目安${m.minutes||10}分</div></div><button class="danger small" onclick="removeMenu(${i})">削除</button></div>`).join('');
-trainingRecords.innerHTML=state.trainings.length?state.trainings.slice(0,12).map(x=>`<div class="listitem"><div class="grow"><b>${esc(x.menu)}</b><div class="tiny muted">${x.date}・${x.minutes}分・${esc(x.effort)}・テーマ：${esc(x.focus||inferTrainingFocus(x.menu,""))}</div>${x.note?`<div class="tiny">${esc(x.note)}</div>`:''}${renderImprovementFollowup(x)}${x.sourceMatch?.matchId?renderTrainingCycleCard(x):''}${x.sourceMatch?.weaponPractice?`<div class="note" style="margin-top:8px"><b>武器再現トレーニングの結果</b><div class="tiny muted">${esc((x.sourceMatch.patternActions||[]).join(" → ")||"基礎練習")}｜難易度：${esc(x.sourceMatch.variation===0?"基礎":x.sourceMatch.variation===2?"応用":"標準")}</div><select onchange="updateTrainingWeaponReview(${x.id},this.value)"><option value="" ${!x.weaponReviewStatus?"selected":""}>再現度を選ぶ</option><option value="難しかった" ${x.weaponReviewStatus==="難しかった"?"selected":""}>難しかった</option><option value="できた" ${x.weaponReviewStatus==="できた"?"selected":""}>できた</option><option value="余裕だった" ${x.weaponReviewStatus==="余裕だった"?"selected":""}>余裕だった</option></select><div class="tiny muted">次週は「難しかった」なら距離を広げ、「余裕だった」なら寄せを速くして調整します。</div>${renderWeaponTrialFollowup(x)}</div>`:""}${renderAlternativeDecisionPracticeEffect(x)}${(x.linkedMatchEvents||[]).length?`<div class="tiny" style="margin-top:8px"><b>結びついた試合場面（${x.linkedMatchEvents.length}件）</b></div>${x.linkedMatchEvents.map(e=>{const eventArg=String(e.eventId).replace(/\\/g,"\\\\").replace(/'/g,"\\'");return `<div class="tiny muted" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">⚽ ${esc(e.matchDate)}｜${esc(e.matchTitle)}｜${formatMatchTime(e.time)}｜${esc(e.actionType||'未分類')}｜${esc(e.assessment||'未評価')} <button class="secondary small" onclick="openMatchEventInHistory(${Number(e.matchId)},'${eventArg}')">試合場面を見る</button></div>`}).join('')}`:''}<div class="tiny" style="margin-top:8px"><b>今日の練習チェック</b></div>${(x.steps||getTrainingSteps(x.focus||inferTrainingFocus(x.menu,''))).map((step,idx)=>`<label class="tiny" style="display:flex;gap:8px;align-items:center;margin:5px 0"><input type="checkbox" ${(x.stepsDone||[]).includes(idx)?'checked':''} onchange="updateTrainingStep(${x.id},${idx},this.checked)"> ${esc(step)}</label>`).join('')}<div class="tiny muted">${(x.stepsDone||[]).length}/${(x.steps||getTrainingSteps(x.focus||inferTrainingFocus(x.menu,''))).length} 項目完了</div><label class="label" style="margin-top:8px">試合で練習したことを出せた？</label><select onchange="updateTrainingMatchTransfer(${x.id},this.value)"><option value="" ${!x.matchTransferStatus?'selected':''}>試合後に選ぶ</option><option value="できた" ${x.matchTransferStatus==='できた'?'selected':''}>できた</option><option value="少しできた" ${x.matchTransferStatus==='少しできた'?'selected':''}>少しできた</option><option value="まだ" ${x.matchTransferStatus==='まだ'?'selected':''}>まだ</option></select><label class="label" style="margin-top:8px">練習後の振り返り（次週のメニューに反映）</label><select onchange="updateTrainingReview(${x.id},this.value)"><option value="" ${!x.reviewStatus?'selected':''}>まだ選んでいない</option><option value="できた" ${x.reviewStatus==='できた'?'selected':''}>できた</option><option value="難しかった" ${x.reviewStatus==='難しかった'?'selected':''}>難しかった</option><option value="まだ試せていない" ${x.reviewStatus==='まだ試せていない'?'selected':''}>まだ試せていない</option></select>${renderTrainingReflectionCard(x)}${renderTrainingDecisionComparison(x)}</div><button class="danger small" onclick="deleteItem('trainings',${x.id})">削除</button></div>`).join(''):'<div class="empty">まだ練習記録がありません</div>';
+trainingRecords.innerHTML=state.trainings.length?state.trainings.slice(0,12).map(x=>`<div class="listitem"><div class="grow"><b>${esc(x.menu)}</b><div class="tiny muted">${x.date}・${x.minutes}分・${esc(x.effort)}・テーマ：${esc(x.focus||inferTrainingFocus(x.menu,""))}</div>${x.note?`<div class="tiny">${esc(x.note)}</div>`:''}${renderImprovementFollowup(x)}${x.sourceMatch?.matchId?renderTrainingCycleCard(x):''}${x.sourceMatch?.weaponPractice?`<div class="note" style="margin-top:8px"><b>武器再現トレーニングの結果</b><div class="tiny muted">${esc((x.sourceMatch.patternActions||[]).join(" → ")||"基礎練習")}｜難易度：${esc(x.sourceMatch.variation===0?"基礎":x.sourceMatch.variation===2?"応用":"標準")}</div><select onchange="updateTrainingWeaponReview(${x.id},this.value)"><option value="" ${!x.weaponReviewStatus?"selected":""}>再現度を選ぶ</option><option value="難しかった" ${x.weaponReviewStatus==="難しかった"?"selected":""}>難しかった</option><option value="できた" ${x.weaponReviewStatus==="できた"?"selected":""}>できた</option><option value="余裕だった" ${x.weaponReviewStatus==="余裕だった"?"selected":""}>余裕だった</option></select><div class="tiny muted">次週は「難しかった」なら距離を広げ、「余裕だった」なら寄せを速くして調整します。</div>${renderWeaponTrialFollowup(x)}</div>`:""}${renderAlternativeDecisionPracticeEffect(x)}${(x.linkedMatchEvents||[]).length?`<div class="tiny" style="margin-top:8px"><b>結びついた試合場面（${x.linkedMatchEvents.length}件）</b></div>${x.linkedMatchEvents.map(e=>{const eventArg=String(e.eventId).replace(/\\/g,"\\\\").replace(/'/g,"\\'");return `<div class="tiny muted" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">⚽ ${esc(e.matchDate)}｜${esc(e.matchTitle)}｜${formatMatchTime(e.time)}｜${esc(e.actionType||'未分類')}｜${esc(e.assessment||'未評価')} <button class="secondary small" onclick="openMatchEventInHistory(${Number(e.matchId)},'${eventArg}')">試合場面を見る</button></div>`}).join('')}`:''}<div class="tiny" style="margin-top:8px"><b>今日の練習チェック</b></div>${(x.steps||getTrainingSteps(x.focus||inferTrainingFocus(x.menu,''))).map((step,idx)=>`<label class="tiny" style="display:flex;gap:8px;align-items:center;margin:5px 0"><input type="checkbox" ${(x.stepsDone||[]).includes(idx)?'checked':''} onchange="updateTrainingStep(${x.id},${idx},this.checked)"> ${esc(step)}</label>`).join('')}<div class="tiny muted">${getCompletedTrainingStepIndexes(x,x.steps||getTrainingSteps(x.focus||inferTrainingFocus(x.menu,''))).length}/${(x.steps||getTrainingSteps(x.focus||inferTrainingFocus(x.menu,''))).length} 項目完了</div><label class="label" style="margin-top:8px">試合で練習したことを出せた？</label><select onchange="updateTrainingMatchTransfer(${x.id},this.value)"><option value="" ${!x.matchTransferStatus?'selected':''}>試合後に選ぶ</option><option value="できた" ${x.matchTransferStatus==='できた'?'selected':''}>できた</option><option value="少しできた" ${x.matchTransferStatus==='少しできた'?'selected':''}>少しできた</option><option value="まだ" ${x.matchTransferStatus==='まだ'?'selected':''}>まだ</option></select><label class="label" style="margin-top:8px">練習後の振り返り（次週のメニューに反映）</label><select onchange="updateTrainingReview(${x.id},this.value)"><option value="" ${!x.reviewStatus?'selected':''}>まだ選んでいない</option><option value="できた" ${x.reviewStatus==='できた'?'selected':''}>できた</option><option value="難しかった" ${x.reviewStatus==='難しかった'?'selected':''}>難しかった</option><option value="まだ試せていない" ${x.reviewStatus==='まだ試せていない'?'selected':''}>まだ試せていない</option></select>${renderTrainingReflectionCard(x)}${renderTrainingDecisionComparison(x)}</div><button class="danger small" onclick="deleteItem('trainings',${x.id})">削除</button></div>`).join(''):'<div class="empty">まだ練習記録がありません</div>';
 matchScanRecords.innerHTML=(state.matchAnalyses||[]).length?state.matchAnalyses.map(x=>'<div class="listitem"><div class="grow"><b>'+esc(x.title)+'｜全編スキャン</b><div class="tiny muted">'+esc(x.date)+'・動画 '+(x.duration??'—')+'秒・姿勢検出 '+(x.frames??0)+'フレーム・約'+(x.interval??'—')+'秒間隔</div><div class="tiny">背番号候補：'+esc(x.jerseyNumbers||'—')+'・膝 '+(x.knee??'—')+'°・股関節 '+(x.hip??'—')+'°・体幹 '+(x.trunk??'—')+'°</div><div class="tiny muted">'+(x.identityConfirmed?'選手本人確認済み':'陸玖本人の識別は未確認')+'</div><div class="tiny">複数選手検出：'+(x.personDetection?('最大'+(x.personDetection.max_people_in_one_frame??0)+'人／1フレーム・平均'+(x.personDetection.average_people_per_sample??0)+'人'):'未記録')+'</div><div class="tiny">背番号OCR読取候補：'+(x.jerseyOcrSummary&&Object.keys(x.jerseyOcrSummary.candidate_detection_counts||x.jerseyOcrSummary.candidate_frame_counts||{}).length?Object.entries(x.jerseyOcrSummary.candidate_frame_counts).map(([n,count])=>n+'番 '+count+'件').join('／'):'該当なし')+'</div><div class="tiny">動きの変化候補：'+((x.candidateEvents||[]).length)+'場面</div>'+candidateReviewSummary((x.candidateEvents||[]).map(ev=>({review_label:ev.reviewLabel,assessment:ev.assessment})))+'<button class="secondary small" onclick="toggleMatchScanDetail('+x.id+')">詳細を見る</button><div id="match-scan-detail-'+x.id+'" hidden>'+((x.timeline||[]).slice(0,60).map(t=>'<div class="tiny">'+(t.time==null?'—':Number(t.time).toFixed(1)+'秒')+'｜膝 '+(t.leftKnee??'—')+'/'+(t.rightKnee??'—')+'°｜股関節 '+(t.leftHip??'—')+'/'+(t.rightHip??'—')+'°｜体幹 '+(t.trunk??'—')+'°</div>').join(''))+'<div class="tiny muted">※姿勢検出は画面内の人物に対する推定値で、陸玖本人のものとは限りません。</div>'+renderMatchPeriodSummary(x)+renderMatchEventTimeline(x.candidateEvents||[],x.id)+(x.highlight?'<div class="card"><b>陸玖ハイライト（'+(x.highlight.clipCount||0)+'場面）</b><video controls playsinline preload="metadata" style="width:100%;max-width:520px;border-radius:12px;margin:6px 0" src="'+getApiUrl()+esc(x.highlight.url)+'"></video><div><a href="'+getApiUrl()+esc(x.highlight.url)+'" download="riku-highlight.mp4">ハイライト動画を保存</a></div><div class="tiny muted">サーバー再起動後は再作成が必要な場合があります。</div></div>':'')+((x.feedback||[]).map(t=>'<div class="tiny muted">'+esc(t)+'</div>').join(''))+'</div></div><button class="danger small" onclick="deleteMatchScan('+x.id+')">削除</button></div>').join(''):'<div class="empty">AI解析の履歴はまだありません</div>';
 renderMatchLibrary();
 renderRikuCoachReport();
@@ -3281,7 +3282,7 @@ function getMatchGrowthTimelineData(){
    const sessions=training.filter(t=>String(t.date||'')>previousDate&&String(t.date||'')<String(row.date||''));
    const completed=sessions.filter(t=>t.reviewStatus==='できた'||t.matchTransferStatus==='できた').length;
    const difficult=sessions.filter(t=>['難しかった','まだ試せていない'].includes(t.reviewStatus)||t.matchTransferStatus==='まだ'||t.effort==='きつめ').length;
-   return {...row,trainingSessions:sessions.length,trainingCompleted:completed,trainingDifficult:difficult,trainingMinutes:sessions.reduce((n,t)=>n+(Number(t.minutes)||0),0),trainingNotes:sessions.map(t=>({date:t.date,review:t.reviewStatus||'未入力',transfer:t.matchTransferStatus||'未入力',completion:Array.isArray(t.steps)&&t.steps.length?Math.round((t.stepsDone||[]).length/t.steps.length*100):null,reflection:t.reflectionSnapshot||buildTrainingReflection(t)}))};
+   return {...row,trainingSessions:sessions.length,trainingCompleted:completed,trainingDifficult:difficult,trainingMinutes:sessions.reduce((n,t)=>n+(Number(t.minutes)||0),0),trainingNotes:sessions.map(t=>({date:t.date,review:t.reviewStatus||'未入力',transfer:t.matchTransferStatus||'未入力',completion:Array.isArray(t.steps)&&t.steps.length?Math.round(getCompletedTrainingStepIndexes(t,t.steps).length/t.steps.length*100):null,reflection:t.reflectionSnapshot||buildTrainingReflection(t)}))};
   });
   const issueKeys=[...new Set(enriched.flatMap(row=>Object.keys(row.issues)))];
   const repeatedIssues=issueKeys.map(key=>{
