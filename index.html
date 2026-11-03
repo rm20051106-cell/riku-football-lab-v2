@@ -3875,6 +3875,42 @@ function renderFiveViewPhaseEvidenceMatrix(records,officialAngles){
  const total=officialAngles.length*phases.length;
  return '<h4 style="margin-top:14px">5視点×5動作節目の確認マトリクス</h4><div class="tiny muted">各視点で最新の動画1件を表示。時刻はその動画内の時刻です。別動画・別視点間で時刻を同期したり、未確認を他の視点から補完したりしません。</div><div class="tiny">撮影済み視点：'+present+'/'+officialAngles.length+' ／ 手動時刻確認済み：'+confirmed+'/'+total+'セル</div><div style="overflow-x:auto"><table class="table"><thead><tr><th>撮影視点</th>'+phases.map(([,label])=>'<th>'+label+'</th>').join('')+'</tr></thead><tbody>'+rows+'</tbody></table></div>';
 }
+function renderFiveViewCoverageGuidance(records,officialAngles){
+ const phases=[['approach','助走'],['plant','軸足接地'],['swing','蹴り脚の振り出し'],['impact','インパクト'],['follow_through','フォロースルー']];
+ const latestByAngle=new Map();
+ officialAngles.forEach(angle=>{
+  const matches=records.filter(r=>String(r.cameraAngle||'')===angle).slice().sort((a,b)=>String(a.date||'').localeCompare(String(b.date||''))||Number(a.id)-Number(b.id));
+  if(matches.length)latestByAngle.set(angle,matches[matches.length-1]);
+ });
+ const statusFor=(record,key)=>{
+  const p=record?.reviewedKickPhases?.[key];
+  if(!p||p.confirmedBy!=='parent_manual_review')return '未確認';
+  if(p.status==='映像で確認できず')return 'この角度では確認できず';
+  if(p.status==='確認済み'&&Number.isFinite(p.timeSeconds))return '確認済み';
+  return '未確認';
+ };
+ const phaseRows=phases.map(([key,label])=>{
+  const confirmed=[],notVisible=[],pending=[],notShot=[];
+  officialAngles.forEach(angle=>{
+   const record=latestByAngle.get(angle);
+   if(!record){notShot.push(angle);return;}
+   const status=statusFor(record,key);
+   if(status==='確認済み')confirmed.push(angle);
+   else if(status==='この角度では確認できず')notVisible.push(angle);
+   else pending.push(angle);
+  });
+  let next='この動作を確認できる撮影視点はまだ確定していません。';
+  if(pending.length)next='まず撮影済みの「'+pending.join('・')+'」の動画を再生し、手動確認してください。';
+  else if(notShot.length)next='未撮影の「'+notShot.join('・')+'」から追加撮影し、同じキックIDに紐づけてください。';
+  else if(notVisible.length)next='全撮影済み視点で未確認です。別視点で撮り直すか、映像を確認できる状態で再撮影してください。';
+  else if(confirmed.length)next='手動確認済みです。追加撮影は必須ではありません。';
+  const line=(title,items)=>items.length?'<div class="tiny"><b>'+title+'：</b>'+items.map(esc).join('・')+'</div>':'';
+  return '<section class="listitem" style="display:block;margin:8px 0"><b>'+label+'</b>'+line('確認済み',confirmed)+line('映像で確認できず',notVisible)+line('動画あり・手動確認待ち',pending)+line('未撮影',notShot)+'<div class="tiny" style="margin-top:5px"><b>次の確認：</b>'+esc(next)+'</div></section>';
+ }).join('');
+ const missing=officialAngles.filter(angle=>!latestByAngle.has(angle));
+ const covered=officialAngles.length-missing.length;
+ return '<h4 style="margin-top:14px">視点別カバー状況と追加撮影ガイド</h4><div class="tiny muted">各視点の最新動画に対する保護者の手動確認だけを集計。映像から見えない部位・動作をAIが推定したり、他視点の確認結果で補完したりしません。</div><div class="tiny">撮影済み視点 '+covered+'/'+officialAngles.length+' ／ 未撮影 '+missing.length+'/'+officialAngles.length+'</div>'+(missing.length?'<div class="note"><b>追加撮影が必要な視点</b><div class="tiny">'+missing.map(esc).join('・')+'</div><div class="tiny muted">撮影時は同じキックID・キック種別・利き足を設定してください。距離と画角も記録してください。</div></div>':'<div class="tiny">5視点すべてに動画があります。節目ごとの確認状況を下に表示します。</div>')+phaseRows;
+}
 function renderMultiAngleKickReview(){
  const host=document.getElementById('multiAngleKickReview');if(!host)return;
  const all=(state.aiFormAnalyses||[]);
@@ -3930,7 +3966,7 @@ function renderMultiAngleKickReview(){
  const countByAngle=officialAngles.map(name=>({name,count:records.filter(r=>r.cameraAngle===name).length}));
  const angleSummary=countByAngle.map(x=>x.name+' '+x.count+'件').join(' ／ ');
  const comparisonNotice='AI数値は撮影角度ごとに個別表示しています。異なる角度の数値を平均・合算せず、角度が異なる記録同士の数値比較は行いません。異なる撮影角度の関節角度・移動量を直接比較したり、改善判定したりしません。同じ角度でも撮影距離・画角・キック条件が一致しない場合は比較しません。';
- host.innerHTML='<div class="note"><b>統合フォーム記録｜同一キックID：'+esc(groupId)+'</b><div class="tiny">'+esc(latest.foot||'右足')+'の同一キックに紐づく動画 '+records.length+'件。'+angleSummary+'</div><div class="tiny">'+comparisonNotice+'</div></div>'+renderFiveViewPhaseEvidenceMatrix(records,officialAngles)+'<h4>角度別の証拠と動画</h4>'+angleCards+'<h4 style="margin-top:14px">項目ごとの確認証拠一覧</h4><div class="tiny muted">同じ項目を複数角度で確認できた場合、角度・日付・手動確認内容をそれぞれ残します。</div>'+(evidenceByItem||'<div class="empty">手動確認済みの項目はまだありません。</div>')+'<h4 style="margin-top:14px">動作節目の角度別・手動時刻一覧</h4>'+(phaseEvidence||'<div class="empty">動作時刻の手動確認はまだありません。</div>')+improvementHtml;
+ host.innerHTML='<div class="note"><b>統合フォーム記録｜同一キックID：'+esc(groupId)+'</b><div class="tiny">'+esc(latest.foot||'右足')+'の同一キックに紐づく動画 '+records.length+'件。'+angleSummary+'</div><div class="tiny">'+comparisonNotice+'</div></div>'+renderFiveViewCoverageGuidance(records,officialAngles)+renderFiveViewPhaseEvidenceMatrix(records,officialAngles)+'<h4>角度別の証拠と動画</h4>'+angleCards+'<h4 style="margin-top:14px">項目ごとの確認証拠一覧</h4><div class="tiny muted">同じ項目を複数角度で確認できた場合、角度・日付・手動確認内容をそれぞれ残します。</div>'+(evidenceByItem||'<div class="empty">手動確認済みの項目はまだありません。</div>')+'<h4 style="margin-top:14px">動作節目の角度別・手動時刻一覧</h4>'+(phaseEvidence||'<div class="empty">動作時刻の手動確認はまだありません。</div>')+improvementHtml;
 }
 
 
