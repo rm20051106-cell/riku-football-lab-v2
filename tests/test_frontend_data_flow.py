@@ -274,7 +274,7 @@ class FrontendDataFlowContracts(unittest.TestCase):
 
     def test_stage18_forecast_uses_robust_median_and_displays_uncertainty(self):
         start = HTML.index("function getGrowthForecastData()")
-        end = HTML.index("\\nfunction ", start + 20)
+        end = HTML.index("\nfunction ", start + 20)
         fn = HTML[start:end]
         self.assertIn("points.length<4", fn)
         self.assertIn("const median=values=>", fn)
@@ -287,7 +287,7 @@ class FrontendDataFlowContracts(unittest.TestCase):
 
     def test_stage18_training_match_comparison_requires_comparable_samples(self):
         start = HTML.index("function getTrainingMatchCorrelationData()")
-        end = HTML.index("\\nfunction ", start + 20)
+        end = HTML.index("\nfunction ", start + 20)
         fn = HTML[start:end]
         self.assertIn("dayDistance(match.date,training.date)<=30", fn)
         self.assertIn("expectedRole", fn)
