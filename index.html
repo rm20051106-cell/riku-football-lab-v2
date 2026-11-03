@@ -3904,7 +3904,7 @@ function renderMultiAngleKickReview(){
  const countByAngle=officialAngles.map(name=>({name,count:records.filter(r=>r.cameraAngle===name).length}));
  const angleSummary=countByAngle.map(x=>x.name+' '+x.count+'件').join(' ／ ');
  const comparisonNotice='AI数値は撮影角度ごとに個別表示しています。異なる角度の数値を平均・合算せず、角度が異なる記録同士の数値比較は行いません。異なる撮影角度の関節角度・移動量を直接比較したり、改善判定したりしません。同じ角度でも撮影距離・画角・キック条件が一致しない場合は比較しません。';
- host.innerHTML='<div class="note"><b>統合フォーム記録｜同一キックID：'+esc(groupId)+'</b><div class="tiny">右足の同一キックに紐づく動画 '+records.length+'件。'+angleSummary+'</div><div class="tiny">'+comparisonNotice+'</div></div><h4>角度別の証拠と動画</h4>'+angleCards+'<h4 style="margin-top:14px">項目ごとの確認証拠一覧</h4><div class="tiny muted">同じ項目を複数角度で確認できた場合、角度・日付・手動確認内容をそれぞれ残します。</div>'+(evidenceByItem||'<div class="empty">手動確認済みの項目はまだありません。</div>')+'<h4 style="margin-top:14px">動作節目の角度別・手動時刻一覧</h4>'+(phaseEvidence||'<div class="empty">動作時刻の手動確認はまだありません。</div>')+improvementHtml;
+ host.innerHTML='<div class="note"><b>統合フォーム記録｜同一キックID：'+esc(groupId)+'</b><div class="tiny">'+esc(latest.foot||'右足')+'の同一キックに紐づく動画 '+records.length+'件。'+angleSummary+'</div><div class="tiny">'+comparisonNotice+'</div></div><h4>角度別の証拠と動画</h4>'+angleCards+'<h4 style="margin-top:14px">項目ごとの確認証拠一覧</h4><div class="tiny muted">同じ項目を複数角度で確認できた場合、角度・日付・手動確認内容をそれぞれ残します。</div>'+(evidenceByItem||'<div class="empty">手動確認済みの項目はまだありません。</div>')+'<h4 style="margin-top:14px">動作節目の角度別・手動時刻一覧</h4>'+(phaseEvidence||'<div class="empty">動作時刻の手動確認はまだありません。</div>')+improvementHtml;
 }
 
 
