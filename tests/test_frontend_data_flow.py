@@ -204,5 +204,64 @@ class FrontendDataFlowContracts(unittest.TestCase):
         self.assertIn("ポジション別の判断・周囲確認評価からの練習候補", HTML)
 
 
+    def test_stage17_growth_forecast_requires_three_manual_match_samples(self):
+        start = HTML.index("function getGrowthForecastData()")
+        end = HTML.index("\nfunction ", start + 20)
+        fn = HTML[start:end]
+        self.assertIn("row.total>=2&&Number.isFinite(row.rate)", fn)
+        self.assertIn("points.length<3", fn)
+        self.assertIn("Math.max(0,Math.min(100", fn)
+        self.assertIn("過去の直線傾向を1試合分だけ延長", HTML)
+
+    def test_stage17_training_match_comparison_uses_manual_same_focus_events(self):
+        start = HTML.index("function getManualMatchOutcomeEvents(")
+        end = HTML.index("\nfunction ", start + 20)
+        fn = HTML[start:end]
+        self.assertIn("isManuallyReviewedMatchEvent(ev)", fn)
+        self.assertIn("ev.assessmentSource==='manual'", fn)
+        self.assertIn("getTrainingFocusForMatchEvent(ev)===focus", fn)
+        self.assertIn("beforeRate", HTML)
+        self.assertIn("afterRate", HTML)
+        self.assertIn("練習の因果効果を示すものではなく", HTML)
+
+    def test_stage17_situation_breakdown_requires_explicit_role_and_action(self):
+        start = HTML.index("function getSituationDecisionBreakdown()")
+        end = HTML.index("\nfunction ", start + 20)
+        fn = HTML[start:end]
+        self.assertIn("isManuallyReviewedMatchEvent(ev)", fn)
+        self.assertIn("!ev.positionRole||!ev.actionType", fn)
+        self.assertIn("ev.positioningReview", fn)
+        self.assertIn("row.scenes>=2", fn)
+
+    def test_stage17_ai_form_history_compares_only_matching_capture_setup(self):
+        start = HTML.index("function renderAiFormCompare()")
+        end = HTML.index("\nfunction ", start + 20)
+        fn = HTML[start:end]
+        self.assertIn("sameSetup(x)", fn)
+        self.assertIn("slice(0,5)", fn)
+        self.assertIn("同条件の過去記録", fn)
+        self.assertIn("角度差は改善判定ではありません", fn)
+
+    def test_stage17_weekly_plan_uses_training_match_pairs_without_causal_claim(self):
+        start = HTML.index("function getWeeklyCoachPlan()")
+        end = HTML.index("\nfunction ", start + 20)
+        fn = HTML[start:end]
+        self.assertIn("getTrainingMatchCorrelationData()", fn)
+        self.assertIn("trainingCorrelation.count>=2", fn)
+        self.assertIn("練習の因果効果を示すものではなく", fn)
+
+    def test_stage17_backup_restore_preserves_all_growth_evidence_and_rolls_back(self):
+        start = HTML.index("async function exportData()")
+        end = HTML.index("importFile.addEventListener", start)
+        backup = HTML[start:end]
+        self.assertIn("recordCounts:", backup)
+        self.assertIn("stateSha256", backup)
+        self.assertIn("state", backup)
+        self.assertIn("previousState=state,previousStoredState=localStorage.getItem(KEY)", backup)
+        self.assertIn("state=previousState", backup)
+        self.assertIn("analysis.matchId=String(match.id)", backup)
+        self.assertIn("match.aiFormAnalysisIds.push(analysis.id)", backup)
+
+
 if __name__ == "__main__":
     unittest.main()
