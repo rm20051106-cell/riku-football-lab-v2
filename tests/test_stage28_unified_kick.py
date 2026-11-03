@@ -11,7 +11,7 @@ HTML = (ROOT / "index.html").read_text(encoding="utf-8")
 class Stage28UnifiedKickTests(unittest.TestCase):
     def test_same_kick_is_rendered_as_one_unified_record(self):
         self.assertIn("function renderMultiAngleKickReview()", HTML)
-        self.assertIn("String(x.kickGroupId||'')===groupId", HTML)
+        self.assertIn("x.kickGroupId===latest.kickGroupId", HTML)
         self.assertIn("統合フォーム記録", HTML)
         self.assertIn("角度別の証拠と動画", HTML)
 
