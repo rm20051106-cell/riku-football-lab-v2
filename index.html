@@ -987,13 +987,13 @@ async function postVideoToAI(file, endpoint, extra, resultElement){
    const rawFrames=sm.frames||[];
    const stride=Math.max(1,Math.ceil(rawFrames.length/8));
    const timeline=rawFrames.filter((_,i)=>i%stride===0).slice(0,8).map(fr=>({time:fr.time_seconds??null,leftKnee:fr.left_knee_angle_deg??null,rightKnee:fr.right_knee_angle_deg??null,leftHip:fr.left_hip_angle_deg??null,rightHip:fr.right_hip_angle_deg??null,trunk:fr.trunk_lean_image_angle_deg??null,leftFootMotion:fr.left_foot_image_motion_per_sec??null,rightFootMotion:fr.right_foot_image_motion_per_sec??null,visible:fr.visible_landmarks??null}));
-   const previousAiFormAnalyses=JSON.parse(JSON.stringify(state.aiFormAnalyses));
+   const previousAiFormAnalyses=JSON.parse(JSON.stringify(state.aiFormAnalyses)),previousMatchAnalyses=JSON.parse(JSON.stringify(state.matchAnalyses||[]));
    const analysis={id:nextUniqueRecordId(state.aiFormAnalyses,state.forms,state.clips,state.matchAnalyses),date:today(),title:formTitle.value.trim()||file.name||'フォーム動画',kind:extra.kick_type||'シュート',foot:extra.dominant_foot||'右足',sourceVideoKey:getVideoSourceKey(file),formId:null,videoStorageKey:null,frames:sm.sampled_pose_frames??null,knee:sm.average_left_right_knee_angle_deg??null,hip:sm.average_left_right_hip_angle_deg??null,trunk:sm.average_trunk_lean_image_angle_deg??null,feedback:sm.feedback||[],cameraAngle:sm.camera_angle||extra.camera_angle||'未選択',cameraGuidance:sm.camera_angle_guidance||[],items:aiItems,timeline};
    state.aiFormAnalyses.unshift(analysis);
    const linkedForm=(state.forms||[]).find(form=>form.sourceVideoKey&&form.sourceVideoKey===analysis.sourceVideoKey);
    if(linkedForm)connectAiFormAnalysisToForm(analysis,linkedForm);
    syncAiFormAnalysisMatchLinks(analysis);
-   if(!persist()){state.aiFormAnalyses=previousAiFormAnalyses;if(linkedForm){linkedForm.aiAnalysisIds=(linkedForm.aiAnalysisIds||[]).filter(id=>String(id)!==String(analysis.id));}resultElement.textContent+='\n解析結果は表示しましたが、端末への履歴保存に失敗しました。既存の記録は変更していません。バックアップと空き容量を確認してください。';return;}
+   if(!persist()){state.aiFormAnalyses=previousAiFormAnalyses;state.matchAnalyses=previousMatchAnalyses;if(linkedForm){linkedForm.aiAnalysisIds=(linkedForm.aiAnalysisIds||[]).filter(id=>String(id)!==String(analysis.id));}resultElement.textContent+='\n解析結果は表示しましたが、端末への履歴保存に失敗しました。既存の記録は変更していません。バックアップと空き容量を確認してください。';return;}
   }
  }catch(e){
   let msg=e.name==='AbortError'?'解析が8分でタイムアウトしました。60秒以内・100MB以内の動画で再試行してください。':e.message==='Load failed'?'通信が途中で切れました。サーバーの無料枠が停止・再起動した可能性があります。60秒以内・100MB以内の動画で再試行してください。':'['+stage+'] '+e.message;
