@@ -360,8 +360,8 @@ class FrontendDataFlowContracts(unittest.TestCase):
         self.assertIn("isManuallyReviewedMatchEvent(event)", fn)
         self.assertIn("event.assessmentSource==='manual'", fn)
         self.assertIn("['良かった','改善したい'].includes(event.assessment)", fn)
-        self.assertIn("row.total>=2&&row.good>=2&&row.good>row.improve", fn)
-        self.assertIn("row.total>=2&&row.improve>=2&&row.improve>row.good", fn)
+        self.assertIn("row.matches.size>=2&&row.total>=2&&row.good>=2&&row.good>row.improve", fn)
+        self.assertIn("row.matches.size>=2&&row.total>=2&&row.improve>=2&&row.improve>row.good", fn)
 
     def test_stage20_dossier_integrates_matches_training_measurements_and_media_counts(self):
         start = HTML.index("function getPlayerDossierSummary()")
