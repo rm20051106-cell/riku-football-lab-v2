@@ -29,6 +29,11 @@ class Stage32ManualKickPhaseReviewTests(unittest.TestCase):
         self.assertIn("r.reviewedKickPhases?.[key]", HTML)
         self.assertIn("手動", HTML)
 
+    def test_unobservable_phase_can_be_saved_without_fabricated_time(self):
+        self.assertIn("status==='確認済み'&&(time===null", HTML)
+        self.assertIn("timeSeconds:time===null?null", HTML)
+        self.assertIn("映像で確認できず", HTML)
+
     def test_ai_candidates_are_not_overwritten_by_manual_times(self):
         self.assertIn("kickPhaseCandidates:sm.kick_phase_candidates||null", HTML)
         self.assertIn("reviewedKickPhases", HTML)
