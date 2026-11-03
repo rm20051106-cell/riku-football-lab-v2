@@ -311,7 +311,7 @@ class FrontendDataFlowContracts(unittest.TestCase):
 
     def test_stage19_priority_board_uses_only_comparable_manual_match_evidence(self):
         start = HTML.index("function getMatchGrowthPriorityBoard()")
-        end = HTML.index("\\nfunction ", start + 20)
+        end = HTML.index("\nfunction ", start + 20)
         fn = HTML[start:end]
         self.assertIn("latest.total<2", fn)
         self.assertIn("status==='再確認が必要'", fn)
@@ -321,7 +321,7 @@ class FrontendDataFlowContracts(unittest.TestCase):
 
     def test_stage19_long_term_growth_requires_two_matches_with_two_manual_scenes(self):
         start = HTML.index("function getLongTermGrowthSummary()")
-        end = HTML.index("\\nfunction ", start + 20)
+        end = HTML.index("\nfunction ", start + 20)
         fn = HTML[start:end]
         self.assertIn("row.total>=2&&Number.isFinite(row.rate)", fn)
         self.assertIn("if(valid.length<2)", fn)
@@ -331,7 +331,7 @@ class FrontendDataFlowContracts(unittest.TestCase):
 
     def test_stage19_weekly_plan_uses_prioritized_manual_growth_issue(self):
         start = HTML.index("function getWeeklyCoachPlan()")
-        end = HTML.index("\\nfunction ", start + 20)
+        end = HTML.index("\nfunction ", start + 20)
         fn = HTML[start:end]
         self.assertIn("getMatchGrowthPriorityBoard()", fn)
         self.assertIn("if(growthPriority&&!growthGoal)", fn)
