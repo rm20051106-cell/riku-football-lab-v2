@@ -3778,7 +3778,7 @@ function renderMultiAngleKickReview(){
  const latest=all[0];
  if(!latest||!latest.kickGroupId){host.innerHTML='<div class="empty">同一キックIDが未設定です。各角度の動画に同じIDを入力してください。</div>';return;}
  const groupId=String(latest.kickGroupId);
- const records=all.filter(x=>String(x.kickGroupId||'')===groupId&&(x.foot||'右足')==='右足')
+ const records=all.filter(x=>x.kickGroupId===latest.kickGroupId&&(x.foot||'右足')==='右足')
   .slice().sort((a,b)=>String(a.date||'').localeCompare(String(b.date||''))||Number(a.id)-Number(b.id));
  const angles=[...new Set(records.map(x=>x.cameraAngle||'未設定'))];
  const labels={plantFoot:'軸足',kickingLeg:'蹴り足',trunk:'体幹',footAndBall:'足先・ボール'};
@@ -3800,7 +3800,7 @@ function renderMultiAngleKickReview(){
   const metrics=[['膝',r.knee],['股関節',r.hip],['体幹傾き',r.trunk]].map(([name,value])=>'<span class="tag">'+name+' '+(value!==null&&value!==undefined&&value!==''&&Number.isFinite(Number(value))?Number(value).toFixed(1)+'°':'未確認')+'</span>').join(' ');
   const linkedForm=(state.forms||[]).find(form=>String(form.id)===String(r.formId));
   const playback=linkedForm&&linkedForm.hasVideo?'<button class="secondary small" onclick="playSavedForm('+Number(linkedForm.id)+')">この角度の保存動画を再生</button>':'<span class="tiny muted">再生用フォーム動画の連携なし</span>';
-  return '<section class="listitem" style="display:block;margin:10px 0"><div class="row" style="justify-content:space-between;align-items:center"><b>'+esc(r.cameraAngle||'角度未設定')+'｜'+esc(r.date||'日付なし')+'</b><span class="tag">'+(confirmed?'手動確認済み':'手動確認なし')+'</span></div><div class="tiny muted">角度記録 '+(index+1)+'／'+records.length+'・撮影距離 '+esc(r.cameraDistance||'未確認')+'・画角 '+esc(r.framing||'未確認')+'</div><div style="margin:7px 0">'+metrics+'</div><h4>この角度で確認できた範囲</h4>'+visibilityHtml+'<h4 style="margin-top:8px">手動確認記録（この角度の証拠）</h4>'+manualHtml+'<h4 style="margin-top:8px">手動登録した動作の節目</h4><div>'+phaseHtml+'</div><div style="margin-top:8px">'+playback+'</div></section>';
+  return '<section class="listitem" style="display:block;margin:10px 0"><div class="row" style="justify-content:space-between;align-items:center"><b>'+esc(r.cameraAngle||'角度未設定')+'｜'+esc(r.date||'日付なし')+'</b><span class="tag">'+(confirmed?'手動確認済み':'手動確認なし')+'</span></div><div class="tiny muted">角度記録 '+(index+1)+'／'+records.length+'・撮影距離 '+esc(r.cameraDistance||'未確認')+'・画角 '+esc(r.framing||'未確認')+'</div><div style="margin:7px 0">'+metrics+'</div><h4>この角度で確認できた範囲</h4>'+visibilityHtml+'<h4 style="margin-top:8px">手動確認記録（この角度の証拠）</h4>'+manualHtml+'<h4 style="margin-top:8px">手動登録した節目</h4><div>'+phaseHtml+'</div><div style="margin-top:8px">'+playback+'</div></section>';
  }).join('');
  const evidenceByItem=itemDefs.map(item=>{
   const evidence=records.flatMap(r=>{
