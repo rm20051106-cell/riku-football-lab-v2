@@ -413,7 +413,7 @@ class FrontendDataFlowContracts(unittest.TestCase):
 
     def test_stage21_growth_goal_linkage_uses_only_manual_goal_and_exact_training_links(self):
         start = HTML.index("function getGrowthGoalTrainingLinkage()")
-        end = HTML.index("\\nfunction ", start + 20)
+        end = HTML.index("\nfunction ", start + 20)
         fn = HTML[start:end]
         self.assertIn("goal.source!=='manual-reviewed-match-growth'", fn)
         self.assertIn("item.sourceMatch?.growthGoalId===goal.id", fn)
@@ -421,7 +421,7 @@ class FrontendDataFlowContracts(unittest.TestCase):
 
     def test_stage21_manual_match_goal_creates_persisted_plan_and_rolls_back(self):
         start = HTML.index("function applyMatchGrowthGoal(")
-        end = HTML.index("\\nfunction ", start + 20)
+        end = HTML.index("\nfunction ", start + 20)
         fn = HTML[start:end]
         self.assertIn("getMatchGrowthRecommendations()", fn)
         self.assertIn("source:'manual-reviewed-match-growth'", fn)
@@ -431,7 +431,7 @@ class FrontendDataFlowContracts(unittest.TestCase):
 
     def test_stage21_weekly_training_session_keeps_goal_identity(self):
         start = HTML.index("function applyWeeklyCoachSession(")
-        end = HTML.index("\\nfunction ", start + 20)
+        end = HTML.index("\nfunction ", start + 20)
         fn = HTML[start:end]
         self.assertIn("pendingTrainingSource?.matchGrowthGoal", fn)
         self.assertIn("growthGoalId", fn)
@@ -445,7 +445,7 @@ class FrontendDataFlowContracts(unittest.TestCase):
 
     def test_stage21_goal_status_save_failure_restores_previous_goal(self):
         start = HTML.index("function updateGrowthGoalStatus(")
-        end = HTML.index("\\nfunction ", start + 20)
+        end = HTML.index("\nfunction ", start + 20)
         fn = HTML[start:end]
         self.assertIn("const previous={...current}", fn)
         self.assertIn("if(!persist())", fn)
