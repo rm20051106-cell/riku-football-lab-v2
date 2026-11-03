@@ -45,6 +45,14 @@ class FrontendDataFlowContracts(unittest.TestCase):
         self.assertIn("||growthGoal?.focus||", HTML)
         self.assertIn("goalText=growthGoal?.note||goal?.goal", HTML)
 
+    def test_next_match_growth_goal_expires_after_seven_days(self):
+        start = HTML.index("function getWeeklyCoachPlan()")
+        end = HTML.index("\\nfunction ", start + 15)
+        plan = HTML[start:end]
+        self.assertIn("growthGoalAgeDays>=0&&growthGoalAgeDays<7?growthGoalCandidate:null", plan)
+        self.assertIn("growthGoalCandidate?.date", plan)
+        self.assertIn("growthGoalAgeDays!==null", plan)
+
     def test_explicit_match_growth_goal_has_final_priority_in_weekly_plan(self):
         start = HTML.index("function getWeeklyCoachPlan()")
         end = HTML.index("\nfunction ", start + 15)
