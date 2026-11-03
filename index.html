@@ -905,6 +905,21 @@ function renderAiFormAutoScore(score){
  if(score.score===null)return '<div class="note"><b>AI自動採点：採点対象外</b><p class="tiny">'+esc(score.note)+'</p></div>';
  return '<div class="note"><b>AI自動スコア（計測品質）</b><div style="font-size:30px;font-weight:800">'+score.score+'<span class="tiny"> / 100</span></div><b>'+esc(score.grade)+'</b><div class="tiny">撮影角度：'+esc(score.angle)+'｜計測項目：'+score.measured+'/'+score.total+'｜取得率：'+score.coverage+'%｜姿勢変動参考値：'+(score.stability===null?'算出不可':score.stability+'/100')+'</div>'+(score.missing?.length?'<div class="tiny">未計測：'+score.missing.map(esc).join('・')+'</div>':'')+'<p class="tiny muted">'+esc(score.note)+'</p></div>';
 }
+function renderKickPhaseCandidates(data,dominantFoot){
+ if(!data)return '';
+ const side=String(dominantFoot||'右足').includes('左')?'left':'right';
+ const foot=data.feet?.[side]||{};
+ const fmt=item=>item&&Number.isFinite(item.time_seconds)?item.time_seconds.toFixed(2)+'秒付近':'未検出';
+ const peak=foot.peak_candidate,after=foot.post_peak_candidate,stable=foot.opposite_foot_relative_stability;
+ const phases=[
+  ['助走','自動確定しない','選手の移動方向・カメラ位置を目視確認'],
+  ['軸足接地','自動確定しない','ボールとの位置関係を動画で確認'],
+  ['蹴り脚の振り出し',peak?'動きのピーク候補':'候補なし',peak?fmt(peak):'足先の動きが十分に検出できません'],
+  ['インパクト','自動確定しない','ボールと足の接触は目視確認'],
+  ['フォロースルー',after?'ピーク後の減速候補':'候補なし',after?fmt(after):'ピーク後の減速候補を検出できません']
+ ];
+ return '<div class="note"><b>キック動作タイムライン（第31段階）</b><div class="tiny muted">対象：'+(side==='left'?'左':'右')+'足｜解析間隔：約'+(data.sampling_interval_seconds??'—')+'秒</div>'+phases.map(p=>'<div class="listitem"><b>'+p[0]+'</b><div class="grow"><div>'+p[1]+'</div><div class="tiny muted">'+p[2]+'</div></div></div>').join('')+(stable?'<div class="tiny muted">反対足の画像上移動量：'+stable.image_motion_per_sec+'（相対値 '+(stable.relative_to_peak??'—')+'）。軸足接地の証拠ではありません。</div>':'')+'<p class="tiny muted">自動候補は画像上の足先移動から抽出した目安です。助走・軸足接地・インパクトをAIが確定したり、技術の良し悪しを採点したりするものではありません。</p>'+(data.limitations||[]).map(x=>'<div class="tiny muted">・'+esc(x)+'</div>').join('')+'</div>';
+}
 function buildAiFormItems(sm){
  const frames=sm.frames||[];
  const knees=aiRange(frames.flatMap(f=>[f.left_knee_angle_deg,f.right_knee_angle_deg]));
@@ -1019,7 +1034,7 @@ async function postVideoToAI(file, endpoint, extra, resultElement){
   let summary=j.summary||{};
   const matchNotice=endpoint==='/analyze/match'?'<br><br><b>背番号の認識状況</b><br>対象番号：'+esc(j.requested_jersey_numbers||extra.jersey_numbers||'未指定')+'<br>現在は背番号の読み取り・陸玖の個体識別・選手追跡は未実装です。上記の姿勢フレーム数は選手を特定した人数ではありません。':'';
   const initialAutoScore=buildAiFormAutoScore(summary,extra.camera_angle);
-  resultElement.innerHTML=renderAiFormAutoScore(initialAutoScore)+'<div class="note success"><b>サーバー解析完了</b><br>検出姿勢フレーム：'+(summary.sampled_pose_frames??'—')+'<br>解析間隔：約'+(summary.sampling_interval_seconds??1)+'秒ごと（'+(summary.sampling_rate_fps??'—')+'回/秒）<br>膝角度（左右平均・推定）：'+(summary.average_left_right_knee_angle_deg??'—')+'°<br>股関節角度（左右平均・推定）：'+(summary.average_left_right_hip_angle_deg??'—')+'°<br>体幹傾き（画像上の推定）：'+(summary.average_trunk_lean_image_angle_deg??'—')+'°'+matchNotice+'<br><br><b>撮影角度：'+esc(summary.camera_angle||extra.camera_angle||'未選択')+'</b><br>'+(summary.camera_angle_guidance||[]).map(x=>'・'+esc(x)).join('<br>')+'<br><br>'+(summary.feedback||[]).map(x=>esc(x)).join('<br>')+'</div>';
+  resultElement.innerHTML=renderAiFormAutoScore(initialAutoScore)+renderKickPhaseCandidates(summary.kick_phase_candidates,extra.dominant_foot)+'<div class="note success"><b>サーバー解析完了</b><br>検出姿勢フレーム：'+(summary.sampled_pose_frames??'—')+'<br>解析間隔：約'+(summary.sampling_interval_seconds??1)+'秒ごと（'+(summary.sampling_rate_fps??'—')+'回/秒）<br>膝角度（左右平均・推定）：'+(summary.average_left_right_knee_angle_deg??'—')+'°<br>股関節角度（左右平均・推定）：'+(summary.average_left_right_hip_angle_deg??'—')+'°<br>体幹傾き（画像上の推定）：'+(summary.average_trunk_lean_image_angle_deg??'—')+'°'+matchNotice+'<br><br><b>撮影角度：'+esc(summary.camera_angle||extra.camera_angle||'未選択')+'</b><br>'+(summary.camera_angle_guidance||[]).map(x=>'・'+esc(x)).join('<br>')+'<br><br>'+(summary.feedback||[]).map(x=>esc(x)).join('<br>')+'</div>';
   resultElement.dataset.result=JSON.stringify(j);
   if(endpoint==='/analyze/form'){
    state.aiFormAnalyses=state.aiFormAnalyses||[];
@@ -1029,7 +1044,7 @@ async function postVideoToAI(file, endpoint, extra, resultElement){
    const stride=Math.max(1,Math.ceil(rawFrames.length/8));
    const timeline=rawFrames.filter((_,i)=>i%stride===0).slice(0,8).map(fr=>({time:fr.time_seconds??null,leftKnee:fr.left_knee_angle_deg??null,rightKnee:fr.right_knee_angle_deg??null,leftHip:fr.left_hip_angle_deg??null,rightHip:fr.right_hip_angle_deg??null,trunk:fr.trunk_lean_image_angle_deg??null,leftFootMotion:fr.left_foot_image_motion_per_sec??null,rightFootMotion:fr.right_foot_image_motion_per_sec??null,visible:fr.visible_landmarks??null}));
    const previousAiFormAnalyses=JSON.parse(JSON.stringify(state.aiFormAnalyses)),previousMatchAnalyses=JSON.parse(JSON.stringify(state.matchAnalyses||[]));
-   const analysis={id:nextUniqueRecordId(state.aiFormAnalyses,state.forms,state.clips,state.matchAnalyses),date:today(),title:formTitle.value.trim()||file.name||'フォーム動画',kind:extra.kick_type||'シュート',foot:extra.dominant_foot||'右足',sourceVideoKey:originalSourceVideoKey,formId:null,videoStorageKey:null,frames:sm.sampled_pose_frames??null,knee:sm.average_left_right_knee_angle_deg??null,hip:sm.average_left_right_hip_angle_deg??null,trunk:sm.average_trunk_lean_image_angle_deg??null,feedback:sm.feedback||[],cameraAngle:sm.camera_angle||extra.camera_angle||'未選択',cameraDistance:extra.camera_distance||'未確認',framing:extra.framing||'未確認',kickGroupId:String(extra.kick_group_id||'').trim().slice(0,40),angleVisibility:{plantFoot:'未確認',kickingLeg:'未確認',trunk:'未確認',footAndBall:'未確認'},cameraGuidance:sm.camera_angle_guidance||[],autoScore:buildAiFormAutoScore(sm,sm.camera_angle||extra.camera_angle),items:aiItems,timeline};
+   const analysis={id:nextUniqueRecordId(state.aiFormAnalyses,state.forms,state.clips,state.matchAnalyses),date:today(),title:formTitle.value.trim()||file.name||'フォーム動画',kind:extra.kick_type||'シュート',foot:extra.dominant_foot||'右足',sourceVideoKey:originalSourceVideoKey,formId:null,videoStorageKey:null,frames:sm.sampled_pose_frames??null,knee:sm.average_left_right_knee_angle_deg??null,hip:sm.average_left_right_hip_angle_deg??null,trunk:sm.average_trunk_lean_image_angle_deg??null,feedback:sm.feedback||[],cameraAngle:sm.camera_angle||extra.camera_angle||'未選択',cameraDistance:extra.camera_distance||'未確認',framing:extra.framing||'未確認',kickGroupId:String(extra.kick_group_id||'').trim().slice(0,40),angleVisibility:{plantFoot:'未確認',kickingLeg:'未確認',trunk:'未確認',footAndBall:'未確認'},cameraGuidance:sm.camera_angle_guidance||[],autoScore:buildAiFormAutoScore(sm,sm.camera_angle||extra.camera_angle),kickPhaseCandidates:sm.kick_phase_candidates||null,items:aiItems,timeline};
    state.aiFormAnalyses.unshift(analysis);
    const linkedForm=(state.forms||[]).find(form=>form.sourceVideoKey&&form.sourceVideoKey===analysis.sourceVideoKey);
    if(linkedForm)connectAiFormAnalysisToForm(analysis,linkedForm);
