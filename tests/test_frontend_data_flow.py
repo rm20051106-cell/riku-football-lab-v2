@@ -392,5 +392,13 @@ class FrontendDataFlowContracts(unittest.TestCase):
         for token in ("actual.toLowerCase()!==String(parsed.stateSha256).toLowerCase()", "state=previousState", "await compareVideoBlobs(verified.blob,restoredFile)", "URL.createObjectURL(saved.blob)", "matchVideo.onloadeddata", "formVideo.onloadeddata"):
             self.assertIn(token, HTML)
 
+    def test_stage20_dossier_filters_measurements_to_valid_iso_dates(self):
+        start = HTML.index("function getPlayerDossierSummary()")
+        end = HTML.index("\\nfunction ", start + 20)
+        fn = HTML[start:end]
+        self.assertIn("latestMeasures=metricTypes.map", fn)
+        self.assertIn("Number.isFinite(Number(item.value))", fn)
+        self.assertIn("item.date||''", fn)
+
 if __name__ == "__main__":
     unittest.main()
