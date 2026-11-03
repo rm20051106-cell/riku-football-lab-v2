@@ -50,7 +50,8 @@ button:focus-visible,.button:focus-visible,a:focus-visible,input:focus-visible,s
 <section class="view" id="growth">
  <h1 class="section-title">陸玖の成長グラフ</h1>
  <p class="section-desc">保存された練習・試合評価・測定記録を時系列で表示。記録が増えるほど変化が見やすくなります。</p>
- <div class="card"><h2>選手カルテ｜強み・残る課題</h2><p class="tiny muted">試合・練習・測定・動画記録をまとめた陸玖の成長カルテ。確認済みデータが足りない項目は評価しません。</p><div id="playerDossier"></div></div>\n <div class="card"><h2>陸玖専用・月間成長レポート</h2><p class="tiny muted">保存された練習・試合評価・測定記録から、その月の取り組みと次の重点を自動でまとめます。</p><label class="label" for="growthReportMonth">対象月</label><select id="growthReportMonth" onchange="renderMonthlyGrowthReport()"></select><div id="monthlyGrowthReport"></div></div>
+ <div class="card"><h2>選手カルテ｜強み・残る課題</h2><p class="tiny muted">試合・練習・測定・動画記録をまとめた陸玖の成長カルテ。確認済みデータが足りない項目は評価しません。</p><div id="playerDossier"></div></div>
+ <div class="card"><h2>陸玖専用・月間成長レポート</h2><p class="tiny muted">保存された練習・試合評価・測定記録から、その月の取り組みと次の重点を自動でまとめます。</p><label class="label" for="growthReportMonth">対象月</label><select id="growthReportMonth" onchange="renderMonthlyGrowthReport()"></select><div id="monthlyGrowthReport"></div></div>
  <div class="card"><h2>総合成長レポート</h2><p class="tiny muted">測定値・練習実績・本人確認済みの試合評価を一緒に確認します。記録がない項目は推測しません。</p><div id="integratedGrowthReport"></div></div>
  <div class="card"><h2>練習の積み重ね</h2><div id="growthTrainingChart"></div><div class="tiny muted">月ごとの練習記録数です。回数の増加は技術向上そのものを意味しません。</div></div>
  <div class="card"><h2>試合での評価推移</h2><div id="growthMatchChart"></div><div class="tiny muted">本人確認済みの陸玖の試合場面について、「良かった」の割合を月ごとに表示。評価件数も併記します。</div></div>
