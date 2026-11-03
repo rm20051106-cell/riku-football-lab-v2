@@ -440,7 +440,8 @@ class FrontendDataFlowContracts(unittest.TestCase):
     def test_stage21_goal_linkage_is_rendered_in_growth_dashboard(self):
         self.assertIn('id="growthGoalTrainingLinkage"', HTML)
         self.assertIn("renderGrowthGoalTrainingLinkage();", HTML)
-        self.assertIn("updateGrowthGoalStatus('completed')", HTML)
+        self.assertIn("updateGrowthGoalStatus(", HTML)
+        self.assertIn("この目標を達成として記録", HTML)
         self.assertIn("技術向上や試合での成功を自動判定するものではありません", HTML)
 
     def test_stage21_goal_status_save_failure_restores_previous_goal(self):
