@@ -440,12 +440,24 @@ class RikuBrowserE2ETests(unittest.TestCase):
             const reflection = buildTrainingReflection(training);
             const cycle = getTrainingCycleSummary(training);
             const weekly = getPreviousWeekTrainingAdjustment('2026-11-03');
+            const comparison = getTrainingDecisionComparison(training);
+            state.matchAnalyses = [
+                {id: 7099, date: '2026-10-30', title: '前回', candidateEvents: []},
+                {id: 7100, date: '2026-11-03', title: '今回', candidateEvents: [{
+                    id: 'growth-scene', reviewLabel: '陸玖', reviewSource: 'manual',
+                    manualGrowthSource: 'manual', manualGrowthFocus: '加速ドリブル',
+                    assessmentSource: 'manual', assessment: '良かった', time: 15
+                }]}
+            ];
+            const timeline = getMatchGrowthTimelineData().find(x => x.key === '加速ドリブル');
             return {
                 completed: getCompletedTrainingStepIndexes(training),
                 good: reflection.good,
                 improve: reflection.improve,
                 cycle: {stepsDone: cycle.stepsDone, completion: cycle.completion},
-                weekly: {assessed: weekly.assessed, avgCompletion: weekly.avgCompletion}
+                weekly: {assessed: weekly.assessed, avgCompletion: weekly.avgCompletion},
+                comparisonDone: comparison.done,
+                timelineCompletion: timeline.latest?.trainingNotes?.[0]?.completion
             };
         }""")
         self.assertEqual(result["completed"], [0, 1])
@@ -453,6 +465,8 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertFalse(any("チェック未完了" in item for item in result["improve"]))
         self.assertEqual(result["cycle"], {"stepsDone": 2, "completion": 100})
         self.assertEqual(result["weekly"], {"assessed": 1, "avgCompletion": 100})
+        self.assertEqual(result["comparisonDone"], 2)
+        self.assertEqual(result["timelineCompletion"], 100)
 
 
 if __name__ == "__main__":
