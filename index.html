@@ -1751,13 +1751,19 @@ function getManualMatchOutcomeEvents(match,focus){
 }
 function getGrowthForecastData(){
  const categories=getMatchGrowthCategories(),timeline=getMatchGrowthTimelineData();
+ const median=values=>{const sorted=values.filter(Number.isFinite).slice().sort((a,b)=>a-b);if(!sorted.length)return null;const mid=Math.floor(sorted.length/2);return sorted.length%2?sorted[mid]:(sorted[mid-1]+sorted[mid])/2;};
  return categories.map(category=>{
   const source=timeline.find(x=>x.key===category.key),points=(source?.rows||[]).filter(row=>row.total>=2&&Number.isFinite(row.rate)).slice(-6);
-  if(points.length<3)return {key:category.key,label:category.label||category.key,count:points.length,prediction:null,slope:null,trend:'データ蓄積中',latest:points[points.length-1]||null};
-  const xs=points.map((_,i)=>i),ys=points.map(x=>x.rate),mx=xs.reduce((a,b)=>a+b,0)/xs.length,my=ys.reduce((a,b)=>a+b,0)/ys.length;
-  const denom=xs.reduce((n,x)=>n+(x-mx)**2,0),slope=denom?xs.reduce((n,x,i)=>n+(x-mx)*(ys[i]-my),0)/denom:0;
-  const prediction=Math.max(0,Math.min(100,Math.round(ys[ys.length-1]+slope)));
-  return {key:category.key,label:category.label||category.key,count:points.length,prediction,slope,trend:slope>=5?'上向き傾向':slope<=-5?'見直し候補':'おおむね横ばい',latest:points[points.length-1],first:points[0]};
+  const scenes=points.reduce((sum,row)=>sum+row.total,0),latest=points[points.length-1]||null;
+  if(points.length<4)return {key:category.key,label:category.label||category.key,count:points.length,sceneCount:scenes,prediction:null,intervalLow:null,intervalHigh:null,slope:null,trend:'データ蓄積中',confidence:'未算出',latest};
+  const rates=points.map(row=>row.rate),slopes=[];
+  for(let i=0;i<rates.length;i++)for(let j=i+1;j<rates.length;j++)slopes.push((rates[j]-rates[i])/(j-i));
+  const slope=median(slopes)||0,center=median(rates),mad=median(rates.map(value=>Math.abs(value-center)))||0;
+  const prediction=Math.max(0,Math.min(100,Math.round(rates[rates.length-1]+Math.max(-8,Math.min(8,slope)))));
+  const samplingMargin=1.96*Math.sqrt(Math.max(0,center*(100-center)/Math.max(1,scenes)));
+  const margin=Math.min(45,Math.ceil(samplingMargin+1.5*mad+5));
+  const confidence=points.length>=6&&scenes>=18?'比較的多い':points.length>=4&&scenes>=10?'限定的':'少ない';
+  return {key:category.key,label:category.label||category.key,count:points.length,sceneCount:scenes,prediction,intervalLow:Math.max(0,prediction-margin),intervalHigh:Math.min(100,prediction+margin),margin,slope,trend:slope>=4?'上向き傾向':slope<=-4?'見直し候補':'おおむね横ばい',confidence,latest,first:points[0]};
  });
 }
 function getTrainingMatchCorrelationData(){
@@ -1795,7 +1801,7 @@ function getSituationDecisionBreakdown(){
 }
 function renderStage17GrowthInsights(){
  const forecastHost=document.getElementById('growthForecast'),correlationHost=document.getElementById('trainingMatchCorrelation'),situationHost=document.getElementById('situationDecisionAnalysis');
- if(forecastHost){const rows=getGrowthForecastData();forecastHost.innerHTML='<h3>次の試合の参考予測</h3>'+rows.map(row=>'<div class="listitem"><div class="grow"><b>'+esc(row.label)+'</b><div class="tiny muted">'+(row.latest?'直近 '+esc(row.latest.date)+'：'+row.latest.rate+'%（'+row.latest.total+'場面）':'有効な手動評価なし')+'／データ '+row.count+'試合</div></div><span class="tag">'+(row.prediction===null?'蓄積中':row.prediction+'%目安')+'</span></div><div class="tiny muted">'+esc(row.trend)+(row.prediction===null?'。各試合2場面以上の手動評価を3試合分集めると傾向を計算します。':'。過去の直線傾向を1試合分だけ延長した参考値です。')+'</div>').join('')+'<div class="tiny muted">予測値は技術レベルの判定ではありません。試合相手・出場時間・役割・撮影条件の違いを含めていないため、参考値として扱います。</div>';}
+ if(forecastHost){const rows=getGrowthForecastData();forecastHost.innerHTML='<h3>次の試合の参考予測</h3>'+rows.map(row=>'<div class="listitem"><div class="grow"><b>'+esc(row.label)+'</b><div class="tiny muted">'+(row.latest?'直近 '+esc(row.latest.date)+'：'+row.latest.rate+'%（'+row.latest.total+'場面）':'有効な手動評価なし')+'／有効試合 '+row.count+'試合・場面 '+row.sceneCount+'件</div></div><span class="tag">'+(row.prediction===null?'蓄積中':row.prediction+'%目安（'+row.intervalLow+'〜'+row.intervalHigh+'%）')+'</span></div><div class="tiny muted">'+esc(row.trend)+(row.prediction===null?'。各試合2場面以上の手動評価を4試合分集めると参考範囲を計算します。':'。直近試合を重視した中央値と傾向を使う参考値です。幅は評価のばらつきと場面数を反映し、予測精度を保証しません（確からしさ：'+row.confidence+'）。')+'</div>').join('')+'<div class="tiny muted">予測値は技術レベルの判定ではありません。試合相手・出場時間・役割・撮影条件の違いを含めていないため、参考値として扱います。</div>';}
  if(correlationHost){const rows=getTrainingMatchCorrelationData();correlationHost.innerHTML='<h3>練習記録と前後の試合評価</h3>'+(rows.length?rows.map(row=>'<div class="listitem"><div class="grow"><b>'+esc(row.focus)+'</b><div class="tiny muted">比較 '+row.count+'組／練習チェック平均 '+row.meanCompletion+'%</div><div class="tiny">前後の手動評価率の平均差：'+(row.meanDelta>0?'+':'')+row.meanDelta+'ポイント</div>'+row.pairs.slice(-3).map(p=>'<div class="tiny muted">'+esc(p.date)+' 練習｜'+esc(p.beforeDate)+' '+p.beforeRate+'% → '+esc(p.afterDate)+' '+p.afterRate+'%（'+(p.delta>0?'+':'')+p.delta+'pt）</div>').join('')+'</div></div>').join(''):'<div class="empty">同じ練習テーマについて、練習前後の本人確認済み試合評価がそろった比較はまだありません。</div>')+'<div class="tiny muted">これは時間的な前後関係の比較であり、練習が変化の原因だと証明するものではありません。比較できる組だけ表示します。</div>';}
  if(situationHost){const rows=getSituationDecisionBreakdown();situationHost.innerHTML=rows.length?rows.map(row=>{const position=Object.entries(row.positioning).map(([key,v])=>'<div class="tiny muted">'+esc(key)+'：良 '+v.good+'/'+v.total+'（'+Math.round(v.good/v.total*100)+'%）</div>').join('');return '<div class="listitem"><div class="grow"><b>'+esc(row.role)+'｜'+esc(row.action)+'</b><div class="tiny muted">本人確認済み '+row.scenes+'場面</div><div class="tiny">判断の質：'+(row.qualityCount?Math.round(row.qualityGood/row.qualityCount*100)+'%（'+row.qualityCount+'件）':'未評価')+'｜周囲確認：'+(row.scanCount?Math.round(row.scanGood/row.scanCount*100)+'%（'+row.scanCount+'件）':'未評価')+'</div>'+position+'</div></div>';}).join(''):'<div class="empty">ポジション・プレー種別が入力された本人確認済み場面が、分類表示に必要な2場面以上まだありません。</div>';}
 }
