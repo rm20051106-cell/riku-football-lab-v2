@@ -1,0 +1,38 @@
+name: Validate RIKU FOOTBALL LAB - Stage 29 Kick Form Growth
+
+on:
+  push:
+    branches: [feature/stage29-kick-form-growth-comparison-20261103]
+  pull_request:
+    branches: [feature/stage28-unified-kick-form-record-20261103]
+
+jobs:
+  kick-form-growth-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check backend Python syntax
+        run: python -m compileall -q backend
+      - name: Run Stage 27, 28 and 29 regression tests
+        run: |
+          python -m unittest discover -s tests -p "test_stage27_multi_angle.py" -v
+          python -m unittest discover -s tests -p "test_stage28_unified_kick.py" -v
+          python -m unittest discover -s tests -p "test_stage29_kick_form_growth.py" -v
+      - name: Check inline JavaScript syntax
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          html = Path("index.html").read_text(encoding="utf-8")
+          scripts = re.findall(r"<script[^>]*>(.*?)</script>", html, re.I | re.S)
+          if not scripts:
+              raise SystemExit("No inline scripts found")
+          Path("/tmp/riku-stage29.js").write_text("\n".join(scripts), encoding="utf-8")
+          PY
+          node --check /tmp/riku-stage29.js
