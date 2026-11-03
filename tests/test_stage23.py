@@ -17,7 +17,7 @@ class Stage23RegressionTests(unittest.TestCase):
             self.assertIn(token, HTML)
 
     def test_video_storage_playback_and_backup_paths_preserved(self):
-        for token in ["storeClipVideo(", "getClipVideo(", "playSavedClip(", "playSavedForm(", "function exportBackup", "function importBackup"]:
+        for token in ["storeClipVideo(", "getClipVideo(", "playSavedClip(", "playSavedForm(", "async function exportData()", "importFile.addEventListener"]:
             self.assertIn(token, HTML)
 
     def test_inline_javascript_syntax(self):
