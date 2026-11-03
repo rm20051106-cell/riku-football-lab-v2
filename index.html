@@ -942,9 +942,13 @@ function saveKickPhaseReview(recordId,phaseKey){
  if(time!==null&&(!Number.isFinite(time)||time<0||time>600)){alert('時刻は0〜600秒で入力してください。');return;}
  if(status==='確認済み'){const sequenceError=validateKickPhaseTimestamp(record,phaseKey,time);if(sequenceError){alert('節目の時刻順を確認してください。'+sequenceError+'先に前後の節目を修正してから再保存してください。');return;}}
  const previous=JSON.parse(JSON.stringify(record.reviewedKickPhases||{}));
+ const previousHistory=JSON.parse(JSON.stringify(record.reviewedKickPhaseHistory||{}));
+ const oldValue=previous[phaseKey];
  record.reviewedKickPhases=record.reviewedKickPhases||{};
+ record.reviewedKickPhaseHistory=record.reviewedKickPhaseHistory||{};
+ if(oldValue){const history=Array.isArray(record.reviewedKickPhaseHistory[phaseKey])?record.reviewedKickPhaseHistory[phaseKey]:[];history.push({...oldValue,archivedAt:new Date().toISOString()});record.reviewedKickPhaseHistory[phaseKey]=history.slice(-10);}
  record.reviewedKickPhases[phaseKey]={timeSeconds:time===null?null:Math.round(time*100)/100,status,confirmedBy:'parent_manual_review',confirmedAt:new Date().toISOString()};
- if(!persist()){record.reviewedKickPhases=previous;alert('保存に失敗しました。既存データは元に戻しました。');return;}
+ if(!persist()){record.reviewedKickPhases=previous;record.reviewedKickPhaseHistory=previousHistory;alert('保存に失敗しました。既存データは元に戻しました。');return;}
  renderAll();
 }
 function renderKickPhaseCandidates(data,dominantFoot){
