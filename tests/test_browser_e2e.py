@@ -513,6 +513,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
 
     def test_match_scan_saved_before_local_video_links_and_opens_playback(self):
         page = self.page
+        page.locator('.nav button[data-view="video"]').click()
         page.locator("#videoTitle").fill("同一動画の試合分析")
         page.locator("#videoFile").set_input_files(str(self.video_path))
         page.evaluate("""() => {
