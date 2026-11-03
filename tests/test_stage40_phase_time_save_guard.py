@@ -31,7 +31,7 @@ class Stage40PhaseTimeSaveGuardTests(unittest.TestCase):
         self.assertIn("映像で確認できず", HTML)
 
     def test_existing_data_is_restored_if_persist_fails(self):
-        self.assertIn("record.reviewedKickPhases=previous;alert('保存に失敗しました。既存データは元に戻しました。')", HTML)
+        self.assertIn("record.reviewedKickPhases=previous;record.reviewedKickPhaseHistory=previousHistory;alert('保存に失敗しました。既存データは元に戻しました。')", HTML)
 
 
 if __name__ == "__main__":
