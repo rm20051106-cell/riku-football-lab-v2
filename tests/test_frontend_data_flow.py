@@ -352,5 +352,44 @@ class FrontendDataFlowContracts(unittest.TestCase):
         self.assertIn("matchVideo.onloadeddata", HTML)
         self.assertIn("formVideo.onloadeddata", HTML)
 
-if __name__ == "__main__":
+
+    def test_stage20_player_dossier_uses_only_manual_confirmed_match_assessments(self):
+        start = HTML.index("function getPlayerDossierSummary()")
+        end = HTML.index("\\nfunction ", start + 20)
+        fn = HTML[start:end]
+        self.assertIn("isManuallyReviewedMatchEvent(event)", fn)
+        self.assertIn("event.assessmentSource==='manual'", fn)
+        self.assertIn("['良かった','改善したい'].includes(event.assessment)", fn)
+        self.assertIn("row.total>=2&&row.good>=2&&row.good>row.improve", fn)
+        self.assertIn("row.total>=2&&row.improve>=2&&row.improve>row.good", fn)
+
+    def test_stage20_dossier_integrates_matches_training_measurements_and_media_counts(self):
+        start = HTML.index("function getPlayerDossierSummary()")
+        end = HTML.index("\\nfunction ", start + 20)
+        fn = HTML[start:end]
+        for token in ("matchCount:", "reviewedMatchCount:", "trainingCount:", "trainingMinutes:", "measureCount:", "formCount:", "clipCount:", "latestMeasures"):
+            self.assertIn(token, fn)
+
+    def test_stage20_dossier_displays_strengths_remaining_issues_and_insufficient_data(self):
+        start = HTML.index("function renderPlayerDossier()")
+        end = HTML.index("\\nfunction ", start + 20)
+        fn = HTML[start:end]
+        for token in ("確認できた強み", "残る課題・重点確認", "評価データがまだありません", "課題なしとは判定しません", "playerDossier"):
+            self.assertIn(token, fn)
+
+    def test_stage20_monthly_report_integrates_same_month_match_training_and_measure_counts(self):
+        start = HTML.index("function renderMonthlyGrowthReport()")
+        end = HTML.index("\\nfunction ", start + 20)
+        fn = HTML[start:end]
+        for token in ("monthTrainings", "monthMatches", "monthReviewed", "monthMeasureCount", "monthMinutes", "monthlyIntegrated"):
+            self.assertIn(token, fn)
+
+    def test_stage20_player_dossier_is_rendered_with_growth_dashboard(self):
+        self.assertIn('id="playerDossier"', HTML)
+        self.assertIn("renderPlayerDossier();", HTML)
+
+    def test_stage20_backup_restore_and_saved_video_playback_contracts_remain(self):
+        for token in ("actual.toLowerCase()!==String(parsed.stateSha256).toLowerCase()", "state=previousState", "await compareVideoBlobs(verified.blob,restoredFile)", "URL.createObjectURL(saved.blob)", "matchVideo.onloadeddata", "formVideo.onloadeddata"):
+            self.assertIn(token, HTML)
+\nif __name__ == "__main__":
     unittest.main()
