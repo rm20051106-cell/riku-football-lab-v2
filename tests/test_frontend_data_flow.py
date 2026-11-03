@@ -355,7 +355,7 @@ class FrontendDataFlowContracts(unittest.TestCase):
 
     def test_stage20_player_dossier_uses_only_manual_confirmed_match_assessments(self):
         start = HTML.index("function getPlayerDossierSummary()")
-        end = HTML.index("\\nfunction ", start + 20)
+        end = HTML.index("\nfunction ", start + 20)
         fn = HTML[start:end]
         self.assertIn("isManuallyReviewedMatchEvent(event)", fn)
         self.assertIn("event.assessmentSource==='manual'", fn)
@@ -365,21 +365,21 @@ class FrontendDataFlowContracts(unittest.TestCase):
 
     def test_stage20_dossier_integrates_matches_training_measurements_and_media_counts(self):
         start = HTML.index("function getPlayerDossierSummary()")
-        end = HTML.index("\\nfunction ", start + 20)
+        end = HTML.index("\nfunction ", start + 20)
         fn = HTML[start:end]
         for token in ("matchCount:", "reviewedMatchCount:", "trainingCount:", "trainingMinutes:", "measureCount:", "formCount:", "clipCount:", "latestMeasures"):
             self.assertIn(token, fn)
 
     def test_stage20_dossier_displays_strengths_remaining_issues_and_insufficient_data(self):
         start = HTML.index("function renderPlayerDossier()")
-        end = HTML.index("\\nfunction ", start + 20)
+        end = HTML.index("\nfunction ", start + 20)
         fn = HTML[start:end]
         for token in ("確認できた強み", "残る課題・重点確認", "評価データがまだありません", "課題なしとは判定しません", "playerDossier"):
             self.assertIn(token, fn)
 
     def test_stage20_monthly_report_integrates_same_month_match_training_and_measure_counts(self):
         start = HTML.index("function renderMonthlyGrowthReport()")
-        end = HTML.index("\\nfunction ", start + 20)
+        end = HTML.index("\nfunction ", start + 20)
         fn = HTML[start:end]
         for token in ("monthTrainings", "monthMatches", "monthReviewed", "monthMeasureCount", "monthMinutes", "monthlyIntegrated"):
             self.assertIn(token, fn)
