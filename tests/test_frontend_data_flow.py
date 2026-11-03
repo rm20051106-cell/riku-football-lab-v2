@@ -454,6 +454,15 @@ class FrontendDataFlowContracts(unittest.TestCase):
         self.assertIn("delete state.settings.nextMatchGoal", fn)
         self.assertIn("previousNextGoal", fn)
 
+    def test_stage21_saved_training_record_retains_exact_growth_goal_id(self):
+        start = HTML.index("function saveTraining()")
+        end = HTML.index("\nfunction ", start + 20)
+        fn = HTML[start:end]
+        self.assertIn("const source=pendingTrainingSource?{...pendingTrainingSource}:null", fn)
+        self.assertIn("sourceMatch:source", fn)
+        self.assertIn("state.trainings.unshift(record)", fn)
+        self.assertIn("if(!persist())", fn)
+
     def test_stage21_each_new_goal_gets_a_distinct_identity(self):
         self.assertIn("const goalId='growth-'+Date.now()", HTML)
         self.assertIn("growthGoalPlan={id:goalId", HTML)
