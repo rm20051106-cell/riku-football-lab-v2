@@ -450,6 +450,12 @@ class FrontendDataFlowContracts(unittest.TestCase):
         self.assertIn("const previous={...current}", fn)
         self.assertIn("if(!persist())", fn)
         self.assertIn("state.settings.growthGoalPlan=previous", fn)
+        self.assertIn("delete state.settings.nextMatchGoal", fn)
+        self.assertIn("previousNextGoal", fn)
+
+    def test_stage21_each_new_goal_gets_a_distinct_identity(self):
+        self.assertIn("const goalId='growth-'+Date.now()", HTML)
+        self.assertIn("growthGoalPlan={id:goalId", HTML)
 
 
 if __name__ == "__main__":
