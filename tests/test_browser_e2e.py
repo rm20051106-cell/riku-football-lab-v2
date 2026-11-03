@@ -538,6 +538,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         page.wait_for_function("state.clips.length === 1 && state.clips[0].hasVideo")
         linked = page.evaluate("""() => ({
             clipId: String(state.clips[0].id),
+            matchId: String(state.matchAnalyses[0].id),
             matchClipId: String(state.matchAnalyses[0].clipId),
             storageKey: state.matchAnalyses[0].videoStorageKey,
             matchIds: state.clips[0].matchAnalysisIds.map(String),
@@ -545,7 +546,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         })""")
         self.assertEqual(linked["matchClipId"], linked["clipId"], linked)
         self.assertEqual(linked["storageKey"], linked["clipId"], linked)
-        self.assertIn("1", linked["matchIds"], linked)
+        self.assertIn(linked["matchId"], linked["matchIds"], linked)
         self.assertTrue(linked["fingerprint"], linked)
         page.evaluate("renderMatchLibrary()")
         self.assertIn("端末内動画を再生", page.locator("#matchLibrary").inner_text())
