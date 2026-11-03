@@ -469,5 +469,47 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual(result["timelineCompletion"], 100)
 
 
+    def test_match_event_link_save_failure_restores_previous_links(self):
+        result = self.page.evaluate("""() => {
+            state.trainings = [{
+                id: 7201, date: '2026-11-01', menu: '親子ドリブル',
+                focus: 'ドリブル', steps: ['step'], stepsDone: [],
+                linkedMatchEvents: [{
+                    matchId: 7200, eventId: 'old-event', matchDate: '2026-10-30',
+                    matchTitle: '以前の試合', actionType: 'ドリブル', autoLinked: true
+                }]
+            }];
+            state.matchAnalyses = [{
+                id: 7200, date: '2026-11-02', title: '連携保存失敗テスト',
+                candidateEvents: [{
+                    id: 'new-event', reviewLabel: '陸玖', reviewSource: 'manual',
+                    actionType: 'ドリブル', time: 20
+                }]
+            }];
+            const original = Storage.prototype.setItem;
+            Object.defineProperty(Storage.prototype, 'setItem', {
+                configurable: true,
+                writable: true,
+                value: function(key, value) {
+                    if (key === 'rikuFootballLab_v3') {
+                        throw new DOMException('simulated localStorage quota', 'QuotaExceededError');
+                    }
+                    return original.call(this, key, value);
+                }
+            });
+            window.__linkAlert = '';
+            window.alert = message => { window.__linkAlert = String(message); };
+            linkMatchEventToTraining(7200, 'new-event');
+            return {
+                links: state.trainings[0].linkedMatchEvents.map(x => ({
+                    matchId: x.matchId, eventId: x.eventId
+                })),
+                alert: window.__linkAlert
+            };
+        }""")
+        self.assertEqual(result["links"], [{"matchId": 7200, "eventId": "old-event"}])
+        self.assertIn("元の練習記録と連携状態に戻しました", result["alert"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
