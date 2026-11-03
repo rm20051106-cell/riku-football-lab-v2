@@ -8,7 +8,7 @@ HTML = (ROOT / "index.html").read_text(encoding="utf-8")
 class Stage34FiveViewEvidenceMatrixTests(unittest.TestCase):
     def test_matrix_uses_the_five_standard_views_in_order(self):
         for angle in ("右側から", "左側から", "斜め右後ろから", "斜め左後ろから", "後ろから"):
-            self.assertIn('"' + angle + '"', HTML)
+            self.assertIn("'" + angle + "'", HTML)
         self.assertIn("function renderFiveViewPhaseEvidenceMatrix(records,officialAngles)", HTML)
 
     def test_matrix_contains_the_five_manual_phase_keys(self):
