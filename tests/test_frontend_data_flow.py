@@ -382,6 +382,7 @@ class FrontendDataFlowContracts(unittest.TestCase):
         end = HTML.index("\nfunction ", start + 20)
         fn = HTML[start:end]
         for token in ("monthTrainings", "monthMatches", "monthReviewed", "monthMeasureCount", "monthMinutes", "monthlyIntegrated"):
+        self.assertIn("host.innerHTML=monthlyIntegrated+", fn)
             self.assertIn(token, fn)
 
     def test_stage20_player_dossier_is_rendered_with_growth_dashboard(self):
