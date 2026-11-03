@@ -511,5 +511,45 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertIn("元の練習記録と連携状態に戻しました", result["alert"])
 
 
+    def test_match_scan_and_local_video_link_in_either_save_order(self):
+        page = self.page
+        page.locator("#videoTitle").fill("同一動画の試合分析")
+        page.locator("#videoFile").set_input_files(str(self.video_path))
+        page.evaluate("""() => {
+            window.alert = () => {};
+            const result = {
+                requested_jersey_numbers: "10,74",
+                summary: {
+                    duration_seconds: 1,
+                    sampled_pose_frames: 2,
+                    candidate_events: [{
+                        id: "linked-scene", time_seconds: 0.5,
+                        label: "動きの変化", reason: "映像上の候補",
+                        clip_available: false, review_label: "未確認"
+                    }]
+                }
+            };
+            document.getElementById("matchAiResult").dataset.result = JSON.stringify(result);
+            saveMatchScanResult();
+        }""")
+        self.assertEqual(page.evaluate("state.matchAnalyses.length"), 1)
+        self.assertIsNone(page.evaluate("state.matchAnalyses[0].clipId"))
+        page.evaluate("saveClip()")
+        page.wait_for_function("state.clips.length === 1 && state.clips[0].hasVideo")
+        linked = page.evaluate("""() => ({
+            clipId: String(state.clips[0].id),
+            matchClipId: String(state.matchAnalyses[0].clipId),
+            storageKey: state.matchAnalyses[0].videoStorageKey,
+            matchIds: state.clips[0].matchAnalysisIds.map(String),
+            fingerprint: !!state.matchAnalyses[0].sourceVideoKey
+        })""")
+        self.assertEqual(linked["matchClipId"], linked["clipId"], linked)
+        self.assertEqual(linked["storageKey"], linked["clipId"], linked)
+        self.assertIn("1", linked["matchIds"], linked)
+        self.assertTrue(linked["fingerprint"], linked)
+        page.evaluate("renderMatchLibrary()")
+        self.assertIn("端末内動画を再生", page.locator("#matchLibrary").inner_text())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
