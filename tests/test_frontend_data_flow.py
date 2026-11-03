@@ -46,6 +46,11 @@ class FrontendDataFlowContracts(unittest.TestCase):
         self.assertIn("event.assessmentSource!=='manual'", HTML)
         self.assertIn("const linked=getValidatedTrainingMatchEvents(record);", HTML)
 
+    def test_training_checklist_progress_deduplicates_and_rejects_invalid_indexes(self):
+        self.assertIn("function getCompletedTrainingStepIndexes(record,stepsOverride)", HTML)
+        self.assertIn("new Set(done.filter(index=>Number.isInteger(index)", HTML)
+        self.assertIn("getCompletedTrainingStepIndexes(t,steps).length/steps.length*100", HTML)
+
     def test_weekly_plan_uses_explicitly_manual_match_evidence(self):
         self.assertIn("ev.decisionReviewSource='manual'", HTML)
         self.assertIn("const assessmentEvents=events.filter(e=>e.assessmentSource==='manual'", HTML)
