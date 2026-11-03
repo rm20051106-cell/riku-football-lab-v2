@@ -3849,6 +3849,32 @@ function saveKickManualReview(){
  const status=document.getElementById('kickManualReviewStatus');if(status)status.textContent='保護者の手動確認を保存しました。未確認の項目は評価に含めていません。';
  renderAiFormCompare();renderKickFormGrowthComparison();renderAiFormPracticePlan();renderMultiAngleKickReview();
 }
+function renderFiveViewPhaseEvidenceMatrix(records,officialAngles){
+ const phases=[['approach','助走'],['plant','軸足接地'],['swing','蹴り脚の振り出し'],['impact','インパクト'],['follow_through','フォロースルー']];
+ const latestByAngle=new Map();
+ officialAngles.forEach(angle=>{
+  const matches=records.filter(r=>String(r.cameraAngle||'')===angle).slice().sort((a,b)=>String(a.date||'').localeCompare(String(b.date||''))||Number(a.id)-Number(b.id));
+  if(matches.length)latestByAngle.set(angle,matches[matches.length-1]);
+ });
+ const cell=(record,key)=>{
+  const p=record?.reviewedKickPhases?.[key];
+  if(!p||p.confirmedBy!=='parent_manual_review'||!['確認済み','映像で確認できず'].includes(p.status))return '<td><span class="tag">未確認</span></td>';
+  if(p.status==='映像で確認できず')return '<td><span class="tag">映像で確認できず</span></td>';
+  if(!Number.isFinite(p.timeSeconds))return '<td><span class="tag">時刻未登録</span></td>';
+  return '<td><span class="tag">確認済み '+Number(p.timeSeconds).toFixed(2)+'秒</span></td>';
+ };
+ const rows=officialAngles.map(angle=>{
+  const record=latestByAngle.get(angle);
+  return '<tr><th>'+esc(angle)+'</th>'+(record?phases.map(([key])=>cell(record,key)).join(''):phases.map(()=>'<td><span class="tag">動画なし</span></td>').join(''))+'</tr>';
+ }).join('');
+ const present=latestByAngle.size;
+ const confirmed=officialAngles.reduce((sum,angle)=>{
+  const r=latestByAngle.get(angle);if(!r)return sum;
+  return sum+phases.filter(([key])=>{const p=r.reviewedKickPhases?.[key];return p?.confirmedBy==='parent_manual_review'&&p.status==='確認済み'&&Number.isFinite(p.timeSeconds);}).length;
+ },0);
+ const total=officialAngles.length*phases.length;
+ return '<h4 style="margin-top:14px">5視点×5動作節目の確認マトリクス</h4><div class="tiny muted">各視点で最新の動画1件を表示。時刻はその動画内の時刻です。別動画・別視点間で時刻を同期したり、未確認を他の視点から補完したりしません。</div><div class="tiny">撮影済み視点：'+present+'/'+officialAngles.length+' ／ 手動時刻確認済み：'+confirmed+'/'+total+'セル</div><div style="overflow-x:auto"><table class="table"><thead><tr><th>撮影視点</th>'+phases.map(([,label])=>'<th>'+label+'</th>').join('')+'</tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
 function renderMultiAngleKickReview(){
  const host=document.getElementById('multiAngleKickReview');if(!host)return;
  const all=(state.aiFormAnalyses||[]);
@@ -3904,7 +3930,8 @@ function renderMultiAngleKickReview(){
  const countByAngle=officialAngles.map(name=>({name,count:records.filter(r=>r.cameraAngle===name).length}));
  const angleSummary=countByAngle.map(x=>x.name+' '+x.count+'件').join(' ／ ');
  const comparisonNotice='AI数値は撮影角度ごとに個別表示しています。異なる角度の数値を平均・合算せず、角度が異なる記録同士の数値比較は行いません。異なる撮影角度の関節角度・移動量を直接比較したり、改善判定したりしません。同じ角度でも撮影距離・画角・キック条件が一致しない場合は比較しません。';
- host.innerHTML='<div class="note"><b>統合フォーム記録｜同一キックID：'+esc(groupId)+'</b><div class="tiny">'+esc(latest.foot||'右足')+'の同一キックに紐づく動画 '+records.length+'件。'+angleSummary+'</div><div class="tiny">'+comparisonNotice+'</div></div><h4>角度別の証拠と動画</h4>'+angleCards+'<h4 style="margin-top:14px">項目ごとの確認証拠一覧</h4><div class="tiny muted">同じ項目を複数角度で確認できた場合、角度・日付・手動確認内容をそれぞれ残します。</div>'+(evidenceByItem||'<div class="empty">手動確認済みの項目はまだありません。</div>')+'<h4 style="margin-top:14px">動作節目の角度別・手動時刻一覧</h4>'+(phaseEvidence||'<div class="empty">動作時刻の手動確認はまだありません。</div>')+improvementHtml;
+ const officialAngles=['右側から','左側から','斜め右後ろから','斜め左後ろから','後ろから'];
+ host.innerHTML='<div class="note"><b>統合フォーム記録｜同一キックID：'+esc(groupId)+'</b><div class="tiny">'+esc(latest.foot||'右足')+'の同一キックに紐づく動画 '+records.length+'件。'+angleSummary+'</div><div class="tiny">'+comparisonNotice+'</div></div>'+renderFiveViewPhaseEvidenceMatrix(records,officialAngles)+'<h4>角度別の証拠と動画</h4>'+angleCards+'<h4 style="margin-top:14px">項目ごとの確認証拠一覧</h4><div class="tiny muted">同じ項目を複数角度で確認できた場合、角度・日付・手動確認内容をそれぞれ残します。</div>'+(evidenceByItem||'<div class="empty">手動確認済みの項目はまだありません。</div>')+'<h4 style="margin-top:14px">動作節目の角度別・手動時刻一覧</h4>'+(phaseEvidence||'<div class="empty">動作時刻の手動確認はまだありません。</div>')+improvementHtml;
 }
 
 
