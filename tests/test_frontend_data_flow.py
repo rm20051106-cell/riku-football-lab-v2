@@ -209,9 +209,13 @@ class FrontendDataFlowContracts(unittest.TestCase):
         end = HTML.index("\nfunction ", start + 20)
         fn = HTML[start:end]
         self.assertIn("row.total>=2&&Number.isFinite(row.rate)", fn)
-        self.assertIn("points.length<3", fn)
+        self.assertIn("points.length<4", fn)
         self.assertIn("Math.max(0,Math.min(100", fn)
-        self.assertIn("過去の直線傾向を1試合分だけ延長", HTML)
+        self.assertIn("直近試合を重視した中央値と傾向", HTML)
+        self.assertIn("intervalLow", fn)
+        self.assertIn("intervalHigh", fn)
+        self.assertIn("mad", fn)
+        self.assertIn("sceneCount", fn)
 
     def test_stage17_training_match_comparison_uses_manual_same_focus_events(self):
         start = HTML.index("function getManualMatchOutcomeEvents(")
@@ -266,6 +270,42 @@ class FrontendDataFlowContracts(unittest.TestCase):
         self.assertIn("analysis.matchId=String(match.id)", backup_import)
         self.assertIn("match.aiFormAnalysisIds.push(analysis.id)", backup_import)
         self.assertIn("localStorage.setItem(KEY,serialized);state=restored;renderAll()", backup_import)
+
+
+    def test_stage18_forecast_uses_robust_median_and_displays_uncertainty(self):
+        start = HTML.index("function getGrowthForecastData()")
+        end = HTML.index("\\nfunction ", start + 20)
+        fn = HTML[start:end]
+        self.assertIn("points.length<4", fn)
+        self.assertIn("const median=values=>", fn)
+        self.assertIn("slopes.push", fn)
+        self.assertIn("const margin=Math.min(45", fn)
+        self.assertIn("confidence", fn)
+        self.assertIn("sceneCount", fn)
+        self.assertIn("%目安（'+row.intervalLow+'〜'+row.intervalHigh+'%）", HTML)
+        self.assertIn("予測精度を保証しません", HTML)
+
+    def test_stage18_training_match_comparison_requires_comparable_samples(self):
+        start = HTML.index("function getTrainingMatchCorrelationData()")
+        end = HTML.index("\\nfunction ", start + 20)
+        fn = HTML[start:end]
+        self.assertIn("dayDistance(match.date,training.date)<=30", fn)
+        self.assertIn("expectedRole", fn)
+        self.assertIn("matchEvents(match).length>=2", fn)
+        self.assertIn("pre.length<2||post.length<2", fn)
+        self.assertIn("beforeScenes:pre.length", fn)
+        self.assertIn("afterScenes:post.length", fn)
+        self.assertIn("前後各2件以上", HTML)
+
+    def test_stage18_backup_restore_still_verifies_hash_before_mutation(self):
+        import_start = HTML.index("importFile.addEventListener")
+        import_end = HTML.index("function clearData()", import_start)
+        restore = HTML[import_start:import_end]
+        self.assertLess(restore.index("crypto.subtle.digest"), restore.index("const restored="))
+        self.assertIn("actual.toLowerCase()!==String(parsed.stateSha256).toLowerCase()", restore)
+        self.assertIn("state=previousState", restore)
+        self.assertIn("既存の端末内動画は自動削除しません", restore)
+
 
 
 if __name__ == "__main__":
