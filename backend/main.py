@@ -461,6 +461,7 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
     knees = [x[k] for x in frames for k in ("left_knee_angle_deg", "right_knee_angle_deg") if x.get(k) is not None]
     hips = [x[k] for x in frames for k in ("left_hip_angle_deg", "right_hip_angle_deg") if x.get(k) is not None]
     trunks = [x["trunk_lean_image_angle_deg"] for x in frames if x.get("trunk_lean_image_angle_deg") is not None]
+    kick_phase_candidates = build_kick_phase_candidates(frames, actual_interval) if mode == "form" else None
     summary = {
         "sampled_pose_frames": len(frames),
         "duration_seconds": round(duration, 2),
@@ -491,6 +492,74 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
     return {"ok": True, "mode": "match", "engine": "MediaPipe Pose Landmarker multi-pose + Tesseract OCR", "summary": summary}
 
 
+def build_kick_phase_candidates(frames, sampling_interval_seconds):
+    """Return conservative image-motion time candidates, never definitive kick phases."""
+    interval = float(sampling_interval_seconds or 0)
+    result = {
+        "sampling_interval_seconds": round(interval, 3),
+        "sampling_rate_fps": round(1 / interval, 2) if interval > 0 else None,
+        "method": "foot_index landmark image-coordinate motion",
+        "limitations": [
+            "画像上の足先移動候補であり、実空間速度・ボール接触・キック成功を示しません。",
+            "助走・軸足接地・インパクトは骨格点だけでは確定できず、目視確認が必要です。",
+            "カメラ移動・遠近・足先の遮蔽・別人物への検出切替で候補時刻がずれる場合があります。",
+        ],
+        "feet": {},
+    }
+    for side in ("left", "right"):
+        valid = []
+        for index, frame in enumerate(frames):
+            speed = frame.get(side + "_foot_image_motion_per_sec")
+            timestamp = frame.get("time_seconds")
+            if isinstance(speed, (int, float)) and np.isfinite(speed) and isinstance(timestamp, (int, float)):
+                valid.append({"frame_index": index, "time_seconds": round(float(timestamp), 3),
+                              "image_motion_per_sec": round(float(speed), 5)})
+        foot_result = {"sample_count": len(valid), "peak_candidate": None,
+                       "post_peak_candidate": None, "opposite_foot_relative_stability": None,
+                       "status": "insufficient_sampling"}
+        if interval <= 0.75 and len(valid) >= 4:
+            peak = max(valid, key=lambda item: item["image_motion_per_sec"])
+            peak_speed = peak["image_motion_per_sec"]
+            if peak_speed > 0:
+                foot_result["peak_candidate"] = {
+                    "time_seconds": peak["time_seconds"],
+                    "image_motion_per_sec": peak_speed,
+                    "frame_index": peak["frame_index"],
+                    "label": "蹴り脚の動きのピーク候補",
+                }
+                later = [item for item in valid if item["frame_index"] > peak["frame_index"]]
+                slowing = next((item for item in later
+                                if item["image_motion_per_sec"] <= peak_speed * 0.7), None)
+                if slowing:
+                    foot_result["post_peak_candidate"] = {
+                        "time_seconds": slowing["time_seconds"],
+                        "image_motion_per_sec": slowing["image_motion_per_sec"],
+                        "frame_index": slowing["frame_index"],
+                        "label": "ピーク後に移動量が低下した候補",
+                    }
+                opposite = "right" if side == "left" else "left"
+                peak_frame = frames[peak["frame_index"]]
+                opposite_speed = peak_frame.get(opposite + "_foot_image_motion_per_sec")
+                if isinstance(opposite_speed, (int, float)) and np.isfinite(opposite_speed):
+                    foot_result["opposite_foot_relative_stability"] = {
+                        "image_motion_per_sec": round(float(opposite_speed), 5),
+                        "relative_to_peak": round(float(opposite_speed) / peak_speed, 3) if peak_speed > 0 else None,
+                        "label": "反対足の移動量参考値（軸足接地の確定ではありません）",
+                    }
+                foot_result["status"] = "candidate_only"
+        result["feet"][side] = foot_result
+    result["phases"] = [
+        {"key": "approach", "label": "助走", "status": "manual_review_required", "time_seconds": None},
+        {"key": "plant", "label": "軸足接地", "status": "manual_review_required", "time_seconds": None},
+        {"key": "swing", "label": "蹴り脚の振り出し", "status": "candidate_only", "time_source": "foot_motion_peak"},
+        {"key": "impact", "label": "インパクト", "status": "manual_review_required", "time_seconds": None},
+        {"key": "follow_through", "label": "フォロースルー", "status": "candidate_only", "time_source": "post_peak_motion_drop"},
+    ]
+    if interval > 0.75:
+        result["limitations"].append("撮影・解析サンプル間隔が粗いため、動作ピーク候補を表示していません。")
+    return result
+
+
 def process_video(path: str, mode: str, camera_angle: str = "未選択", progress_callback=None, jersey_numbers=None):
     if mode == "match":
         return process_match_video(path, progress_callback=progress_callback, jersey_numbers=jersey_numbers)
@@ -505,10 +574,10 @@ def process_video(path: str, mode: str, camera_angle: str = "未選択", progres
         cap.release()
         raise HTTPException(status_code=413, detail=f"動画が長すぎます。{mode}解析は{allowed_seconds}秒以内にしてください。")
     # Match mode scans the full match at a light sampling rate; form mode stays dense.
-    target_sample_rate = MATCH_SAMPLE_RATE if mode == "match" else 1.0
+    target_sample_rate = MATCH_SAMPLE_RATE if mode == "match" else 2.0
     interval = max(1, int(round(fps / target_sample_rate))) if fps > 0 else max(1, int(round(1 / target_sample_rate)))
     actual_interval = interval / fps if fps > 0 else 1 / target_sample_rate
-    max_samples = MATCH_MAX_SAMPLES if mode == "match" else 60
+    max_samples = MATCH_MAX_SAMPLES if mode == "match" else 120
     frames = []
     frame_idx = 0
     target_jerseys = [x.strip() for x in (jersey_numbers or "10,74").replace("；", ",").split(",") if x.strip()]
@@ -569,6 +638,8 @@ def process_video(path: str, mode: str, camera_angle: str = "未選択", progres
         "sampling_rate_fps": round(1 / actual_interval, 2) if actual_interval > 0 else None,
         "frames": frames,
     }
+    if mode == "form":
+        summary["kick_phase_candidates"] = kick_phase_candidates
     if mode == "match":
         jersey_counts = {}
         for frame_data in frames:
