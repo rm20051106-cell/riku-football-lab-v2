@@ -50,7 +50,7 @@ button:focus-visible,.button:focus-visible,a:focus-visible,input:focus-visible,s
 <section class="view" id="growth">
  <h1 class="section-title">陸玖の成長グラフ</h1>
  <p class="section-desc">保存された練習・試合評価・測定記録を時系列で表示。記録が増えるほど変化が見やすくなります。</p>
- <div class="card"><h2>選手カルテ｜強み・残る課題</h2><p class="tiny muted">試合・練習・測定・動画記録をまとめた陸玖の成長カルテ。確認済みデータが足りない項目は評価しません。</p><div id="playerDossier"></div></div>
+ <div class="card"><h2>選手カルテ｜強み・残る課題</h2><p class="tiny muted">試合・練習・測定・動画記録をまとめた陸玖の成長カルテ。確認済みデータが足りない項目は評価しません。</p><div id="playerDossier"></div><h3 style="margin-top:14px">動画・フォーム分析の統合カルテ</h3><div id="stage23EvidenceLinkage"></div></div>
  <div class="card"><h2>成長目標 → 練習計画の連携</h2><p class="tiny muted">本人確認済みの試合評価から設定した目標と、その目標に紐づけて保存した練習記録を確認します。未確認データから進捗を推測しません。</p><div id="growthGoalTrainingLinkage"></div><h3 style="margin-top:14px">試合後の成長目標チェック</h3><div id="growthGoalPostMatchReview"></div></div>
  <div class="card"><h2>陸玖専用・月間成長レポート</h2><p class="tiny muted">保存された練習・試合評価・測定記録から、その月の取り組みと次の重点を自動でまとめます。</p><label class="label" for="growthReportMonth">対象月</label><select id="growthReportMonth" onchange="renderMonthlyGrowthReport()"></select><div id="monthlyGrowthReport"></div></div>
  <div class="card"><h2>総合成長レポート</h2><p class="tiny muted">測定値・練習実績・本人確認済みの試合評価を一緒に確認します。記録がない項目は推測しません。</p><div id="integratedGrowthReport"></div></div>
@@ -1434,6 +1434,26 @@ function getGrowthGoalPostMatchReview(goal=state.settings?.growthGoalPlan,monthK
  const status=good>improve?'改善':'継続';
  return {status,reason:status==='改善'?'本人確認済みの関連場面で「良かった」が「改善したい」を上回っています。別の試合状況でも再現性を確認します。':'本人確認済みの関連場面で改善課題が残る、または評価が同数です。同じ目標を継続して確認します。',scenes:events.length,assessed:assessed.length,good,improve,rate,matches:new Set(assessed.map(ev=>String(ev.matchId))).size,events};
 }
+function getStage23ConfirmedImprovements(){
+ const rows=[];
+ (state.matchAnalyses||[]).forEach(match=>(match.candidateEvents||[]).forEach(ev=>{if(!isManuallyReviewedMatchEvent(ev)||ev.assessmentSource!=='manual'||ev.manualGrowthSource!=='manual'||ev.assessment!=='改善したい'||!['加速ドリブル','切り返し','判断力','ポジショニング'].includes(ev.manualGrowthFocus))return;rows.push({source:'試合動画',date:match.date||'',title:match.title||'試合',focus:ev.manualGrowthFocus,issue:ev.manualGrowthIssue||ev.note||'手動評価で改善したいと記録'});}));
+ (state.aiFormAnalyses||[]).forEach(x=>{const r=x.manualImprovementReview;if(r&&r.confirmed===true&&['加速ドリブル','切り返し','判断力','ポジショニング','シュートフォーム'].includes(r.focus)&&String(r.issue||'').trim())rows.push({source:'フォーム分析',date:x.date||'',title:x.title||x.kind||'フォーム',focus:r.focus,issue:r.issue});});
+ return rows.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+}
+function confirmStage23FormIssue(id){
+ const item=(state.aiFormAnalyses||[]).find(x=>String(x.id)===String(id));if(!item)return;
+ const focus=document.getElementById('stage23-focus-'+id)?.value||'',issue=(document.getElementById('stage23-issue-'+id)?.value||'').trim().slice(0,120);
+ if(!['加速ドリブル','切り返し','判断力','ポジショニング','シュートフォーム'].includes(focus)||!issue){alert('改善テーマと具体的な課題を入力してください。');return;}
+ const previous=item.manualImprovementReview?{...item.manualImprovementReview}:null;item.manualImprovementReview={confirmed:true,focus,issue,confirmedAt:new Date().toISOString(),source:'parent_manual_review'};
+ if(!persist()){if(previous)item.manualImprovementReview=previous;else delete item.manualImprovementReview;renderAll();alert('保存できませんでした。元の記録を維持しています。');}
+}
+function renderStage23EvidenceLinkage(){
+ const host=document.getElementById('stage23EvidenceLinkage');if(!host)return;
+ const evidence=getStage23ConfirmedImprovements(),forms=(state.aiFormAnalyses||[]).slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))).slice(0,6),opts=['加速ドリブル','切り返し','判断力','ポジショニング','シュートフォーム'];
+ const list=evidence.length?evidence.slice(0,8).map(x=>'<div class="listitem"><div class="grow"><b>'+esc(x.source)+'｜'+esc(x.date)+'｜'+esc(x.title)+'</b><div class="tiny">'+esc(x.focus)+'：'+esc(x.issue)+'</div></div><span class="tag">手動確認済み</span></div>').join(''):'<div class="empty">確認済みの改善課題はまだありません。</div>';
+ const formReview=forms.length?forms.map(x=>{const r=x.manualImprovementReview||{};return '<div class="listitem" style="display:block"><b>'+esc(x.title||x.kind||'フォーム解析')+'｜'+esc(x.date||'日付なし')+'</b><div class="tiny muted">AIの数値・コメントだけでは練習課題にしません。動画を見て手動確認してください。</div><label class="tiny">改善テーマ<select id="stage23-focus-'+Number(x.id)+'" style="display:block;width:100%;padding:8px">'+opts.map(v=>'<option value="'+v+'"'+(r.focus===v?' selected':'')+'>'+v+'</option>').join('')+'</select></label><label class="tiny">具体的な課題<input id="stage23-issue-'+Number(x.id)+'" maxlength="120" value="'+esc(r.issue||'')+'" placeholder="例：軸足がボールから遠い" style="display:block;width:100%;padding:8px"></label><div class="tiny muted">'+(r.confirmed?'確認済み':'未確認')+'</div><button class="secondary small" onclick="confirmStage23FormIssue('+Number(x.id)+')">手動確認して保存</button></div>'}).join(''):'<div class="empty">AIフォーム解析の履歴はまだありません。</div>';
+ host.innerHTML='<div class="tiny muted">試合動画・フォーム解析の手動確認済み課題を統合し、最新の課題を翌週の練習に反映します。</div><h4>統合された改善課題</h4>'+list+'<h4 style="margin-top:14px">フォーム解析の確認</h4>'+formReview+'<div class="tiny muted">未確認のAIコメント・関節角度・人物識別は改善評価に含めません。</div>';
+}
 function renderGrowthGoalPostMatchReview(){
  const host=document.getElementById('growthGoalPostMatchReview');if(!host)return;
  const goal=state.settings?.growthGoalPlan;
@@ -2545,7 +2565,14 @@ function getWeeklyCoachPlan(){
   const current=days[matchIndex];current.note+='\\n試合当日はチームのウォームアップを優先。追加の自主練習は行わず、終了後に試合後回復記録を入力してください。';
  });
  if(recoverySafety.level==='stop'||recoverySafety.level==='light')days.forEach(plan=>{if(recoverySafety.level==='stop'){plan.minutes=0;plan.title='活動を見合わせて保護者に相談';plan.category='回復・安全優先';plan.rest=true;plan.team=false;plan.note=recoverySafety.reason+'\n保護者と相談し、痛みが続く場合は医療機関へ相談してください。';plan.why='痛み・違和感の記録を優先';}else{if(plan.minutes){plan.minutes=Math.min(plan.minutes,5);plan.title='回復優先｜短時間の軽い活動';plan.category='回復・安全優先';plan.note=recoverySafety.reason+'\n強度を上げず、痛みが出たら中止してください。';plan.why+='／体調記録に基づく安全調整';}else if(plan.team){plan.note+='\n【体調に関する注意】'+recoverySafety.reason+' チーム活動への参加可否は保護者・指導者と相談し、追加の自主練習は行わないでください。';}}});
- return days.map(plan=>{const adjusted=plan.minutes?adaptTrainingPlanFromReflection(plan):{...plan};if(recoverySafety.level==='stop'){adjusted.minutes=0;adjusted.rest=true;adjusted.team=false;adjusted.title='活動を見合わせて保護者に相談';adjusted.note=recoverySafety.reason+'\n保護者と相談し、痛みが続く場合は医療機関へ相談してください。';}else if(recoverySafety.level==='light'&&adjusted.minutes){adjusted.minutes=Math.min(5,adjusted.minutes);adjusted.title='回復優先｜短時間の軽い活動';adjusted.note=recoverySafety.reason+'\n強度を上げず、痛みが出たら中止してください。';}return {...adjusted,date:plan.date,day:plan.day,team:!!adjusted.team,rest:!!adjusted.rest,sourceMatch:plan.sourceMatch||null,difficultyLevel:feedback.assessed?feedback.level:adjusted.difficultyLevel,note:adjusted.minutes?adjusted.note+'\n\n'+getTrainingSessionGuide(adjusted.focus,level):adjusted.note,why:plan.why};});
+ const confirmedIssue=getStage23ConfirmedImprovements()[0];
+  if(confirmedIssue&&days[0]&&days[0].minutes>0){
+   const focusMap={'加速ドリブル':'ドリブル','切り返し':'ドリブル','判断力':'ボールを受ける','ポジショニング':'オフザボール','シュートフォーム':'シュート'};
+   days[0].focus=focusMap[confirmedIssue.focus]||days[0].focus;days[0].title='確認済み課題｜'+confirmedIssue.focus+'を改善';days[0].category='動画・フォーム確認済み課題';
+   days[0].note='【手動確認済みの改善課題】'+confirmedIssue.issue+'\\n【出典】'+confirmedIssue.source+'｜'+confirmedIssue.date+'｜'+confirmedIssue.title+'\\n【練習】課題の動きをゆっくり反復し、最後に親子で実戦形式を短く確認。痛みや違和感があれば中止。';
+   days[0].why='保護者が映像を確認して保存した改善課題を翌週メニューに反映';days[0].sourceMatch={...(days[0].sourceMatch||{}),stage23ConfirmedIssue:true,confirmedIssueFocus:confirmedIssue.focus,confirmedIssueSource:confirmedIssue.source,confirmedIssueDate:confirmedIssue.date,confirmedIssueText:confirmedIssue.issue};
+  }
+  return days.map(plan=>{const adjusted=plan.minutes?adaptTrainingPlanFromReflection(plan):{...plan};if(recoverySafety.level==='stop'){adjusted.minutes=0;adjusted.rest=true;adjusted.team=false;adjusted.title='活動を見合わせて保護者に相談';adjusted.note=recoverySafety.reason+'\n保護者と相談し、痛みが続く場合は医療機関へ相談してください。';}else if(recoverySafety.level==='light'&&adjusted.minutes){adjusted.minutes=Math.min(5,adjusted.minutes);adjusted.title='回復優先｜短時間の軽い活動';adjusted.note=recoverySafety.reason+'\n強度を上げず、痛みが出たら中止してください。';}return {...adjusted,date:plan.date,day:plan.day,team:!!adjusted.team,rest:!!adjusted.rest,sourceMatch:plan.sourceMatch||null,difficultyLevel:feedback.assessed?feedback.level:adjusted.difficultyLevel,note:adjusted.minutes?adjusted.note+'\n\n'+getTrainingSessionGuide(adjusted.focus,level):adjusted.note,why:plan.why};});
 }
 function applyWeeklyCoachSession(index){
  const plan=getWeeklyCoachPlan()[index];if(!plan||plan.team||plan.rest||!plan.minutes)return;
@@ -3487,6 +3514,7 @@ function renderRecoveryTrendAnalysis(){
 }
 function updateRecoveryTrendMode(value){state.settings=state.settings||{};state.settings.recoveryTrendMode=value==='month'?'month':'week';persist();}
 function renderAll(){
+  renderStage23EvidenceLinkage();
  if(document.getElementById('growthTrainingChart'))renderGrowthDashboard();
  state.aiFormAnalyses=state.aiFormAnalyses||[];state.matchAnalyses=state.matchAnalyses||[];let date=today(),month=date.slice(0,7),days=new Set(state.trainings.filter(x=>x.date.startsWith(month)).map(x=>x.date)).size;homeDays.innerHTML=`${days} <small>日</small>`;monthProgress.style.width=Math.min(100,days/12*100)+'%';homeVideos.innerHTML=`${state.clips.length+state.forms.length} <small>件</small>`;let sprint=state.measures.find(x=>x.type==='30m走');homeSprint.innerHTML=sprint?`${esc(sprint.value)} <small>${esc(sprint.unit)}</small>`:'—';homeNumbers.textContent=`${state.settings.jersey1} / ${state.settings.jersey2}`;const coachPlan=getCoachTrainingPlan();const weekPlan=getWeeklyCoachPlan();const weekFeedback=getPreviousWeekTrainingAdjustment(weekPlan[0].date);const weekMatchFeedback=getPreviousWeekMatchAdjustment(weekPlan[0].date);dailyPlan.innerHTML='<div class="listitem"><span class="tag good">AIコーチ提案</span><div class="grow"><b>'+esc(coachPlan.title)+'</b><div class="tiny muted">'+coachPlan.minutes+'分・'+esc(coachPlan.why)+'</div><div class="tiny">'+esc(coachPlan.note)+'</div><button class="secondary small" onclick="applyCoachTrainingPlan()">このメニューで練習を始める</button></div></div><h3 style="margin:14px 0 6px">判断力データ連動｜今週の7日間プラン</h3><div class="tiny muted">判断力レベル・練習後の振り返り・登録されたチーム練習日と試合日を反映。予定未登録日はチーム活動と決めつけず、休養・予定確認候補として表示します。</div>'+weekPlan.map((p,i)=>'<div class="listitem"><div class="grow"><b>'+p.day+'｜'+esc(p.title)+'</b><div class="tiny muted">'+p.date+'・'+(p.minutes?p.minutes+'分':p.rest?'休養日':'チーム活動')+'・'+esc(p.why)+'</div><div class="tiny" style="white-space:pre-line">'+esc(p.note)+'</div>'+(p.minutes?'<button class="secondary small" onclick="applyWeeklyCoachSession('+i+')">この日の練習を始める</button>':p.team?'<span class="tag">チーム活動で意識</span>':'<span class="tag">回復優先</span>')+'</div></div>').join('')+renderWeeklyAdjustmentSummary(weekFeedback,weekMatchFeedback)+renderCoachOverallAssessment()+renderIntegratedDevelopmentBrief()+renderMonthlyGrowthTrajectory();renderMatchdayFocus();createPreMatchPreparation();renderPostMatchRecovery();renderRecoveryTrendAnalysis();renderWeeklyLoadManagement();
 trainDate.value=trainDate.value||date;measureDate.value=measureDate.value||date;
