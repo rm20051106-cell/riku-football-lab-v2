@@ -41,7 +41,8 @@ class FrontendDataFlowContracts(unittest.TestCase):
         self.assertIn("const decisionEvents=events.filter(e=>e.decisionReviewSource==='manual')", HTML)
 
     def test_selected_match_growth_goal_flows_into_next_week_plan(self):
-        self.assertIn("growthGoal=state.settings?.nextMatchGoal?.source==='manual-reviewed-match-growth'", HTML)
+        self.assertIn("growthGoalCandidate=state.settings?.nextMatchGoal?.source==='manual-reviewed-match-growth'", HTML)
+        self.assertIn("growthGoalAgeDays>=0&&growthGoalAgeDays<7?growthGoalCandidate:null", HTML)
         self.assertIn("||growthGoal?.focus||", HTML)
         self.assertIn("goalText=growthGoal?.note||goal?.goal", HTML)
 
