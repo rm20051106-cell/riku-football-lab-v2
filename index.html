@@ -58,6 +58,8 @@ button:focus-visible,.button:focus-visible,a:focus-visible,input:focus-visible,s
  <div class="card"><h2>繰り返し見つかった判断課題と別メニュー</h2><div id="growthRepeatedDecisionIssue"></div></div>
  <div class="card"><h2>練習前後の判断力の変化（月別）</h2><div id="growthTrainingDecisionChange"></div><div class="tiny muted">練習日を基準に、同じテーマの練習前後の試合評価を照合。月ごとに変化率の平均を表示します。比較できるデータがない月は無理に補完しません。</div></div>
  <div class="card"><h2>陸玖の判断力レベル・次の目標</h2><div id="growthDecisionLevel"></div></div>
+ <div class="card"><h2>成長予測・試合と練習の相関</h2><p class="tiny muted">本人確認済みの試合評価と保存済み練習記録から傾向を表示します。予測は過去の傾向を延長した参考値で、将来の結果や練習の因果効果を保証しません。</p><div id="growthForecast"></div><div class="divider"></div><div id="trainingMatchCorrelation"></div></div>
+ <div class="card"><h2>状況別の判断力・ポジショニング</h2><p class="tiny muted">本人確認済み場面を、入力済みポジションとプレー種別で分類します。未入力・映像で不明な項目は評価に含めません。</p><div id="situationDecisionAnalysis"></div></div>
  <div class="card"><h2>判断力の成長グラフ</h2><div id="growthDecisionChart"></div><div class="tiny muted">月ごとの「判断の質」と「周囲の確認」を可視化します。本人確認済みの陸玖の場面だけを集計し、未評価は割合に含めません。</div></div>
  <div class="card"><h2>ポジション別の判断分析</h2><p class="tiny muted">各場面で実際に担当していた役割（GK・DF・MF・FW）を選ぶと、判断の質・周囲の確認・プレー選択を役割別に集計します。ポジションは映像から自動推定せず、確認した内容だけを使います。</p><div id="growthPositionDecision"></div></div>
  <div class="card"><h2>陸玖専用・判断力トレーニング自動作成</h2><p class="tiny muted">ポジション別の試合評価から、改善優先度が最も高い役割を自動で選び、その場面に合った練習メニューを作ります。評価データが少ない場合は、記録を増やしてから自動作成します。</p><div id="positionDecisionTrainingPlan"></div></div>
@@ -1743,6 +1745,61 @@ function renderDecisionGrowthLevel(){
  (r.goal?'<div class="listitem" style="margin-top:8px"><b>次の目標：'+esc(r.goal.key)+'</b><div class="tiny">'+esc(r.goal.goal)+'</div><div class="tiny muted">現在の指標 '+Math.round(r.goal.value)+'%｜改善目標：まずは次の評価で前回より向上</div></div>':'')+
  '<div class="tiny muted" style="margin-top:8px">段階は判断の質40%、周囲の確認30%、練習実行15%、試合への転移15%を基本重みとして、記録がある項目だけで再計算します。判断・確認の評価が3件未満の場合は仮評価です。これは育成用の目安で、年齢別の標準テストや医学的・専門機関の判定ではありません。</div>';
 }
+
+function getManualMatchOutcomeEvents(match,focus){
+ return (match?.candidateEvents||[]).filter(ev=>isManuallyReviewedMatchEvent(ev)&&ev.assessmentSource==='manual'&&['良かった','改善したい'].includes(ev.assessment)&&(!focus||getTrainingFocusForMatchEvent(ev)===focus));
+}
+function getGrowthForecastData(){
+ const categories=getMatchGrowthCategories(),timeline=getMatchGrowthTimelineData();
+ return categories.map(category=>{
+  const source=timeline.find(x=>x.key===category.key),points=(source?.rows||[]).filter(row=>row.total>=2&&Number.isFinite(row.rate)).slice(-6);
+  if(points.length<3)return {key:category.key,label:category.label||category.key,count:points.length,prediction:null,slope:null,trend:'データ蓄積中',latest:points[points.length-1]||null};
+  const xs=points.map((_,i)=>i),ys=points.map(x=>x.rate),mx=xs.reduce((a,b)=>a+b,0)/xs.length,my=ys.reduce((a,b)=>a+b,0)/ys.length;
+  const denom=xs.reduce((n,x)=>n+(x-mx)**2,0),slope=denom?xs.reduce((n,x,i)=>n+(x-mx)*(ys[i]-my),0)/denom:0;
+  const prediction=Math.max(0,Math.min(100,Math.round(ys[ys.length-1]+slope)));
+  return {key:category.key,label:category.label||category.key,count:points.length,prediction,slope,trend:slope>=5?'上向き傾向':slope<=-5?'見直し候補':'おおむね横ばい',latest:points[points.length-1],first:points[0]};
+ });
+}
+function getTrainingMatchCorrelationData(){
+ const focuses=['ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール'];
+ const matches=(state.matchAnalyses||[]).filter(m=>m.date).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+ return focuses.map(focus=>{
+  const pairs=[];
+  (state.trainings||[]).filter(t=>t.date&&(t.focus||inferTrainingFocus(t.menu,t.category))===focus).forEach(training=>{
+   const before=matches.filter(m=>String(m.date)<String(training.date)&&getManualMatchOutcomeEvents(m,focus).length).slice(-1)[0];
+   const after=matches.find(m=>String(m.date)>String(training.date)&&getManualMatchOutcomeEvents(m,focus).length);
+   if(!before||!after)return;
+   const pre=getManualMatchOutcomeEvents(before,focus),post=getManualMatchOutcomeEvents(after,focus);
+   if(!pre.length||!post.length)return;
+   const rate=events=>Math.round(events.filter(e=>e.assessment==='良かった').length/events.length*100);
+   const steps=Array.isArray(training.steps)&&training.steps.length?training.steps:getTrainingSteps(focus);
+   const completion=steps.length?Math.round(getCompletedTrainingStepIndexes(training,steps).length/steps.length*100):null;
+   pairs.push({date:training.date,completion,beforeRate:rate(pre),afterRate:rate(post),delta:rate(post)-rate(pre),beforeDate:before.date,afterDate:after.date,minutes:Number(training.minutes)||0});
+  });
+  const meanDelta=pairs.length?Math.round(pairs.reduce((n,p)=>n+p.delta,0)/pairs.length):null;
+  const meanCompletion=pairs.length?Math.round(pairs.reduce((n,p)=>n+(p.completion??0),0)/pairs.length):null;
+  return {focus,pairs,meanDelta,meanCompletion,count:pairs.length};
+ }).filter(row=>row.count>0);
+}
+function getSituationDecisionBreakdown(){
+ const groups={};
+ (state.matchAnalyses||[]).forEach(match=>(match.candidateEvents||[]).forEach(ev=>{
+  if(!isManuallyReviewedMatchEvent(ev)||!ev.positionRole||!ev.actionType||ev.actionType==='未選択')return;
+  const key=String(ev.positionRole)+'|'+String(ev.actionType),row=groups[key]||(groups[key]={role:ev.positionRole,action:ev.actionType,scenes:0,qualityCount:0,qualityGood:0,scanCount:0,scanGood:0,positioning:{}});
+  row.scenes++;
+  if(['最適な選択','良い選択','別の選択肢もあった','判断が遅れた'].includes(ev.decisionQuality)){row.qualityCount++;if(['最適な選択','良い選択'].includes(ev.decisionQuality))row.qualityGood++;}
+  if(['周囲を確認できた','ボールだけを見ていた','味方・相手の位置を確認できなかった'].includes(ev.decisionScan)){row.scanCount++;if(ev.decisionScan==='周囲を確認できた')row.scanGood++;}
+  Object.entries(ev.positioningReview||{}).forEach(([field,value])=>{if(!['良かった','改善したい'].includes(value))return;const cell=row.positioning[field]||(row.positioning[field]={good:0,total:0});cell.total++;if(value==='良かった')cell.good++;});
+ }));
+ return Object.values(groups).filter(x=>x.scenes>=2).sort((a,b)=>b.scenes-a.scenes);
+}
+function renderStage17GrowthInsights(){
+ const forecastHost=document.getElementById('growthForecast'),correlationHost=document.getElementById('trainingMatchCorrelation'),situationHost=document.getElementById('situationDecisionAnalysis');
+ if(forecastHost){const rows=getGrowthForecastData();forecastHost.innerHTML='<h3>次の試合の参考予測</h3>'+rows.map(row=>'<div class="listitem"><div class="grow"><b>'+esc(row.label)+'</b><div class="tiny muted">'+(row.latest?'直近 '+esc(row.latest.date)+'：'+row.latest.rate+'%（'+row.latest.total+'場面）':'有効な手動評価なし')+'／データ '+row.count+'試合</div></div><span class="tag">'+(row.prediction===null?'蓄積中':row.prediction+'%目安')+'</span></div><div class="tiny muted">'+esc(row.trend)+(row.prediction===null?'。各試合2場面以上の手動評価を3試合分集めると傾向を計算します。':'。過去の直線傾向を1試合分だけ延長した参考値です。')+'</div>').join('')+'<div class="tiny muted">予測値は技術レベルの判定ではありません。試合相手・出場時間・役割・撮影条件の違いを含めていないため、参考値として扱います。</div>';}
+ if(correlationHost){const rows=getTrainingMatchCorrelationData();correlationHost.innerHTML='<h3>練習記録と前後の試合評価</h3>'+(rows.length?rows.map(row=>'<div class="listitem"><div class="grow"><b>'+esc(row.focus)+'</b><div class="tiny muted">比較 '+row.count+'組／練習チェック平均 '+row.meanCompletion+'%</div><div class="tiny">前後の手動評価率の平均差：'+(row.meanDelta>0?'+':'')+row.meanDelta+'ポイント</div>'+row.pairs.slice(-3).map(p=>'<div class="tiny muted">'+esc(p.date)+' 練習｜'+esc(p.beforeDate)+' '+p.beforeRate+'% → '+esc(p.afterDate)+' '+p.afterRate+'%（'+(p.delta>0?'+':'')+p.delta+'pt）</div>').join('')+'</div></div>').join(''):'<div class="empty">同じ練習テーマについて、練習前後の本人確認済み試合評価がそろった比較はまだありません。</div>')+'<div class="tiny muted">これは時間的な前後関係の比較であり、練習が変化の原因だと証明するものではありません。比較できる組だけ表示します。</div>';}
+ if(situationHost){const rows=getSituationDecisionBreakdown();situationHost.innerHTML=rows.length?rows.map(row=>{const position=Object.entries(row.positioning).map(([key,v])=>'<div class="tiny muted">'+esc(key)+'：良 '+v.good+'/'+v.total+'（'+Math.round(v.good/v.total*100)+'%）</div>').join('');return '<div class="listitem"><div class="grow"><b>'+esc(row.role)+'｜'+esc(row.action)+'</b><div class="tiny muted">本人確認済み '+row.scenes+'場面</div><div class="tiny">判断の質：'+(row.qualityCount?Math.round(row.qualityGood/row.qualityCount*100)+'%（'+row.qualityCount+'件）':'未評価')+'｜周囲確認：'+(row.scanCount?Math.round(row.scanGood/row.scanCount*100)+'%（'+row.scanCount+'件）':'未評価')+'</div>'+position+'</div></div>';}).join(''):'<div class="empty">ポジション・プレー種別が入力された本人確認済み場面が、分類表示に必要な2場面以上まだありません。</div>';}
+}
+
 function renderGrowthDashboard(){
  renderDecisionGrowthLevel();
  renderMonthlyGrowthReport();
@@ -1752,6 +1809,7 @@ function renderGrowthDashboard(){
  renderDecisionPracticeMethodStats();
  renderPositionDecisionAnalysis();
  renderPositionDecisionTraining();
+ renderStage17GrowthInsights();
  syncMonthlySkillSnapshot();
  renderPlayerSkillProfile();
  renderSkillTrendHistory();
@@ -2333,6 +2391,7 @@ function getWeeklyCoachPlan(){
  if(weaponPatterns.hasEvidence){const pattern=weaponPatterns.patterns[0];primary.note+='\n【確認済みの武器パターン】'+pattern.actions.join(' → ')+'（異なる試合 '+pattern.matches+'試合・連続場面 '+pattern.count+'組）。この流れを練習で再現する。';primary.why+='／複数試合で再現されたプレー連係を反映';}
  if(positionProfile.best){const topStyle=positionProfile.best.styles[0];primary.note+='\n【ポジション別分析】評価が比較可能な位置の中で「'+positionProfile.best.label+'」の良かった率が高い（'+positionProfile.best.good+'/'+positionProfile.best.total+'場面）。'+(topStyle?'この位置で多く記録された動きは「'+topStyle.style+'」（'+topStyle.good+'/'+topStyle.total+'場面）。':'');primary.why+='／ポジション別の確認済み記録を反映';}
  if(skillPriority){primary.note+='\n【能力分析からの重点】'+skillPriority.focus+'。試合・練習の保存記録をもとに優先候補として選択。';primary.why+='／能力分析の優先テーマを反映';}
+ const trainingCorrelation=getTrainingMatchCorrelationData().filter(x=>x.count>=2).sort((a,b)=>b.count-a.count)[0];if(trainingCorrelation){primary.note+='\n【練習前後の試合記録】'+trainingCorrelation.focus+'：比較 '+trainingCorrelation.count+'組、前後の手動評価率の平均差 '+(trainingCorrelation.meanDelta>0?'+':'')+trainingCorrelation.meanDelta+'ポイント。練習の因果効果を示すものではなく、次週の振り返り候補として使用。';primary.why+='／練習と試合の時系列比較を参考';}
  const positioningAnalysis=getMatchPositioningAnalysis();
  if(positioningAnalysis.priority){
   const p=positioningAnalysis.priority;primary.focus=p.focus;primary.title='試合判断改善｜'+p.label;primary.category='試合判断・ポジショニング';primary.minutes=Math.min(primary.minutes||12,12);
@@ -3504,9 +3563,10 @@ function renderAiFormCompare(){
   const n=newerTimeline[ni],o=olderTimeline[oi];
   return {label:phases===1?'全体':'約'+Math.round(i*100/(phases-1))+'%',nK:avg(n.leftKnee,n.rightKnee),oK:avg(o.leftKnee,o.rightKnee),nH:avg(n.leftHip,n.rightHip),oH:avg(o.leftHip,o.rightHip),nT:n.trunk,oT:o.trunk};
  });
+ const history=all.filter(x=>x!==newer&&sameSetup(x)).slice(0,5);const historyHtml=history.length?'<h4 style="margin-top:14px">同条件の過去記録（最大5件）</h4><div class="tiny muted">今回の最新記録と数値を並べた履歴。角度差は改善判定ではありません。</div><div style="overflow-x:auto"><table class="table"><thead><tr><th>日付</th><th>膝</th><th>股関節</th><th>体幹</th><th>フレーム</th></tr></thead><tbody>'+history.map(x=>'<tr><td>'+esc(x.date||'日付なし')+'</td><td>'+(Number.isFinite(x.knee)?x.knee+'°':'—')+'</td><td>'+(Number.isFinite(x.hip)?x.hip+'°':'—')+'</td><td>'+(Number.isFinite(x.trunk)?x.trunk+'°':'—')+'</td><td>'+(Number.isFinite(x.frames)?x.frames:'—')+'</td></tr>').join('')+'</tbody></table></div>':'<div class="tiny muted">同条件の過去記録は1件のみです。複数回記録すると履歴比較できます。</div>';
  const phaseHtml=phaseRows.length>1?'<h4 style="margin-top:14px">動画内の動作推移を相対位置で比較</h4><div class="tiny muted">各動画のサンプルを開始〜終了の位置に合わせた参考比較。実際の蹴り出し・インパクトの瞬間を同期したものではありません。</div><div style="overflow-x:auto"><table class="table"><thead><tr><th>位置</th><th>膝 今回/前回</th><th>股関節 今回/前回</th><th>体幹 今回/前回</th></tr></thead><tbody>'+phaseRows.map(r=>'<tr><td>'+r.label+'</td><td>'+fmtPair(r.nK,r.oK)+'</td><td>'+fmtPair(r.nH,r.oH)+'</td><td>'+fmtPair(r.nT,r.oT)+'</td></tr>').join('')+'</tbody></table></div>':'<div class="tiny muted">時間推移の比較には、両方の動画で2地点以上の姿勢データが必要です。</div>';
  function fmtPair(a,b){return (a==null?'—':a.toFixed(1)+'°')+' / '+(b==null?'—':b.toFixed(1)+'°')}
- el.innerHTML='<div class="tiny muted">比較条件：'+esc(newer.cameraAngle||'未選択')+'・'+esc(newer.kind||'シュート')+'・'+esc(newer.foot||'右足')+'（3条件が同じ記録のみ）</div><div class="tiny muted">新しい記録：'+esc(newer.date)+'　／　前回：'+esc(older.date)+'</div><div class="tiny muted">角度の差を示すだけで、改善・悪化の判定ではありません。撮影位置・距離・動作中のタイミングもそろえてください。</div>'+summaryHtml+phaseHtml+'<div class="tiny muted">※全動画の平均値と、動画全体の相対位置を合わせたサンプル値です。蹴る瞬間だけを切り出した比較ではありません。</div>';
+ el.innerHTML='<div class="tiny muted">比較条件：'+esc(newer.cameraAngle||'未選択')+'・'+esc(newer.kind||'シュート')+'・'+esc(newer.foot||'右足')+'（3条件が同じ記録のみ）</div><div class="tiny muted">新しい記録：'+esc(newer.date)+'　／　前回：'+esc(older.date)+'</div><div class="tiny muted">角度の差を示すだけで、改善・悪化の判定ではありません。撮影位置・距離・動作中のタイミングもそろえてください。</div>'+summaryHtml+historyHtml+phaseHtml+'<div class="tiny muted">※全動画の平均値と、動画全体の相対位置を合わせたサンプル値です。蹴る瞬間だけを切り出した比較ではありません。</div>';
 }
 function deleteAiFormAnalysis(id){if(!confirm('このAI解析履歴を削除しますか？'))return;state.aiFormAnalyses=(state.aiFormAnalyses||[]).filter(x=>x.id!==id);persist()}
 function deleteMeasure(d,t,v){if(!confirm('この測定記録を削除しますか？'))return;let idx=state.measures.findIndex(x=>x.date===d&&x.type===t&&x.value===v);if(idx>=0)state.measures.splice(idx,1);persist()}
