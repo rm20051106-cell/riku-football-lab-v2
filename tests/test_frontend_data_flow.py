@@ -308,5 +308,49 @@ class FrontendDataFlowContracts(unittest.TestCase):
 
 
 
+
+    def test_stage19_priority_board_uses_only_comparable_manual_match_evidence(self):
+        start = HTML.index("function getMatchGrowthPriorityBoard()")
+        end = HTML.index("\\nfunction ", start + 20)
+        fn = HTML[start:end]
+        self.assertIn("latest.total<2", fn)
+        self.assertIn("status==='再確認が必要'", fn)
+        self.assertIn("latest.improve>latest.good", fn)
+        self.assertIn("evidenceCount:latest.total", fn)
+        self.assertIn("getMatchGrowthTimelineData()", fn)
+
+    def test_stage19_long_term_growth_requires_two_matches_with_two_manual_scenes(self):
+        start = HTML.index("function getLongTermGrowthSummary()")
+        end = HTML.index("\\nfunction ", start + 20)
+        fn = HTML[start:end]
+        self.assertIn("row.total>=2&&Number.isFinite(row.rate)", fn)
+        self.assertIn("if(valid.length<2)", fn)
+        self.assertIn("trainingSessions", fn)
+        self.assertIn("trainingMinutes", fn)
+        self.assertIn("delta", fn)
+
+    def test_stage19_weekly_plan_uses_prioritized_manual_growth_issue(self):
+        start = HTML.index("function getWeeklyCoachPlan()")
+        end = HTML.index("\\nfunction ", start + 20)
+        fn = HTML[start:end]
+        self.assertIn("getMatchGrowthPriorityBoard()", fn)
+        self.assertIn("if(growthPriority&&!growthGoal)", fn)
+        self.assertIn("growthPriority.evidenceCount", fn)
+        self.assertIn("本人確認済みの複数場面から課題を優先", fn)
+
+    def test_stage19_report_displays_long_term_comparison_and_priority(self):
+        self.assertIn("function renderLongTermGrowthSummary()", HTML)
+        self.assertIn("長期成長比較", HTML)
+        self.assertIn("優先度 ", HTML)
+        self.assertIn("getMatchGrowthPriorityBoard().filter", HTML)
+
+    def test_stage19_backup_restore_and_saved_video_playback_contracts_remain(self):
+        self.assertIn("actual.toLowerCase()!==String(parsed.stateSha256).toLowerCase()", HTML)
+        self.assertIn("state=previousState", HTML)
+        self.assertIn("await compareVideoBlobs(verified.blob,restoredFile)", HTML)
+        self.assertIn("URL.createObjectURL(saved.blob)", HTML)
+        self.assertIn("matchVideo.onloadeddata", HTML)
+        self.assertIn("formVideo.onloadeddata", HTML)
+
 if __name__ == "__main__":
     unittest.main()
