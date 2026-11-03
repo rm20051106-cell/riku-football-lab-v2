@@ -50,7 +50,7 @@ button:focus-visible,.button:focus-visible,a:focus-visible,input:focus-visible,s
 <section class="view" id="growth">
  <h1 class="section-title">陸玖の成長グラフ</h1>
  <p class="section-desc">保存された練習・試合評価・測定記録を時系列で表示。記録が増えるほど変化が見やすくなります。</p>
- <div class="card"><h2>陸玖専用・月間成長レポート</h2><p class="tiny muted">保存された練習・試合評価・測定記録から、その月の取り組みと次の重点を自動でまとめます。</p><label class="label" for="growthReportMonth">対象月</label><select id="growthReportMonth" onchange="renderMonthlyGrowthReport()"></select><div id="monthlyGrowthReport"></div></div>
+ <div class="card"><h2>選手カルテ｜強み・残る課題</h2><p class="tiny muted">試合・練習・測定・動画記録をまとめた陸玖の成長カルテ。確認済みデータが足りない項目は評価しません。</p><div id="playerDossier"></div></div>\n <div class="card"><h2>陸玖専用・月間成長レポート</h2><p class="tiny muted">保存された練習・試合評価・測定記録から、その月の取り組みと次の重点を自動でまとめます。</p><label class="label" for="growthReportMonth">対象月</label><select id="growthReportMonth" onchange="renderMonthlyGrowthReport()"></select><div id="monthlyGrowthReport"></div></div>
  <div class="card"><h2>総合成長レポート</h2><p class="tiny muted">測定値・練習実績・本人確認済みの試合評価を一緒に確認します。記録がない項目は推測しません。</p><div id="integratedGrowthReport"></div></div>
  <div class="card"><h2>練習の積み重ね</h2><div id="growthTrainingChart"></div><div class="tiny muted">月ごとの練習記録数です。回数の増加は技術向上そのものを意味しません。</div></div>
  <div class="card"><h2>試合での評価推移</h2><div id="growthMatchChart"></div><div class="tiny muted">本人確認済みの陸玖の試合場面について、「良かった」の割合を月ごとに表示。評価件数も併記します。</div></div>
@@ -1390,12 +1390,46 @@ function getMonthlyGrowthReport(monthKey){
  const drills={'ドリブル':'親子1対1で相手の重心を見て逆を取り、抜いた後の2〜3歩を加速する。','パス':'受ける前の首振りと、前向きのファーストタッチから正確につなぐ。','ボールを受ける':'首振り→半身→前向きのファーストタッチを反復する。','シュート':'軸足とミートを確認し、左右のコースを狙って蹴る。','守備・プレス':'飛び込まず距離を保ち、相手の進行方向を限定する。','オフザボール':'味方が顔を上げる前に動き出し、受ける角度を作る。','その他':'試合の改善場面を一つ選び、ゆっくり再現してから実戦形式で試す。'};
  return {month,trainings:trainings.length,matches:matches.length,events:events.length,assessed:assessed.length,good,needs,goodRate:assessed.length?Math.round(good/assessed.length*100):null,focusCounts,topFocus,stepsDone,stepsTotal,stepRate:stepsTotal?Math.round(stepsDone/stepsTotal*100):null,linked:linked.length,linkedImproved,linkedNeeds,linkedPending,measureSummary,best,priority,next:drills[priority]||drills['その他']};
 }
+function getPlayerDossierSummary(){
+ const matches=state.matchAnalyses||[],trainings=state.trainings||[],measures=state.measures||[];
+ const reviewed=matches.flatMap(match=>(match.candidateEvents||[]).filter(event=>isManuallyReviewedMatchEvent(event)&&event.assessmentSource==='manual'&&['良かった','改善したい'].includes(event.assessment)).map(event=>({...event,matchDate:match.date||'',matchTitle:match.title||'試合'})));
+ const grouped={};
+ reviewed.forEach(event=>{
+  const key=String(event.manualGrowthFocus||event.actionType||'').trim();
+  if(!key)return;
+  const row=grouped[key]||(grouped[key]={key,good:0,improve:0,total:0,matches:new Set(),latestDate:''});
+  row.total++;if(event.assessment==='良かった')row.good++;if(event.assessment==='改善したい')row.improve++;
+  row.matches.add(String(event.matchId||event.matchDate||event.matchTitle));
+  if(event.matchDate>row.latestDate)row.latestDate=event.matchDate;
+ });
+ const categories=Object.values(grouped).map(row=>({...row,matchCount:row.matches.size,goodRate:row.total?Math.round(row.good/row.total*100):null}));
+ const strengths=categories.filter(row=>row.total>=2&&row.good>=2&&row.good>row.improve).sort((a,b)=>b.good-a.good||b.goodRate-a.goodRate);
+ const issues=categories.filter(row=>row.total>=2&&row.improve>=2&&row.improve>row.good).sort((a,b)=>b.improve-a.improve||b.total-a.total);
+ const metricTypes=['30m走','アジリティ','立ち幅跳び'];
+ const latestMeasures=metricTypes.map(type=>({type,record:measures.filter(item=>item.type===type&&item.value!==''&&item.value!==null&&Number.isFinite(Number(item.value))&&/^\\d{4}-\\d{2}-\\d{2}$/.test(String(item.date||''))).sort((a,b)=>String(b.date).localeCompare(String(a.date)))[0]||null}));
+ return {matchCount:matches.filter(match=>/^\\d{4}-\\d{2}-\\d{2}$/.test(String(match.date||''))).length,reviewedMatchCount:reviewed.length,trainingCount:trainings.length,trainingMinutes:trainings.reduce((sum,item)=>sum+Math.max(0,Number(item.minutes)||0),0),measureCount:measures.length,formCount:(state.aiFormAnalyses||[]).length,clipCount:(state.clips||[]).length,formRecordCount:(state.forms||[]).length,strengths,issues,latestMeasures};
+}
+function renderPlayerDossier(){
+ const host=document.getElementById('playerDossier');if(!host)return;
+ const data=getPlayerDossierSummary();
+ const cards=[['試合',data.matchCount+'試合'],['本人確認済み評価',data.reviewedMatchCount+'場面'],['練習',data.trainingCount+'回'],['練習時間',data.trainingMinutes+'分'],['測定',data.measureCount+'件'],['動画・フォーム',(data.clipCount+data.formRecordCount+data.formCount)+'件']];
+ const strengthHtml=data.strengths.length?data.strengths.slice(0,3).map(row=>'<div class="listitem"><div class="grow"><b>'+esc(row.key)+'</b><div class="tiny muted">良かった '+row.good+'／改善したい '+row.improve+'｜'+row.matchCount+'試合｜最新 '+esc(row.latestDate)+'</div></div><b>'+row.goodRate+'%</b></div>').join(''):'<div class="empty">強みを判定できるだけの本人確認済み評価がまだありません。同じテーマで2場面以上の評価が蓄積されるまで順位付けしません。</div>';
+ const issueHtml=data.issues.length?data.issues.slice(0,3).map(row=>'<div class="listitem"><div class="grow"><b>'+esc(row.key)+'</b><div class="tiny muted">改善したい '+row.improve+'／良かった '+row.good+'｜'+row.matchCount+'試合｜最新 '+esc(row.latestDate)+'</div></div><span class="tag">重点確認</span></div>').join(''):'<div class="empty">繰り返し課題として表示できる項目はありません。評価不足の場合は、課題なしとは判定しません。</div>';
+ const measures=data.latestMeasures.map(item=>'<div class="listitem"><div class="grow"><b>'+esc(item.type)+'</b><div class="tiny muted">'+(item.record?esc(item.record.date)+' の保存記録':'測定記録なし')+'</div></div><b>'+(item.record?esc(item.record.value)+' '+esc(item.record.unit||''):'—')+'</b></div>').join('');
+ host.innerHTML=monthlyIntegrated+'<div class="grid two">'+cards.map(item=>'<div class="stat"><b>'+esc(item[1])+'</b><span>'+esc(item[0])+'</span></div>').join('')+'</div><h3 style="margin-top:14px">確認できた強み</h3>'+strengthHtml+'<h3 style="margin-top:14px">残る課題・重点確認</h3>'+issueHtml+'<h3 style="margin-top:14px">最新の測定カルテ</h3>'+measures+'<div class="tiny muted" style="margin-top:8px">強み・課題は陸玖本人として確認され、評価元が手動入力と記録された試合場面のみ。各テーマ2場面未満、または評価が一方向に偏らない場合は順位付けしません。練習回数・動画本数・測定値だけから技術力を推定しません。</div>';
+}
 function renderMonthlyGrowthReport(){
  const host=document.getElementById('monthlyGrowthReport'),picker=document.getElementById('growthReportMonth');if(!host||!picker)return;
  const now=new Date(),keys=[];for(let i=0;i<12;i++){const d=new Date(now.getFullYear(),now.getMonth()-i,1);keys.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));}
  const available=new Set([today().slice(0,7),...(state.trainings||[]).map(x=>String(x.date||'').slice(0,7)),...(state.matchAnalyses||[]).map(x=>String(x.date||'').slice(0,7)),...(state.measures||[]).map(x=>String(x.date||'').slice(0,7))]);
  const selected=picker.value,options=keys.filter(k=>available.has(k));picker.innerHTML=options.map(k=>'<option value="'+k+'">'+Number(k.slice(5))+'月（'+k.slice(0,4)+'年）</option>').join('');picker.value=options.includes(selected)?selected:(options[0]||keys[0]);
  const r=getMonthlyGrowthReport(picker.value);
+ const monthTrainings=(state.trainings||[]).filter(item=>String(item.date||'').slice(0,7)===picker.value);
+ const monthMatches=(state.matchAnalyses||[]).filter(item=>String(item.date||'').slice(0,7)===picker.value);
+ const monthReviewed=monthMatches.flatMap(match=>(match.candidateEvents||[]).filter(event=>isManuallyReviewedMatchEvent(event)&&event.assessmentSource==='manual'&&['良かった','改善したい'].includes(event.assessment)));
+ const monthMeasureCount=(state.measures||[]).filter(item=>String(item.date||'').slice(0,7)===picker.value).length;
+ const monthMinutes=monthTrainings.reduce((sum,item)=>sum+Math.max(0,Number(item.minutes)||0),0);
+ const monthlyIntegrated='<div class="listitem" style="display:block"><b>月別・記録統合</b><div class="tiny">試合 '+monthMatches.length+'試合｜本人確認済み手動評価 '+monthReviewed.length+'場面｜練習 '+monthTrainings.length+'回・'+monthMinutes+'分｜測定 '+monthMeasureCount+'件</div><div class="tiny muted">試合・練習・測定の件数を同じ対象月で照合。件数は活動記録であり、技術向上や練習の因果効果を示しません。</div></div>';
  const metric=(label,value,sub)=>'<div class="listitem"><b>'+esc(label)+'</b><div style="font-size:22px;font-weight:800;margin:3px 0">'+esc(value)+'</div><div class="tiny muted">'+esc(sub)+'</div></div>';
  const measures=r.measureSummary.length?r.measureSummary.map(m=>'<div class="tiny">・'+esc(m.type)+'：'+esc(m.first.value)+' → <b>'+esc(m.last.value)+' '+esc(m.unit)+'</b>'+(m.delta===null?'（月内1件）':'（月内差 '+(m.delta>0?'+':'')+m.delta.toFixed(2)+' '+esc(m.unit)+'）')+'｜'+m.count+'件</div>').join(''):'<div class="tiny muted">この月の身体測定記録はありません。</div>';
  host.innerHTML='<div class="grid two" style="margin-top:10px">'+metric('練習記録',r.trainings+'回','対象月の保存件数')+metric('試合場面の評価',r.assessed+'件',r.assessed?'良かった '+r.good+'／改善したい '+r.needs:'評価入力待ち')+metric('良かった評価',r.goodRate===null?'—':r.goodRate+'%','陸玖本人として確認・評価した場面のみ')+metric('練習チェック達成率',r.stepRate===null?'—':r.stepRate+'%',r.stepsDone+'/'+r.stepsTotal+'項目')+'</div><div class="listitem" style="margin-top:8px"><b>今月の取り組みテーマ</b><div class="tiny">'+(r.topFocus?esc(r.topFocus[0])+'（'+r.topFocus[1]+'回）':'練習テーマの記録なし')+'</div><div class="tiny muted">良かった場面の最多テーマ：'+(r.best?esc(r.best[0])+'（'+r.best[1]+'件）':'評価データなし')+'</div></div><div class="listitem"><b>試合→練習→次の試合</b><div class="tiny">連携練習 '+r.linked+'件｜改善の兆し '+r.linkedImproved+'・課題継続 '+r.linkedNeeds+'・評価待ち '+r.linkedPending+'</div></div><div class="listitem"><b>身体測定</b>'+measures+'</div><div class="note" style="margin-top:10px"><b>来月のおすすめ重点：'+esc(r.priority)+'</b><div class="tiny">'+esc(r.next)+'</div></div><div class="tiny muted" style="margin-top:8px">保存済み記録だけを集計します。記録がない項目はゼロ成長と判断せず「データなし」として扱います。タイムの計測条件が異なる場合は単純比較しません。</div>';
@@ -1812,7 +1846,7 @@ function renderStage17GrowthInsights(){
 
 function renderGrowthDashboard(){
  renderDecisionGrowthLevel();
- renderMonthlyGrowthReport();
+ renderPlayerDossier();\n renderMonthlyGrowthReport();
  renderDecisionGrowthChart();
  renderMonthlyTrainingDecisionChange();
  renderRepeatedDecisionIssue();
