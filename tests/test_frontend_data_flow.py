@@ -188,7 +188,8 @@ class FrontendDataFlowContracts(unittest.TestCase):
         self.assertIn("function connectAiFormAnalysisToMatch(analysis,match)", HTML)
         self.assertIn("syncAiFormAnalysisMatchLinks(analysis)", HTML)
         self.assertIn("previousAiFormAnalyses=JSON.parse(JSON.stringify(state.aiFormAnalyses||[]))", HTML)
-        self.assertIn("state.aiFormAnalyses=previousAiFormAnalyses", HTML)
+        self.assertIn("previousMatchAnalyses=JSON.parse(JSON.stringify(state.matchAnalyses||[]))", HTML)
+        self.assertIn("state.aiFormAnalyses=previousAiFormAnalyses;state.matchAnalyses=previousMatchAnalyses", HTML)
         self.assertIn("playSavedClip('+Number(linkedMatch.clipId)+')", HTML)
 
     def test_backup_v3_manifest_is_verified_and_ai_links_rebuilt_on_restore(self):
