@@ -2412,7 +2412,7 @@ function getWeeklyCoachPlan(){
  const growthPriority=getMatchGrowthPriorityBoard().find(x=>x.priority>=3&&x.latest&&x.latest.total>=2);
  if(growthPriority&&!growthGoal){
   primary.title='試合成長課題｜'+growthPriority.key;primary.focus=growthPriority.trainingFocus;primary.minutes=Math.min(primary.minutes||12,12);primary.category='本人確認済み課題の優先練習';
-  primary.note+='\\n【試合評価からの優先課題】'+growthPriority.reason+'\\n【練習目標】'+growthPriority.goal+'\\n手動評価 '+growthPriority.evidenceCount+'場面。未確認映像やAI候補は使用していません。';
+  primary.note+='\n【試合評価からの優先課題】'+growthPriority.reason+'\\n【練習目標】'+growthPriority.goal+'\\n手動評価 '+growthPriority.evidenceCount+'場面。未確認映像やAI候補は使用していません。';
   primary.why+='／本人確認済みの複数場面から課題を優先';
   primary.sourceMatch={...(primary.sourceMatch||{}),growthPriority:true,growthFocus:growthPriority.key,growthEvidenceCount:growthPriority.evidenceCount};
  }
