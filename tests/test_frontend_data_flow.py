@@ -123,8 +123,6 @@ class FrontendDataFlowContracts(unittest.TestCase):
         self.assertIn("元の目標を維持しています", update)
 
 
-if __name__ == "__main__":
-    unittest.main()
 
     def test_video_storage_progress_and_retry_controls_are_present(self):
         for token in ("videoSaveProgressBar", "formSaveProgressBar", "videoImportProgressBar", "videoImportRetry", "retryFailedVideoImport", "updateVideoTaskProgress"):
@@ -138,3 +136,7 @@ if __name__ == "__main__":
         self.assertIn("lastVideoImportFiles=files", HTML)
         self.assertIn("retryFailedVideoImport", HTML)
         self.assertIn("再試行できます", HTML)
+
+
+if __name__ == "__main__":
+    unittest.main()
