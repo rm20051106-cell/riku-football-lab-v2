@@ -497,6 +497,7 @@ function renderTrainingDecisionComparison(training){
 function renderImprovementFollowup(training){
  if(!training?.sourceMatch)return '';
  const r=getImprovementFollowup(training);
+ if(!r)return '<div class="note" style="margin-top:8px"><b>📈 試合での改善追跡</b><div class="tiny muted">元の試合履歴は削除済み、または連携先が確認できないため、以後の試合比較は停止しています。練習記録と保存済みの課題メモは残しています。</div></div>';
  const tone=r.status==='改善傾向あり'||r.status==='改善の兆しあり'?'good':'';
  const progress=r.assessed?'<div class="tiny">確認済み '+r.assessed+'場面｜良かった '+r.good+'／改善したい '+r.improve+'｜良かった率 '+r.rate+'%</div>':'<div class="tiny muted">評価済みの同テーマ場面はまだありません。</div>';
  const rows=(r.results||[]).map(x=>{
