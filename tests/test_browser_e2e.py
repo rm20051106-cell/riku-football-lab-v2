@@ -361,9 +361,9 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     }
                 };
             })""")
-            self.assertTrue(result["opened"] and result["blobSupported"], result)
-            self.assertEqual(result["bytes"], 3, result)
-            self.assertTrue(result["progress"] and result["importProgress"], result)
+            self.assertTrue(result.get("opened") and result.get("blobSupported"), result)
+            self.assertEqual(result.get("bytes"), 3, result)
+            self.assertTrue(result.get("progress") and result.get("importProgress"), result)
             context.close()
         finally:
             browser.close()
