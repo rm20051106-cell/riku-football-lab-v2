@@ -429,5 +429,31 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual(result["afterIdentityChange"], 0)
 
 
+    def test_duplicate_or_invalid_training_check_indexes_do_not_inflate_weekly_progress(self):
+        result = self.page.evaluate("""() => {
+            const training = {
+                id: 7101, date: '2026-11-02', focus: 'ドリブル',
+                steps: ['one', 'two'],
+                stepsDone: [0, 0, 1, 99, -1, '1']
+            };
+            state.trainings = [training];
+            const reflection = buildTrainingReflection(training);
+            const cycle = getTrainingCycleSummary(training);
+            const weekly = getPreviousWeekTrainingAdjustment('2026-11-03');
+            return {
+                completed: getCompletedTrainingStepIndexes(training),
+                good: reflection.good,
+                improve: reflection.improve,
+                cycle: {stepsDone: cycle.stepsDone, completion: cycle.completion},
+                weekly: {assessed: weekly.assessed, avgCompletion: weekly.avgCompletion}
+            };
+        }""")
+        self.assertEqual(result["completed"], [0, 1])
+        self.assertIn("2/2項目を実施（100%）", result["good"])
+        self.assertFalse(any("チェック未完了" in item for item in result["improve"]))
+        self.assertEqual(result["cycle"], {"stepsDone": 2, "completion": 100})
+        self.assertEqual(result["weekly"], {"assessed": 1, "avgCompletion": 100})
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
