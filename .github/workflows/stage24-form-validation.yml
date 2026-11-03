@@ -4,7 +4,7 @@ on:
   push:
     branches: [feature/stage24-form-phase-review-20261103]
   pull_request:
-    branches: [main]
+    branches: [main, feature/stage23-video-form-dossier-20261103]
 
 jobs:
   form-phase-regression:
