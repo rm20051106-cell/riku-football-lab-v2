@@ -1774,7 +1774,7 @@ function getTrainingMatchCorrelationData(){
   const pairs=[];
   (state.trainings||[]).filter(t=>t.date&&(t.focus||inferTrainingFocus(t.menu,t.category))===focus).forEach(training=>{
    const expectedRole=String(training.positionRole||training.role||'').trim();
-   const matchEvents=match=>getManualMatchOutcomeEvents(match,focus).filter(ev=>!expectedRole||!ev.positionRole||String(ev.positionRole).trim()===expectedRole);
+   const matchEvents=match=>getManualMatchOutcomeEvents(match,focus).filter(ev=>!expectedRole||String(ev.positionRole||'').trim()===expectedRole);
    const comparable=match=>dayDistance(match.date,training.date)<=30&&matchEvents(match).length>=2;
    const before=matches.filter(m=>String(m.date)<String(training.date)&&comparable(m)).slice(-1)[0];
    const after=matches.find(m=>String(m.date)>String(training.date)&&comparable(m));
