@@ -718,5 +718,66 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertIn("元の状態に戻しました", result["alert"])
 
 
+    def test_webkit_settings_backup_export_and_restore_interaction(self):
+        browser = self.playwright.webkit.launch(headless=True)
+        context = browser.new_context(
+            viewport={"width": 390, "height": 844},
+            accept_downloads=True,
+        )
+        page = context.new_page()
+        try:
+            page.goto(self.base_url, wait_until="load")
+            page.wait_for_function("typeof exportData === 'function' && typeof getClipVideo === 'function'")
+            page.on("dialog", lambda dialog: dialog.accept())
+            page.locator('.nav button[data-view="settings"]').click()
+            self.assertTrue(page.locator("#settings").evaluate("(el) => el.classList.contains('active')"))
+            with page.expect_download(timeout=15000) as download_info:
+                page.get_by_role("button", name="記録データを書き出す").click()
+            download = download_info.value
+            self.assertIn("riku-football-lab-backup-", download.suggested_filename)
+
+            backup_text = page.evaluate("""async () => {
+                const snapshot = {
+                    ...state,
+                    settings: {...state.settings},
+                    trainings: [{id: 98101, date: '2026-11-03', focus: 'ドリブル', steps: ['加速'], stepsDone: [0]}],
+                    measures: Array.isArray(state.measures) ? state.measures : [],
+                    clips: [], forms: [],
+                    matchAnalyses: [{id: 98102, date: '2026-11-03', title: 'Safari restore', candidateEvents: []}],
+                    aiFormAnalyses: []
+                };
+                const serialized = JSON.stringify(snapshot);
+                const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(serialized));
+                const stateSha256 = Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
+                return JSON.stringify({
+                    backupFormat: 'riku-football-lab',
+                    backupVersion: 3,
+                    recordCounts: {trainings: 1, measures: snapshot.measures.length, clips: 0, forms: 0, matchAnalyses: 1, aiFormAnalyses: 0},
+                    videoFilesIncluded: false,
+                    videoFileCount: 0,
+                    stateSha256,
+                    state: snapshot
+                });
+            }""")
+            page.locator("#importFile").set_input_files({
+                "name": "riku-safari-backup.json",
+                "mimeType": "application/json",
+                "buffer": backup_text.encode("utf-8")
+            })
+            page.wait_for_function("state.trainings.some(x => x.id === 98101) && state.matchAnalyses.some(x => x.id === 98102)")
+            result = page.evaluate("""() => ({
+                training: state.trainings.find(x => x.id === 98101)?.stepsDone,
+                match: state.matchAnalyses.find(x => x.id === 98102)?.title,
+                stored: JSON.parse(localStorage.getItem(KEY)).trainings.some(x => x.id === 98101)
+            })""")
+            self.assertEqual(result["training"], [0], result)
+            self.assertEqual(result["match"], "Safari restore", result)
+            self.assertTrue(result["stored"], result)
+        finally:
+            context.close()
+            browser.close()
+
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
