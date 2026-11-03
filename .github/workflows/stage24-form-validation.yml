@@ -1,0 +1,21 @@
+name: Validate RIKU FOOTBALL LAB - Stage 24 Form
+
+on:
+  push:
+    branches: [feature/stage24-form-phase-review-20261103]
+  pull_request:
+    branches: [main]
+
+jobs:
+  form-phase-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run Stage 24 form regression tests
+        run: python -m unittest discover -s tests -p "test_stage24_form.py" -v
