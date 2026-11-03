@@ -1,0 +1,27 @@
+name: Stage 30 validation
+
+on:
+  push:
+    branches:
+      - feature/stage30-angle-aware-auto-form-score-20261103
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python -m compileall -q backend
+      - run: python -m unittest discover -s tests -p 'test_stage27_multi_angle.py' -v
+      - run: python -m unittest discover -s tests -p 'test_stage28_unified_kick.py' -v
+      - run: python -m unittest discover -s tests -p 'test_stage29_kick_form_growth.py' -v
+      - run: python -m unittest discover -s tests -p 'test_stage30_angle_aware_auto_score.py' -v
+      - name: Check inline JavaScript syntax
+        run: |
+          python -c "import re,pathlib; h=pathlib.Path('index.html').read_text(encoding='utf-8'); s=re.findall(r'<script[^>]*>(.*?)</script>',h,re.I|re.S); pathlib.Path('/tmp/riku.js').write_text('\\n'.join(s),encoding='utf-8')"
+          node --check /tmp/riku.js
