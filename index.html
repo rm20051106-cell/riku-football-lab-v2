@@ -189,14 +189,14 @@ function saveTrainingReflectionSnapshot(record){
 function getTrainingCycleSummary(training){
  const followup=getImprovementFollowup(training);
  const steps=Array.isArray(training?.steps)?training.steps:[];
- const done=Array.isArray(training?.stepsDone)?training.stepsDone.filter(i=>Number.isInteger(i)&&i>=0&&i<steps.length):[];
+ const done=getCompletedTrainingStepIndexes(training,steps);
  return {issueKey:training?.sourceMatch?.issueKey||getTrainingIssueKey({focus:training?.focus,actionType:training?.sourceMatch?.actionType,positionRole:training?.sourceMatch?.positionRole}),stepsTotal:steps.length,stepsDone:done.length,completion:steps.length?Math.round(done.length/steps.length*100):0,reflection:training?.reflectionSnapshot||null,followup};
 }
 function updateTrainingStep(id,index,checked){
  const record=(state.trainings||[]).find(t=>String(t.id)===String(id));if(!record)return;
  const original=JSON.parse(JSON.stringify(record));
  const steps=record.steps||getTrainingSteps(record.focus||inferTrainingFocus(record.menu,record.category));
- const done=Array.isArray(record.stepsDone)?record.stepsDone.slice():[];
+ const done=getCompletedTrainingStepIndexes(record,steps);
  if(checked&&!done.includes(index))done.push(index);
  if(!checked){const at=done.indexOf(index);if(at>=0)done.splice(at,1);}
  record.steps=steps;record.stepsDone=done;saveTrainingReflectionSnapshot(record);record.updatedAt=new Date().toISOString();
@@ -2046,6 +2046,11 @@ function getValidatedTrainingMatchEvents(record){
  });
  return validated;
 }
+function getCompletedTrainingStepIndexes(record,stepsOverride){
+ const steps=Array.isArray(stepsOverride)?stepsOverride:(Array.isArray(record?.steps)?record.steps:[]);
+ const done=Array.isArray(record?.stepsDone)?record.stepsDone:[];
+ return [...new Set(done.filter(index=>Number.isInteger(index)&&index>=0&&index<steps.length))];
+}
 function buildTrainingReflection(record){
  const focus=record?.focus||inferTrainingFocus(record?.menu,record?.category);
  const steps=Array.isArray(record?.steps)&&record.steps.length?record.steps:getTrainingSteps(focus);
@@ -2126,8 +2131,8 @@ function getPreviousWeekTrainingAdjustment(weekStart){
  const fmt=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
  const from=fmt(start),to=fmt(end);
  const records=(state.trainings||[]).filter(t=>t.date>=from&&t.date<=to);
- const assessed=records.filter(t=>t.reviewStatus||t.matchTransferStatus||(Array.isArray(t.stepsDone)&&t.stepsDone.length>0));
- const rate=t=>{const steps=Array.isArray(t.steps)&&t.steps.length?t.steps:getTrainingSteps(t.focus||inferTrainingFocus(t.menu,t.category));return steps.length?Math.round((Array.isArray(t.stepsDone)?t.stepsDone.length:0)/steps.length*100):null;};
+ const assessed=records.filter(t=>t.reviewStatus||t.matchTransferStatus||getCompletedTrainingStepIndexes(t,Array.isArray(t.steps)&&t.steps.length?t.steps:getTrainingSteps(t.focus||inferTrainingFocus(t.menu,t.category))).length>0);
+ const rate=t=>{const steps=Array.isArray(t.steps)&&t.steps.length?t.steps:getTrainingSteps(t.focus||inferTrainingFocus(t.menu,t.category));return steps.length?Math.round(getCompletedTrainingStepIndexes(t,steps).length/steps.length*100):null;};
  const rates=assessed.map(rate).filter(v=>v!==null);
  const avg=rates.length?Math.round(rates.reduce((a,b)=>a+b,0)/rates.length):null;
  const hard=assessed.filter(t=>t.reviewStatus==='難しかった'||t.reviewStatus==='まだ試せていない'||t.effort==='きつめ').length;
