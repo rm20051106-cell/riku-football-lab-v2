@@ -19,3 +19,4 @@ class Stage30Tests(unittest.TestCase):
         self.assertIn('接触位置は断定できません', BACKEND)
 if __name__ == '__main__':
     unittest.main()
+# Re-run validation against the corrected Stage 30 inline script.
