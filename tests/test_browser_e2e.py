@@ -511,7 +511,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertIn("元の練習記録と連携状態に戻しました", result["alert"])
 
 
-    def test_match_scan_and_local_video_link_in_either_save_order(self):
+    def test_match_scan_saved_before_local_video_links_and_opens_playback(self):
         page = self.page
         page.locator("#videoTitle").fill("同一動画の試合分析")
         page.locator("#videoFile").set_input_files(str(self.video_path))
@@ -550,6 +550,8 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertTrue(linked["fingerprint"], linked)
         page.evaluate("renderMatchLibrary()")
         self.assertIn("端末内動画を再生", page.locator("#matchLibrary").inner_text())
+        page.get_by_role("button", name="端末内動画を再生").first.click()
+        page.wait_for_function("document.getElementById('matchVideo').readyState >= 2", timeout=10000)
 
 
 if __name__ == "__main__":
