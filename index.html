@@ -3989,6 +3989,19 @@ function renderKickPhaseTimeIntegrity(record){
  const missingHtml=missing.length?'<div class="tiny muted">未確認・時刻未登録：'+missing.map(esc).join('・')+'</div>':'';
  return '<div class="tiny" style="margin-top:5px"><b>手動時刻の順序チェック：</b>'+esc(state)+'（確認済み '+confirmed.length+'/5）</div>'+issueHtml+missingHtml+'<div class="tiny muted">入力時刻の矛盾を検出するだけで、時刻の自動修正・推測・並べ替えは行いません。</div>';
 }
+function renderKickPhaseIntervals(record){
+ const defs=[['approach','助走'],['plant','軸足接地'],['swing','蹴り脚の振り出し'],['impact','インパクト'],['follow_through','フォロースルー']];
+ const phases=defs.map(([key,label])=>{const p=record.reviewedKickPhases?.[key];return {label,time:p?.confirmedBy==='parent_manual_review'&&p.status==='確認済み'&&Number.isFinite(p.timeSeconds)?p.timeSeconds:null};});
+ const rows=[];
+ for(let i=1;i<phases.length;i++){
+  const a=phases[i-1],b=phases[i];
+  let value='比較不可';
+  if(Number.isFinite(a.time)&&Number.isFinite(b.time)&&b.time>=a.time)value=(b.time-a.time).toFixed(2)+'秒';
+  else if(Number.isFinite(a.time)&&Number.isFinite(b.time)&&b.time<a.time)value='時刻順の再確認が必要';
+  rows.push('<div class="tiny"><b>'+esc(a.label)+'→'+esc(b.label)+'：</b>'+value+'</div>');
+ }
+ return '<div style="margin-top:6px"><b class="tiny">手動確認時刻から計算した局面間時間</b>'+rows.join('')+'<div class="tiny muted">両端の節目が保護者により確認され、時刻が順序どおりの場合だけ差分を表示。動作の速さの良否や理想値は判定しません。</div></div>';
+}
 function renderMultiAngleKickReview(){
  const host=document.getElementById('multiAngleKickReview');if(!host)return;
  const all=(state.aiFormAnalyses||[]);
@@ -4020,7 +4033,7 @@ function renderMultiAngleKickReview(){
   const metrics=[['膝',r.knee],['股関節',r.hip],['体幹傾き',r.trunk]].map(([name,value])=>'<span class="tag">'+name+' '+(value!==null&&value!==undefined&&value!==''&&Number.isFinite(Number(value))?Number(value).toFixed(1)+'°':'未確認')+'</span>').join(' ');
   const linkedForm=(state.forms||[]).find(form=>String(form.id)===String(r.formId));
   const playback=linkedForm&&linkedForm.hasVideo?'<button class="secondary small" onclick="playSavedForm('+Number(linkedForm.id)+')">この角度の保存動画を再生</button>':'<span class="tiny muted">再生用フォーム動画の連携なし</span>';
-  return '<section class="listitem" style="display:block;margin:10px 0"><div class="row" style="justify-content:space-between;align-items:center"><b>'+esc(r.cameraAngle||'角度未設定')+'｜'+esc(r.date||'日付なし')+'</b><span class="tag">'+(confirmed?'手動確認済み':'手動確認なし')+'</span></div><div class="tiny muted">角度記録 '+(index+1)+'／'+records.length+'・撮影距離 '+esc(r.cameraDistance||'未確認')+'・画角 '+esc(r.framing||'未確認')+'</div><div style="margin:7px 0">'+metrics+'</div><h4>この角度で確認できた範囲</h4>'+visibilityHtml+'<h4 style="margin-top:8px">手動確認記録（この角度の証拠）</h4>'+manualHtml+'<h4 style="margin-top:8px">手動登録した節目</h4><div>'+phaseHtml+'</div>'+renderKickPhaseTimeIntegrity(r)+'<div style="margin-top:8px">'+playback+'</div></section>';
+  return '<section class="listitem" style="display:block;margin:10px 0"><div class="row" style="justify-content:space-between;align-items:center"><b>'+esc(r.cameraAngle||'角度未設定')+'｜'+esc(r.date||'日付なし')+'</b><span class="tag">'+(confirmed?'手動確認済み':'手動確認なし')+'</span></div><div class="tiny muted">角度記録 '+(index+1)+'／'+records.length+'・撮影距離 '+esc(r.cameraDistance||'未確認')+'・画角 '+esc(r.framing||'未確認')+'</div><div style="margin:7px 0">'+metrics+'</div><h4>この角度で確認できた範囲</h4>'+visibilityHtml+'<h4 style="margin-top:8px">手動確認記録（この角度の証拠）</h4>'+manualHtml+'<h4 style="margin-top:8px">手動登録した節目</h4><div>'+phaseHtml+'</div>'+renderKickPhaseTimeIntegrity(r)+renderKickPhaseIntervals(r)+'<div style="margin-top:8px">'+playback+'</div></section>';
  }).join('');
  const evidenceByItem=itemDefs.map(item=>{
   const evidence=records.flatMap(r=>{
