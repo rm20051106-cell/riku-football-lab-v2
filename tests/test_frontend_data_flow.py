@@ -105,7 +105,7 @@ class FrontendDataFlowContracts(unittest.TestCase):
         self.assertIn("if(!persist()){\n  Object.keys(ev).forEach(key=>delete ev[key]);Object.assign(ev,originalEvent);state.trainings=originalTrainings", HTML)
 
     def test_backup_integrity_and_separate_video_export_restore(self):
-        self.assertIn("backupFormat:'riku-football-lab',backupVersion:2", HTML)
+        self.assertIn("backupFormat:'riku-football-lab',backupVersion:3", HTML)
         self.assertIn("videoFilesIncluded:false", HTML)
         self.assertIn("stateSha256", HTML)
         self.assertIn("async function prepareVideoExport()", HTML)
@@ -170,6 +170,37 @@ class FrontendDataFlowContracts(unittest.TestCase):
         self.assertIn("lastVideoImportFiles=files", HTML)
         self.assertIn("retryFailedVideoImport", HTML)
         self.assertIn("再試行できます", HTML)
+
+
+    def test_match_growth_graph_uses_only_manual_evidence_and_minimum_sample(self):
+        self.assertIn("function renderGrowthTrendChart(rows)", HTML)
+        self.assertIn("row.total>=2&&Number.isFinite(row.rate)", HTML)
+        self.assertIn("renderGrowthTrendChart(item.rows)", HTML)
+        self.assertIn("手動評価の推移", HTML)
+
+    def test_position_decision_history_is_broken_down_by_match(self):
+        self.assertIn("byMatch:[]", HTML)
+        self.assertIn("matchRow.qualityCount++", HTML)
+        self.assertIn("matchRow.scanCount++", HTML)
+        self.assertIn("試合ごとの時系列（直近6試合）", HTML)
+
+    def test_ai_form_analysis_links_to_same_match_video_and_rolls_back(self):
+        self.assertIn("function connectAiFormAnalysisToMatch(analysis,match)", HTML)
+        self.assertIn("syncAiFormAnalysisMatchLinks(analysis)", HTML)
+        self.assertIn("previousAiFormAnalyses=JSON.parse(JSON.stringify(state.aiFormAnalyses||[]))", HTML)
+        self.assertIn("state.aiFormAnalyses=previousAiFormAnalyses", HTML)
+        self.assertIn("playSavedClip('+Number(linkedMatch.clipId)+')", HTML)
+
+    def test_backup_v3_manifest_is_verified_and_ai_links_rebuilt_on_restore(self):
+        self.assertIn("backupVersion:3,recordCounts:", HTML)
+        self.assertIn("バックアップ目録と一致しません", HTML)
+        self.assertIn("if(isAppBackup&&parsed.backupVersion>3)", HTML)
+        self.assertIn("restored.aiFormAnalyses||[]).forEach(analysis=>", HTML)
+        self.assertIn("analysis.matchId=String(match.id)", HTML)
+
+    def test_weekly_adjustment_includes_position_decision_training_candidate(self):
+        self.assertIn("const positionPlan=getPositionDecisionTrainingPlan()", HTML)
+        self.assertIn("ポジション別の判断・周囲確認評価からの練習候補", HTML)
 
 
 if __name__ == "__main__":
