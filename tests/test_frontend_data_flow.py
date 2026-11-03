@@ -374,7 +374,7 @@ class FrontendDataFlowContracts(unittest.TestCase):
         start = HTML.index("function renderPlayerDossier()")
         end = HTML.index("\nfunction ", start + 20)
         fn = HTML[start:end]
-        for token in ("確認できた強み", "残る課題・重点確認", "評価がまだありません", "課題なしとは判定しません", "playerDossier"):
+        for token in ("確認できた強み", "残る課題・重点確認", "評価データがまだありません", "課題なしとは判定しません", "playerDossier"):
             self.assertIn(token, fn)
 
     def test_stage20_monthly_report_integrates_same_month_match_training_and_measure_counts(self):
@@ -400,6 +400,15 @@ class FrontendDataFlowContracts(unittest.TestCase):
         self.assertIn("latestMeasures=metricTypes.map", fn)
         self.assertIn("Number.isFinite(Number(item.value))", fn)
         self.assertIn("item.date||''", fn)
+
+    def test_stage20_monthly_summary_is_scoped_to_monthly_report_not_player_dossier(self):
+        dossier_start = HTML.index("function renderPlayerDossier()")
+        monthly_start = HTML.index("function renderMonthlyGrowthReport()")
+        decision_start = HTML.index("function getDecisionGrowthSeries()")
+        dossier = HTML[dossier_start:monthly_start]
+        monthly = HTML[monthly_start:decision_start]
+        self.assertNotIn("monthlyIntegrated", dossier)
+        self.assertIn("host.innerHTML=monthlyIntegrated+", monthly)
 
 if __name__ == "__main__":
     unittest.main()
