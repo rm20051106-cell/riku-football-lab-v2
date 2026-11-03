@@ -391,5 +391,6 @@ class FrontendDataFlowContracts(unittest.TestCase):
     def test_stage20_backup_restore_and_saved_video_playback_contracts_remain(self):
         for token in ("actual.toLowerCase()!==String(parsed.stateSha256).toLowerCase()", "state=previousState", "await compareVideoBlobs(verified.blob,restoredFile)", "URL.createObjectURL(saved.blob)", "matchVideo.onloadeddata", "formVideo.onloadeddata"):
             self.assertIn(token, HTML)
-\nif __name__ == "__main__":
+
+if __name__ == "__main__":
     unittest.main()
