@@ -1,0 +1,19 @@
+name: Validate RIKU FOOTBALL LAB - Stage 23
+on:
+  push:
+    branches: [feature/stage23-video-form-dossier-20261103]
+  pull_request:
+    branches: [main]
+jobs:
+  stage23-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run Stage 23 regression tests
+        run: python -m unittest discover -s tests -p "test_stage23.py" -v

@@ -2,7 +2,7 @@ name: Validate RIKU FOOTBALL LAB - Stage 22
 
 on:
   push:
-    branches: [feature/stage20-player-dossier-monthly-growth-20261103, feature/stage21-growth-goal-training-linkage-20261103, feature/stage22-postmatch-goal-evidence-review-20261103]
+    branches: [feature/stage20-player-dossier-monthly-growth-20261103, feature/stage21-growth-goal-training-linkage-20261103, feature/stage22-postmatch-goal-evidence-review-20261103, feature/stage28-unified-kick-form-record-20261103]
   pull_request:
     branches: [main, feature/annual-goal-linkage, feature/ai-evidence-and-form-quality, feature/match-review-growth-report, feature/closed-loop-development, feature/adaptive-individual-coach, feature/weekly-load-planner, feature/matchday-recovery-cycle, feature/stage15-integrity-ai-linkage-20261103, feature/stage20-player-dossier-monthly-growth-20261103, feature/stage21-growth-goal-training-linkage-20261103]
 
@@ -48,6 +48,24 @@ jobs:
           for file in /tmp/riku-inline-scripts/*.js; do
             node --check "$file"
           done
+
+      - name: Verify five-direction kick review contracts
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          html = Path("index.html").read_text(encoding="utf-8")
+          required = ["右側から", "左側から", "斜め右後ろから", "斜め左後ろから", "後ろから"]
+          selector = html.split('id="formCameraAngle"', 1)[1].split("</select>", 1)[0]
+          missing = [angle for angle in required if angle not in selector]
+          assert not missing, f"Missing camera angles: {missing}"
+          assert "const requiredAngles=['右側から','左側から','斜め右後ろから','斜め左後ろから','後ろから']" in html
+          assert "const groupId=String(latest.kickGroupId)" in html
+          assert "records=all.filter(x=>x.kickGroupId===latest.kickGroupId" in html
+          assert "AI数値は撮影角度ごとに個別表示" in html
+          assert "異なる角度の数値を平均・合算せず" in html
+          assert "angleCoverageHtml" in html
+          print("Five-direction capture and evidence-separation checks passed")
+          PY
 
       - name: Install browser E2E dependencies
         run: |
