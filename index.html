@@ -3973,6 +3973,22 @@ function renderKickSetReadiness(records,officialAngles){
  }).join('');
  return '<section class="listitem" style="display:block;margin:10px 0"><b>キック撮影セットの記録充実度</b><div class="tiny">視点カバー '+viewCount+'/'+officialAngles.length+' ／ 手動確認済み節目 '+phaseConfirmed+'/'+phaseTotal+' ／ 撮影条件入力 '+metadataComplete+'/'+metadataTotal+'</div><div style="margin-top:6px">'+phaseRows+'</div><div class="tiny" style="margin-top:7px"><b>次に行うこと</b></div>'+actions.map(a=>'<div class="tiny">・'+esc(a)+'</div>').join('')+'<div class="tiny muted" style="margin-top:6px">これは記録の充実度であり、キック技術・フォームの良し悪し・成長度を点数化したものではありません。映像で確認できない項目は未確認のまま扱います。</div></section>';
 }
+function renderKickPhaseTimeIntegrity(record){
+ const defs=[['approach','助走'],['plant','軸足接地'],['swing','蹴り脚の振り出し'],['impact','インパクト'],['follow_through','フォロースルー']];
+ const reviewed=record.reviewedKickPhases||{};
+ const confirmed=defs.map(([key,label],index)=>({key,label,index,item:reviewed[key]})).filter(x=>x.item?.confirmedBy==='parent_manual_review'&&x.item.status==='確認済み'&&Number.isFinite(x.item.timeSeconds));
+ const missing=defs.filter(([key])=>{const p=reviewed[key];return !(p?.confirmedBy==='parent_manual_review'&&p.status==='確認済み'&&Number.isFinite(p.timeSeconds));}).map(x=>x[1]);
+ const issues=[];
+ for(let i=1;i<confirmed.length;i++){
+  const prev=confirmed[i-1],cur=confirmed[i];
+  if(cur.item.timeSeconds<prev.item.timeSeconds)issues.push(prev.label+'→'+cur.label+'の時刻が逆順');
+  else if(cur.item.timeSeconds===prev.item.timeSeconds)issues.push(prev.label+'と'+cur.label+'が同時刻');
+ }
+ const state=issues.length?'時刻の再確認が必要':missing.length?'未確認の節目があり順序判定は途中':'確認済み節目の時刻順に矛盾なし';
+ const issueHtml=issues.length?'<div class="tiny"><b>要確認：</b>'+issues.map(esc).join('／')+'</div>':'';
+ const missingHtml=missing.length?'<div class="tiny muted">未確認・時刻未登録：'+missing.map(esc).join('・')+'</div>':'';
+ return '<div class="tiny" style="margin-top:5px"><b>手動時刻の順序チェック：</b>'+esc(state)+'（確認済み '+confirmed.length+'/5）</div>'+issueHtml+missingHtml+'<div class="tiny muted">入力時刻の矛盾を検出するだけで、時刻の自動修正・推測・並べ替えは行いません。</div>';
+}
 function renderMultiAngleKickReview(){
  const host=document.getElementById('multiAngleKickReview');if(!host)return;
  const all=(state.aiFormAnalyses||[]);
@@ -4004,7 +4020,7 @@ function renderMultiAngleKickReview(){
   const metrics=[['膝',r.knee],['股関節',r.hip],['体幹傾き',r.trunk]].map(([name,value])=>'<span class="tag">'+name+' '+(value!==null&&value!==undefined&&value!==''&&Number.isFinite(Number(value))?Number(value).toFixed(1)+'°':'未確認')+'</span>').join(' ');
   const linkedForm=(state.forms||[]).find(form=>String(form.id)===String(r.formId));
   const playback=linkedForm&&linkedForm.hasVideo?'<button class="secondary small" onclick="playSavedForm('+Number(linkedForm.id)+')">この角度の保存動画を再生</button>':'<span class="tiny muted">再生用フォーム動画の連携なし</span>';
-  return '<section class="listitem" style="display:block;margin:10px 0"><div class="row" style="justify-content:space-between;align-items:center"><b>'+esc(r.cameraAngle||'角度未設定')+'｜'+esc(r.date||'日付なし')+'</b><span class="tag">'+(confirmed?'手動確認済み':'手動確認なし')+'</span></div><div class="tiny muted">角度記録 '+(index+1)+'／'+records.length+'・撮影距離 '+esc(r.cameraDistance||'未確認')+'・画角 '+esc(r.framing||'未確認')+'</div><div style="margin:7px 0">'+metrics+'</div><h4>この角度で確認できた範囲</h4>'+visibilityHtml+'<h4 style="margin-top:8px">手動確認記録（この角度の証拠）</h4>'+manualHtml+'<h4 style="margin-top:8px">手動登録した節目</h4><div>'+phaseHtml+'</div><div style="margin-top:8px">'+playback+'</div></section>';
+  return '<section class="listitem" style="display:block;margin:10px 0"><div class="row" style="justify-content:space-between;align-items:center"><b>'+esc(r.cameraAngle||'角度未設定')+'｜'+esc(r.date||'日付なし')+'</b><span class="tag">'+(confirmed?'手動確認済み':'手動確認なし')+'</span></div><div class="tiny muted">角度記録 '+(index+1)+'／'+records.length+'・撮影距離 '+esc(r.cameraDistance||'未確認')+'・画角 '+esc(r.framing||'未確認')+'</div><div style="margin:7px 0">'+metrics+'</div><h4>この角度で確認できた範囲</h4>'+visibilityHtml+'<h4 style="margin-top:8px">手動確認記録（この角度の証拠）</h4>'+manualHtml+'<h4 style="margin-top:8px">手動登録した節目</h4><div>'+phaseHtml+'</div>'+renderKickPhaseTimeIntegrity(r)+'<div style="margin-top:8px">'+playback+'</div></section>';
  }).join('');
  const evidenceByItem=itemDefs.map(item=>{
   const evidence=records.flatMap(r=>{
