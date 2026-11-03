@@ -1769,22 +1769,25 @@ function getGrowthForecastData(){
 function getTrainingMatchCorrelationData(){
  const focuses=['ドリブル','パス','シュート','ボールを受ける','守備・プレス','オフザボール'];
  const matches=(state.matchAnalyses||[]).filter(m=>m.date).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+ const dayDistance=(a,b)=>Math.abs((Date.parse(String(a)+'T00:00:00Z')-Date.parse(String(b)+'T00:00:00Z'))/86400000);
  return focuses.map(focus=>{
   const pairs=[];
   (state.trainings||[]).filter(t=>t.date&&(t.focus||inferTrainingFocus(t.menu,t.category))===focus).forEach(training=>{
-   const before=matches.filter(m=>String(m.date)<String(training.date)&&getManualMatchOutcomeEvents(m,focus).length).slice(-1)[0];
-   const after=matches.find(m=>String(m.date)>String(training.date)&&getManualMatchOutcomeEvents(m,focus).length);
+   const expectedRole=String(training.positionRole||training.role||'').trim();
+   const matchEvents=match=>getManualMatchOutcomeEvents(match,focus).filter(ev=>!expectedRole||!ev.positionRole||String(ev.positionRole).trim()===expectedRole);
+   const comparable=match=>dayDistance(match.date,training.date)<=30&&matchEvents(match).length>=2;
+   const before=matches.filter(m=>String(m.date)<String(training.date)&&comparable(m)).slice(-1)[0];
+   const after=matches.find(m=>String(m.date)>String(training.date)&&comparable(m));
    if(!before||!after)return;
-   const pre=getManualMatchOutcomeEvents(before,focus),post=getManualMatchOutcomeEvents(after,focus);
-   if(!pre.length||!post.length)return;
+   const pre=matchEvents(before),post=matchEvents(after);if(pre.length<2||post.length<2)return;
    const rate=events=>Math.round(events.filter(e=>e.assessment==='良かった').length/events.length*100);
    const steps=Array.isArray(training.steps)&&training.steps.length?training.steps:getTrainingSteps(focus);
    const completion=steps.length?Math.round(getCompletedTrainingStepIndexes(training,steps).length/steps.length*100):null;
-   pairs.push({date:training.date,completion,beforeRate:rate(pre),afterRate:rate(post),delta:rate(post)-rate(pre),beforeDate:before.date,afterDate:after.date,minutes:Number(training.minutes)||0});
+   pairs.push({date:training.date,completion,beforeRate:rate(pre),afterRate:rate(post),delta:rate(post)-rate(pre),beforeDate:before.date,afterDate:after.date,beforeScenes:pre.length,afterScenes:post.length,role:expectedRole||'役割未指定',minutes:Number(training.minutes)||0});
   });
   const meanDelta=pairs.length?Math.round(pairs.reduce((n,p)=>n+p.delta,0)/pairs.length):null;
   const meanCompletion=pairs.length?Math.round(pairs.reduce((n,p)=>n+(p.completion??0),0)/pairs.length):null;
-  return {focus,pairs,meanDelta,meanCompletion,count:pairs.length};
+  return {focus,pairs,meanDelta,meanCompletion,count:pairs.length,sceneCount:pairs.reduce((n,p)=>n+p.beforeScenes+p.afterScenes,0)};
  }).filter(row=>row.count>0);
 }
 function getSituationDecisionBreakdown(){
@@ -1802,7 +1805,7 @@ function getSituationDecisionBreakdown(){
 function renderStage17GrowthInsights(){
  const forecastHost=document.getElementById('growthForecast'),correlationHost=document.getElementById('trainingMatchCorrelation'),situationHost=document.getElementById('situationDecisionAnalysis');
  if(forecastHost){const rows=getGrowthForecastData();forecastHost.innerHTML='<h3>次の試合の参考予測</h3>'+rows.map(row=>'<div class="listitem"><div class="grow"><b>'+esc(row.label)+'</b><div class="tiny muted">'+(row.latest?'直近 '+esc(row.latest.date)+'：'+row.latest.rate+'%（'+row.latest.total+'場面）':'有効な手動評価なし')+'／有効試合 '+row.count+'試合・場面 '+row.sceneCount+'件</div></div><span class="tag">'+(row.prediction===null?'蓄積中':row.prediction+'%目安（'+row.intervalLow+'〜'+row.intervalHigh+'%）')+'</span></div><div class="tiny muted">'+esc(row.trend)+(row.prediction===null?'。各試合2場面以上の手動評価を4試合分集めると参考範囲を計算します。':'。直近試合を重視した中央値と傾向を使う参考値です。幅は評価のばらつきと場面数を反映し、予測精度を保証しません（確からしさ：'+row.confidence+'）。')+'</div>').join('')+'<div class="tiny muted">予測値は技術レベルの判定ではありません。試合相手・出場時間・役割・撮影条件の違いを含めていないため、参考値として扱います。</div>';}
- if(correlationHost){const rows=getTrainingMatchCorrelationData();correlationHost.innerHTML='<h3>練習記録と前後の試合評価</h3>'+(rows.length?rows.map(row=>'<div class="listitem"><div class="grow"><b>'+esc(row.focus)+'</b><div class="tiny muted">比較 '+row.count+'組／練習チェック平均 '+row.meanCompletion+'%</div><div class="tiny">前後の手動評価率の平均差：'+(row.meanDelta>0?'+':'')+row.meanDelta+'ポイント</div>'+row.pairs.slice(-3).map(p=>'<div class="tiny muted">'+esc(p.date)+' 練習｜'+esc(p.beforeDate)+' '+p.beforeRate+'% → '+esc(p.afterDate)+' '+p.afterRate+'%（'+(p.delta>0?'+':'')+p.delta+'pt）</div>').join('')+'</div></div>').join(''):'<div class="empty">同じ練習テーマについて、練習前後の本人確認済み試合評価がそろった比較はまだありません。</div>')+'<div class="tiny muted">これは時間的な前後関係の比較であり、練習が変化の原因だと証明するものではありません。比較できる組だけ表示します。</div>';}
+ if(correlationHost){const rows=getTrainingMatchCorrelationData();correlationHost.innerHTML='<h3>練習記録と前後の試合評価</h3>'+(rows.length?rows.map(row=>'<div class="listitem"><div class="grow"><b>'+esc(row.focus)+'</b><div class="tiny muted">比較 '+row.count+'組／練習チェック平均 '+row.meanCompletion+'%</div><div class="tiny">前後の手動評価率の平均差：'+(row.meanDelta>0?'+':'')+row.meanDelta+'ポイント</div>'+row.pairs.slice(-3).map(p=>'<div class="tiny muted">'+esc(p.date)+' 練習｜'+esc(p.beforeDate)+' '+p.beforeRate+'% → '+esc(p.afterDate)+' '+p.afterRate+'%（'+(p.delta>0?'+':'')+p.delta+'pt／前 '+p.beforeScenes+'・後 '+p.afterScenes+'場面／'+esc(p.role)+'）</div>').join('')+'</div></div>').join(''):'<div class="empty">同じ練習テーマについて、練習前後の本人確認済み試合評価がそろった比較はまだありません。</div>')+'<div class="tiny muted">練習日から前後30日以内の試合を対象にし、同じテーマの本人確認済み場面が前後各2件以上ある組だけ表示します。入力済みの役割がある場合は一致する場面を優先します。これは時間的な前後関係の比較であり、練習が変化の原因だと証明するものではありません。</div>';}
  if(situationHost){const rows=getSituationDecisionBreakdown();situationHost.innerHTML=rows.length?rows.map(row=>{const position=Object.entries(row.positioning).map(([key,v])=>'<div class="tiny muted">'+esc(key)+'：良 '+v.good+'/'+v.total+'（'+Math.round(v.good/v.total*100)+'%）</div>').join('');return '<div class="listitem"><div class="grow"><b>'+esc(row.role)+'｜'+esc(row.action)+'</b><div class="tiny muted">本人確認済み '+row.scenes+'場面</div><div class="tiny">判断の質：'+(row.qualityCount?Math.round(row.qualityGood/row.qualityCount*100)+'%（'+row.qualityCount+'件）':'未評価')+'｜周囲確認：'+(row.scanCount?Math.round(row.scanGood/row.scanCount*100)+'%（'+row.scanCount+'件）':'未評価')+'</div>'+position+'</div></div>';}).join(''):'<div class="empty">ポジション・プレー種別が入力された本人確認済み場面が、分類表示に必要な2場面以上まだありません。</div>';}
 }
 
