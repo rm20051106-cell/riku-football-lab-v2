@@ -1749,6 +1749,7 @@ function renderDecisionGrowthLevel(){
 function getManualMatchOutcomeEvents(match,focus){
  return (match?.candidateEvents||[]).filter(ev=>isManuallyReviewedMatchEvent(ev)&&ev.assessmentSource==='manual'&&['良かった','改善したい'].includes(ev.assessment)&&(!focus||getTrainingFocusForMatchEvent(ev)===focus));
 }
+// Stage18: median-based one-match estimate with explicit sample and uncertainty bounds.
 function getGrowthForecastData(){
  const categories=getMatchGrowthCategories(),timeline=getMatchGrowthTimelineData();
  const median=values=>{const sorted=values.filter(Number.isFinite).slice().sort((a,b)=>a-b);if(!sorted.length)return null;const mid=Math.floor(sorted.length/2);return sorted.length%2?sorted[mid]:(sorted[mid-1]+sorted[mid])/2;};
