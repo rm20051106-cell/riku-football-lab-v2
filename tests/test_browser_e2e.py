@@ -311,6 +311,56 @@ class RikuBrowserE2ETests(unittest.TestCase):
 
 
 
+    def test_video_storage_serialization_and_legacy_blob_compatibility(self):
+        page = self.page
+        result = page.evaluate("""async () => {
+            const source = new Blob([new Uint8Array([4, 5, 6, 7])], {type: 'video/mp4'});
+            await storeClipVideo('serialized-check', source);
+            const db = await openVideoDB();
+            let raw;
+            try {
+                raw = await new Promise((resolve, reject) => {
+                    const tx = db.transaction('videos', 'readonly');
+                    const req = tx.objectStore('videos').get('serialized-check');
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => reject(req.error);
+                });
+            } finally { db.close(); }
+            const restored = await getClipVideo('serialized-check');
+            const legacyBlob = new Blob([new Uint8Array([9, 8, 7])], {type: 'video/webm'});
+            const legacyDb = await openVideoDB();
+            try {
+                await new Promise((resolve, reject) => {
+                    const tx = legacyDb.transaction('videos', 'readwrite');
+                    tx.objectStore('videos').put({
+                        blob: legacyBlob, name: 'legacy.webm', type: 'video/webm', size: 3
+                    }, 'legacy-check');
+                    tx.oncomplete = resolve;
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                });
+            } finally { legacyDb.close(); }
+            const legacy = await getClipVideo('legacy-check');
+            return {
+                rawUsesArrayBuffer: raw?.blobData instanceof ArrayBuffer,
+                rawBlobPropertyOmitted: !Object.prototype.hasOwnProperty.call(raw || {}, 'blob'),
+                rawName: raw?.name,
+                rawSize: raw?.size,
+                restoredType: restored?.blob?.type,
+                restoredBytes: Array.from(new Uint8Array(await restored.blob.arrayBuffer())),
+                legacyBlobReadable: legacy?.blob instanceof Blob,
+                legacyBytes: legacy?.blob?.size
+            };
+        }""")
+        self.assertTrue(result["rawUsesArrayBuffer"], result)
+        self.assertTrue(result["rawBlobPropertyOmitted"], result)
+        self.assertEqual(result["rawName"], "video")
+        self.assertEqual(result["rawSize"], 4)
+        self.assertEqual(result["restoredType"], "video/mp4")
+        self.assertEqual(result["restoredBytes"], [4, 5, 6, 7])
+        self.assertTrue(result["legacyBlobReadable"], result)
+        self.assertEqual(result["legacyBytes"], 3)
+
     def test_webkit_safari_compatibility_smoke(self):
         browser = self.playwright.webkit.launch(headless=True)
         try:
