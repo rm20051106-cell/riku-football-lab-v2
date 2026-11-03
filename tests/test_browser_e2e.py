@@ -639,5 +639,84 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertIn("保存できませんでした", result["alert"])
 
 
+    def test_deleting_match_history_cleans_links_but_preserves_training_snapshot(self):
+        result = self.page.evaluate("""() => {
+            window.confirm = () => true;
+            window.alert = () => {};
+            state.matchAnalyses = [
+                {id: '9501', date: '2026-11-02', title: '削除する試合', candidateEvents: []},
+                {id: 9502, date: '2026-11-03', title: '残す試合', candidateEvents: []}
+            ];
+            state.trainings = [
+                {
+                    id: 9503, date: '2026-11-01', menu: '判断練習', focus: 'ボールを受ける',
+                    linkedMatchEvents: [
+                        {matchId: 9501, eventId: 'deleted-event'},
+                        {matchId: 9502, eventId: 'kept-event'}
+                    ],
+                    sourceMatch: {
+                        matchId: '9501', eventId: 'deleted-event',
+                        matchTitle: '削除する試合', note: '本人確認済みの改善課題'
+                    }
+                }
+            ];
+            deleteMatchScan(9501);
+            const training = state.trainings[0];
+            return {
+                remainingMatches: state.matchAnalyses.map(x => String(x.id)),
+                links: training.linkedMatchEvents.map(x => String(x.matchId) + ':' + x.eventId),
+                sourceMatchId: training.sourceMatch.matchId,
+                sourceDeleted: training.sourceMatch.matchRecordDeleted,
+                sourceSnapshot: training.sourceMatch.matchTitle,
+                followup: getImprovementFollowup(training)
+            };
+        }""")
+        self.assertEqual(result["remainingMatches"], ["9502"], result)
+        self.assertEqual(result["links"], ["9502:kept-event"], result)
+        self.assertEqual(result["sourceMatchId"], "9501", result)
+        self.assertTrue(result["sourceDeleted"], result)
+        self.assertEqual(result["sourceSnapshot"], "削除する試合", result)
+        self.assertIsNone(result["followup"], result)
+
+
+    def test_match_history_delete_failure_rolls_back_match_and_training_links(self):
+        result = self.page.evaluate("""() => {
+            window.confirm = () => true;
+            window.__deleteMatchAlert = '';
+            window.alert = message => { window.__deleteMatchAlert = String(message); };
+            state.matchAnalyses = [
+                {id: 9601, date: '2026-11-02', title: '保存失敗する試合', candidateEvents: []}
+            ];
+            state.trainings = [{
+                id: 9602, date: '2026-11-01', menu: '判断練習', focus: 'ボールを受ける',
+                linkedMatchEvents: [{matchId: 9601, eventId: 'linked-event'}],
+                sourceMatch: {matchId: 9601, eventId: 'linked-event', matchTitle: '保存失敗する試合'}
+            }];
+            const original = Storage.prototype.setItem;
+            Object.defineProperty(Storage.prototype, 'setItem', {
+                configurable: true,
+                writable: true,
+                value: function(key, value) {
+                    if (key === 'rikuFootballLab_v3') {
+                        throw new DOMException('simulated localStorage quota', 'QuotaExceededError');
+                    }
+                    return original.call(this, key, value);
+                }
+            });
+            deleteMatchScan(9601);
+            const training = state.trainings[0];
+            return {
+                matchIds: state.matchAnalyses.map(x => String(x.id)),
+                links: training.linkedMatchEvents.map(x => String(x.matchId) + ':' + x.eventId),
+                sourceDeleted: !!training.sourceMatch.matchRecordDeleted,
+                alert: window.__deleteMatchAlert
+            };
+        }""")
+        self.assertEqual(result["matchIds"], ["9601"], result)
+        self.assertEqual(result["links"], ["9601:linked-event"], result)
+        self.assertFalse(result["sourceDeleted"], result)
+        self.assertIn("元の状態に戻しました", result["alert"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
