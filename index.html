@@ -905,6 +905,34 @@ function renderAiFormAutoScore(score){
  if(score.score===null)return '<div class="note"><b>AI自動採点：採点対象外</b><p class="tiny">'+esc(score.note)+'</p></div>';
  return '<div class="note"><b>AI自動スコア（計測品質）</b><div style="font-size:30px;font-weight:800">'+score.score+'<span class="tiny"> / 100</span></div><b>'+esc(score.grade)+'</b><div class="tiny">撮影角度：'+esc(score.angle)+'｜計測項目：'+score.measured+'/'+score.total+'｜取得率：'+score.coverage+'%｜姿勢変動参考値：'+(score.stability===null?'算出不可':score.stability+'/100')+'</div>'+(score.missing?.length?'<div class="tiny">未計測：'+score.missing.map(esc).join('・')+'</div>':'')+'<p class="tiny muted">'+esc(score.note)+'</p></div>';
 }
+function renderManualKickPhaseReview(record){
+ const phases=[['approach','助走'],['plant','軸足接地'],['swing','蹴り脚の振り出し'],['impact','インパクト'],['follow_through','フォロースルー']];
+ const saved=record.reviewedKickPhases||{};
+ const maxTime=Math.max(0,...(record.timeline||[]).map(x=>Number(x.time)||0));
+ return '<div class="note"><b>保護者の手動確認｜キック動作時刻</b><div class="tiny muted">動画を再生して各動作が起きた時刻を入力し、「この時刻を保存」を押してください。AI候補時刻とは別データで保存します。</div>'+phases.map(([key,label])=>{
+  const item=saved[key]||{};
+  const time=item.timeSeconds??'';
+  const status=item.status||'未確認';
+  return '<div class="listitem"><div class="grow"><b>'+label+'</b><div class="two"><label class="tiny">時刻（秒）<input type="number" min="0" max="'+Math.max(600,maxTime+30)+'" step="0.01" id="kick-phase-time-'+record.id+'-'+key+'" value="'+esc(String(time))+'" placeholder="例 1.25"></label><label class="tiny">確認状態<select id="kick-phase-status-'+record.id+'-'+key+'"><option '+(status==='未確認'?'selected':'')+'>未確認</option><option '+(status==='確認済み'?'selected':'')+'>確認済み</option><option '+(status==='映像で確認できず'?'selected':'')+'>映像で確認できず</option></select></label></div><div class="tiny muted">'+(item.confirmedAt?'手動確認済み：'+esc(item.confirmedAt):'まだ手動確認されていません')+'</div></div><button class="secondary small" onclick="saveKickPhaseReview('+record.id+',\''+key+'\')">この時刻を保存</button></div>';
+ }).join('')+'<div class="tiny muted">時刻を入力しても「確認済み」を選ばない限り、確定した節目として扱いません。空欄の時刻は保存できません。</div></div>';
+}
+function saveKickPhaseReview(recordId,phaseKey){
+ const record=(state.aiFormAnalyses||[]).find(x=>String(x.id)===String(recordId));
+ const allowed=['approach','plant','swing','impact','follow_through'];
+ if(!record||!allowed.includes(phaseKey))return;
+ const timeInput=document.getElementById('kick-phase-time-'+recordId+'-'+phaseKey);
+ const statusInput=document.getElementById('kick-phase-status-'+recordId+'-'+phaseKey);
+ if(!timeInput||!statusInput)return;
+ const raw=timeInput.value.trim(),time=raw===''?null:Number(raw);
+ const status=statusInput.value;
+ if(time===null||!Number.isFinite(time)||time<0||time>600){alert('0〜600秒の時刻を入力してください。');return;}
+ if(status==='未確認'){alert('保存する場合は「確認済み」または「映像で確認できず」を選択してください。');return;}
+ const previous=JSON.parse(JSON.stringify(record.reviewedKickPhases||{}));
+ record.reviewedKickPhases=record.reviewedKickPhases||{};
+ record.reviewedKickPhases[phaseKey]={timeSeconds:Math.round(time*100)/100,status,confirmedBy:'parent_manual_review',confirmedAt:new Date().toISOString()};
+ if(!persist()){record.reviewedKickPhases=previous;alert('保存に失敗しました。既存データは元に戻しました。');return;}
+ renderAll();
+}
 function renderKickPhaseCandidates(data,dominantFoot){
  if(!data)return '';
  const side=String(dominantFoot||'右足').includes('左')?'left':'right';
@@ -3579,7 +3607,7 @@ formRecords.innerHTML=state.forms.length?state.forms.map(x=>`<div class="listite
  renderKickFormGrowthComparison();
  renderAiFormPracticePlan();
  renderKickManualReview();renderMultiAngleKickReview();
- aiFormRecords.innerHTML=state.aiFormAnalyses.length?state.aiFormAnalyses.map(x=>`<div class="listitem"><div class="grow"><b>${esc(x.title)}｜${esc(x.kind)}</b><div class="tiny muted">${esc(x.date)}・${esc(x.foot)}・撮影：${esc(x.cameraAngle||"未選択")}・姿勢フレーム ${x.frames??'—'}</div><div class="tiny">膝 ${x.knee??'—'}°　股関節 ${x.hip??'—'}°　体幹傾き ${x.trunk??'—'}°</div><div class="tiny muted" style="margin-top:10px"><b>時間ごとの姿勢変化（最大8地点）</b></div><div class="tiny muted">※動画全体から等間隔に抜き出した参考値。インパクト時刻を自動特定したものではありません。</div><div style="overflow-x:auto"><table class="table"><thead><tr><th>時刻</th><th>左膝</th><th>右膝</th><th>左股</th><th>右股</th><th>体幹</th><th>左足先移動</th><th>右足先移動</th></tr></thead><tbody>${(x.timeline||[]).map(t=>`<tr><td>${t.time==null?'—':Number(t.time).toFixed(1)+'秒'}</td><td>${t.leftKnee??'—'}</td><td>${t.rightKnee??'—'}</td><td>${t.leftHip??'—'}</td><td>${t.rightHip??'—'}</td><td>${t.trunk??'—'}°</td><td>${t.leftFootMotion??'—'}</td><td>${t.rightFootMotion??'—'}</td></tr>`).join('')}</tbody></table></div><div class="tiny muted" style="margin-top:8px"><b>8項目チェック（計測値と未判定を区別）</b></div>${(x.items||[]).map((it,i)=>`<div class="listitem"><div class="grow"><b>${i+1}. ${esc(it.name)}</b><div class="tiny">${esc(it.status)}：${esc(it.detail)}</div><div class="tiny muted">${esc(it.source)}</div></div></div>`).join('')||'<div class="tiny muted">この過去記録には8項目の詳細はありません。再解析すると表示されます。</div>'}${(x.cameraGuidance||[]).map(t=>`<div class="tiny" style="margin-top:4px">📷 ${esc(t)}</div>`).join('')}${(x.feedback||[]).map(t=>`<div class="tiny muted">${esc(t)}</div>`).join('')}</div><button class="danger small" onclick="deleteAiFormAnalysis(${x.id})">削除</button></div>`).join(''):'<div class="empty">AI解析の履歴はまだありません</div>';
+ aiFormRecords.innerHTML=state.aiFormAnalyses.length?state.aiFormAnalyses.map(x=>`<div class="listitem"><div class="grow"><b>${esc(x.title)}｜${esc(x.kind)}</b><div class="tiny muted">${esc(x.date)}・${esc(x.foot)}・撮影：${esc(x.cameraAngle||"未選択")}・姿勢フレーム ${x.frames??'—'}</div><div class="tiny">膝 ${x.knee??'—'}°　股関節 ${x.hip??'—'}°　体幹傾き ${x.trunk??'—'}°</div><div class="tiny muted" style="margin-top:10px"><b>時間ごとの姿勢変化（最大8地点）</b></div><div class="tiny muted">※動画全体から等間隔に抜き出した参考値。インパクト時刻を自動特定したものではありません。</div><div style="overflow-x:auto"><table class="table"><thead><tr><th>時刻</th><th>左膝</th><th>右膝</th><th>左股</th><th>右股</th><th>体幹</th><th>左足先移動</th><th>右足先移動</th></tr></thead><tbody>${(x.timeline||[]).map(t=>`<tr><td>${t.time==null?'—':Number(t.time).toFixed(1)+'秒'}</td><td>${t.leftKnee??'—'}</td><td>${t.rightKnee??'—'}</td><td>${t.leftHip??'—'}</td><td>${t.rightHip??'—'}</td><td>${t.trunk??'—'}°</td><td>${t.leftFootMotion??'—'}</td><td>${t.rightFootMotion??'—'}</td></tr>`).join('')}</tbody></table></div><div class="tiny muted" style="margin-top:8px"><b>8項目チェック（計測値と未判定を区別）</b></div>${(x.items||[]).map((it,i)=>`<div class="listitem"><div class="grow"><b>${i+1}. ${esc(it.name)}</b><div class="tiny">${esc(it.status)}：${esc(it.detail)}</div><div class="tiny muted">${esc(it.source)}</div></div></div>`).join('')||'<div class="tiny muted">この過去記録には8項目の詳細はありません。再解析すると表示されます。</div>'}${renderManualKickPhaseReview(x)}${(x.cameraGuidance||[]).map(t=>`<div class="tiny" style="margin-top:4px">📷 ${esc(t)}</div>`).join('')}${(x.feedback||[]).map(t=>`<div class="tiny muted">${esc(t)}</div>`).join('')}</div><button class="danger small" onclick="deleteAiFormAnalysis(${x.id})">削除</button></div>`).join(''):'<div class="empty">AI解析の履歴はまだありません</div>';
 measureRecords.innerHTML=state.measures.length?state.measures.map(x=>`<div class="listitem"><div class="grow"><b>${esc(x.type)}：${esc(x.value)} ${esc(x.unit)}</b><div class="tiny muted">${x.date} ${esc(x.note||'')}</div></div><button class="danger small" onclick="deleteMeasure('${x.date}','${esc(x.type)}',${x.value})">削除</button></div>`).join(''):'<div class="empty">測定記録はありません</div>';
 allAnalysisRecords.innerHTML=(state.clips.length+state.forms.length)?[...state.clips.map(x=>({date:x.date,title:'動画：'+x.title,score:x.score+'点'})),...state.forms.map(x=>({date:x.date,title:'フォーム：'+x.title,score:x.score+'%'}))].sort((a,b)=>b.date.localeCompare(a.date)).map(x=>`<div class="listitem"><div class="grow"><b>${esc(x.title)}</b><div class="tiny muted">${x.date}</div></div><span class="tag">${esc(x.score)}</span></div>`).join(''):'<div class="empty">分析履歴はありません</div>';
 renderAnalysisHistoryTools();
