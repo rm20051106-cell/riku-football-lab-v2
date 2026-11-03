@@ -251,16 +251,21 @@ class FrontendDataFlowContracts(unittest.TestCase):
         self.assertIn("練習の因果効果を示すものではなく", fn)
 
     def test_stage17_backup_restore_preserves_all_growth_evidence_and_rolls_back(self):
-        start = HTML.index("async function exportData()")
-        end = HTML.index("importFile.addEventListener", start)
-        backup = HTML[start:end]
-        self.assertIn("recordCounts:", backup)
-        self.assertIn("stateSha256", backup)
-        self.assertIn("state", backup)
-        self.assertIn("previousState=state,previousStoredState=localStorage.getItem(KEY)", backup)
-        self.assertIn("state=previousState", backup)
-        self.assertIn("analysis.matchId=String(match.id)", backup)
-        self.assertIn("match.aiFormAnalysisIds.push(analysis.id)", backup)
+        export_start = HTML.index("async function exportData()")
+        import_start = HTML.index("importFile.addEventListener", export_start)
+        import_end = HTML.index("function clearData()", import_start)
+        backup_export = HTML[export_start:import_start]
+        backup_import = HTML[import_start:import_end]
+        self.assertIn("recordCounts:", backup_export)
+        self.assertIn("stateSha256", backup_export)
+        self.assertIn("videoFilesIncluded:false", backup_export)
+        self.assertIn("state", backup_export)
+        self.assertIn("const previousState=state,previousStoredState=localStorage.getItem(KEY)", backup_import)
+        self.assertIn("state=previousState", backup_import)
+        self.assertIn("previousStoredState!==null", backup_import)
+        self.assertIn("analysis.matchId=String(match.id)", backup_import)
+        self.assertIn("match.aiFormAnalysisIds.push(analysis.id)", backup_import)
+        self.assertIn("localStorage.setItem(KEY,serialized);state=restored;renderAll()", backup_import)
 
 
 if __name__ == "__main__":
