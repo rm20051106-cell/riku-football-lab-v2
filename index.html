@@ -914,6 +914,20 @@ function renderManualKickPhaseReview(record){
   return '<div class="listitem"><div class="grow"><b>'+label+'</b><div class="two"><label class="tiny">時刻（秒）<input type="number" min="0" max="'+Math.max(600,maxTime+30)+'" step="0.01" id="kick-phase-time-'+record.id+'-'+key+'" value="'+esc(String(time))+'" placeholder="例 1.25"></label><label class="tiny">確認状態<select id="kick-phase-status-'+record.id+'-'+key+'"><option '+(status==='未確認'?'selected':'')+'>未確認</option><option '+(status==='確認済み'?'selected':'')+'>確認済み</option><option '+(status==='映像で確認できず'?'selected':'')+'>映像で確認できず</option></select></label></div><div class="tiny muted">'+(item.confirmedAt?'手動確認済み：'+esc(item.confirmedAt):'まだ手動確認されていません')+'</div></div><button class="secondary small" onclick="saveKickPhaseReview('+record.id+',\''+key+'\')">この時刻を保存</button></div>';
  }).join('')+'<div class="tiny muted">時刻を入力しても「確認済み」を選ばない限り、確定した節目として扱いません。空欄の時刻は保存できません。</div></div>';
 }
+function validateKickPhaseTimestamp(record,phaseKey,time){
+ const order=['approach','plant','swing','impact','follow_through'];
+ const index=order.indexOf(phaseKey);
+ if(index<0||!Number.isFinite(time))return '節目または時刻を確認してください。';
+ const phases=record.reviewedKickPhases||{};
+ for(let i=0;i<order.length;i++){
+  if(i===index)continue;
+  const other=phases[order[i]];
+  if(other?.confirmedBy!=='parent_manual_review'||other.status!=='確認済み'||!Number.isFinite(other.timeSeconds))continue;
+  if(i<index&&time<=other.timeSeconds)return '前の節目「'+order[i]+'」より後の時刻を入力してください（'+other.timeSeconds.toFixed(2)+'秒）。';
+  if(i>index&&time>=other.timeSeconds)return '次の節目「'+order[i]+'」より前の時刻を入力してください（'+other.timeSeconds.toFixed(2)+'秒）。';
+ }
+ return '';
+}
 function saveKickPhaseReview(recordId,phaseKey){
  const record=(state.aiFormAnalyses||[]).find(x=>String(x.id)===String(recordId));
  const allowed=['approach','plant','swing','impact','follow_through'];
@@ -926,6 +940,7 @@ function saveKickPhaseReview(recordId,phaseKey){
  if(status==='未確認'){alert('保存する場合は「確認済み」または「映像で確認できず」を選択してください。');return;}
  if(status==='確認済み'&&(time===null||!Number.isFinite(time)||time<0||time>600)){alert('確認済みの場合は0〜600秒の時刻を入力してください。');return;}
  if(time!==null&&(!Number.isFinite(time)||time<0||time>600)){alert('時刻は0〜600秒で入力してください。');return;}
+ if(status==='確認済み'){const sequenceError=validateKickPhaseTimestamp(record,phaseKey,time);if(sequenceError){alert('節目の時刻順を確認してください。'+sequenceError+'先に前後の節目を修正してから再保存してください。');return;}}
  const previous=JSON.parse(JSON.stringify(record.reviewedKickPhases||{}));
  record.reviewedKickPhases=record.reviewedKickPhases||{};
  record.reviewedKickPhases[phaseKey]={timeSeconds:time===null?null:Math.round(time*100)/100,status,confirmedBy:'parent_manual_review',confirmedAt:new Date().toISOString()};
