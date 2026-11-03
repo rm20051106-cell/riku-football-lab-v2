@@ -4006,8 +4006,16 @@ function renderKickPhaseTimeIntegrity(record){
  const state=issues.length?'時刻の再確認が必要':missing.length?'未確認の節目があり順序判定は途中':'確認済み節目の時刻順に矛盾なし';
  const issueHtml=issues.length?'<div class="tiny"><b>要確認：</b>'+issues.map(esc).join('／')+'</div>':'';
  const missingHtml=missing.length?'<div class="tiny muted">未確認・時刻未登録：'+missing.map(esc).join('・')+'</div>':'';
- return '<div class="tiny" style="margin-top:5px"><b>手動時刻の順序チェック：</b>'+esc(state)+'（確認済み '+confirmed.length+'/5）</div>'+issueHtml+missingHtml+'<div class="tiny muted">入力時刻の矛盾を検出するだけで、時刻の自動修正・推測・並べ替えは行いません。</div>';
+ const history=record.reviewedKickPhaseHistory||{};
+ const historyRows=defs.flatMap(([key,label])=>(Array.isArray(history[key])?history[key].slice(-3).reverse():[]).map(item=>{
+  const time=Number.isFinite(item.timeSeconds)?Number(item.timeSeconds).toFixed(2)+'秒':'時刻なし';
+  const date=item.archivedAt?new Date(item.archivedAt).toLocaleString('ja-JP'):'日時不明';
+  return '<div class="tiny">['+esc(label)+'・'+esc(date)+'] '+esc(item.status||'状態不明')+'／'+time+'</div>';
+ }));
+ const historyHtml=historyRows.length?'<details style="margin-top:7px"><summary class="tiny">手動確認の変更履歴（最新3件／節目）</summary>'+historyRows.join('')+'</details>':'';
+ return '<div class="tiny" style="margin-top:5px"><b>手動時刻の順序チェック：</b>'+esc(state)+'（確認済み '+confirmed.length+'/5）</div>'+issueHtml+missingHtml+historyHtml+'<div class="tiny muted">入力時刻の矛盾を検出するだけで、時刻の自動修正・推測・並べ替えは行いません。変更履歴は過去の手動入力を表示します。</div>';
 }
+
 function renderKickPhaseIntervals(record){
  const defs=[['approach','助走'],['plant','軸足接地'],['swing','蹴り脚の振り出し'],['impact','インパクト'],['follow_through','フォロースルー']];
  const phases=defs.map(([key,label])=>{const p=record.reviewedKickPhases?.[key];return {label,time:p?.confirmedBy==='parent_manual_review'&&p.status==='確認済み'&&Number.isFinite(p.timeSeconds)?p.timeSeconds:null};});
