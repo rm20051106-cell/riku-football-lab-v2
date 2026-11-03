@@ -194,11 +194,17 @@ function getTrainingCycleSummary(training){
 }
 function updateTrainingStep(id,index,checked){
  const record=(state.trainings||[]).find(t=>String(t.id)===String(id));if(!record)return;
+ const original=JSON.parse(JSON.stringify(record));
  const steps=record.steps||getTrainingSteps(record.focus||inferTrainingFocus(record.menu,record.category));
  const done=Array.isArray(record.stepsDone)?record.stepsDone.slice():[];
  if(checked&&!done.includes(index))done.push(index);
  if(!checked){const at=done.indexOf(index);if(at>=0)done.splice(at,1);}
- record.steps=steps;record.stepsDone=done;saveTrainingReflectionSnapshot(record);record.updatedAt=new Date().toISOString();persist();renderAll();
+ record.steps=steps;record.stepsDone=done;saveTrainingReflectionSnapshot(record);record.updatedAt=new Date().toISOString();
+ if(!persist()){
+  Object.keys(record).forEach(key=>delete record[key]);Object.assign(record,original);
+  alert('練習チェックを端末に保存できませんでした。変更前の記録に戻しました。空き容量とバックアップを確認して、もう一度お試しください。');renderAll();return;
+ }
+ renderAll();
 }
 function saveTraining(){
  let menu=trainMenu.value;if(!menu)return;
