@@ -41,6 +41,7 @@ class Stage33FiveViewPhaseGrowthTests(unittest.TestCase):
 
     def test_phase_comparison_uses_nearest_sample_without_interpolation(self):
         self.assertIn("const nearest=(record,time)=>", HTML)
+        self.assertIn("x.time!==null&&x.time!==undefined&&Number.isFinite(Number(x.time))", HTML)
         self.assertIn("Math.abs(Number(best.time)-time)<=interval/2+0.051", HTML)
         self.assertIn("サンプル間の補間なし", HTML)
         self.assertIn("補間は行いません", HTML)
