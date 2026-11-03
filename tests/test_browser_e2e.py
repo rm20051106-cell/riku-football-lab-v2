@@ -318,28 +318,50 @@ class RikuBrowserE2ETests(unittest.TestCase):
             page = context.new_page()
             page.goto(self.base_url, wait_until="load")
             page.wait_for_function("typeof openVideoDB === 'function'")
-            result = page.evaluate("""async () => {
-                const db = await openVideoDB();
+            result = page.evaluate("""() => new Promise(resolve => {
+                let request;
                 try {
-                    const blob = new Blob([new Uint8Array([7, 8, 9])], {type: 'video/mp4'});
-                    await new Promise((resolve, reject) => {
-                        const tx = db.transaction('videos', 'readwrite');
-                        tx.objectStore('videos').put({blob, name: 'webkit-smoke.mp4'}, 'webkit-smoke');
-                        tx.oncomplete = resolve; tx.onerror = () => reject(tx.error);
-                    });
-                    const saved = await getClipVideo('webkit-smoke');
-                    return {
-                        blobSupported: saved?.blob instanceof Blob,
-                        bytes: saved?.blob?.size || 0,
-                        quotaApi: !!navigator.storage?.estimate,
-                        progress: !!document.getElementById('videoSaveProgressBar'),
-                        importProgress: !!document.getElementById('videoImportProgressBar')
-                    };
-                } finally {
-                    db.close();
+                    request = indexedDB.open('rikuWebKitCompatibilitySmoke', 1);
+                } catch (error) {
+                    resolve({opened: false, error: String(error)});
+                    return;
                 }
-            }""")
-            self.assertTrue(result["blobSupported"], result)
+                request.onupgradeneeded = () => {
+                    if (!request.result.objectStoreNames.contains('videos')) {
+                        request.result.createObjectStore('videos');
+                    }
+                };
+                request.onerror = () => resolve({opened: false, error: String(request.error)});
+                request.onsuccess = () => {
+                    const db = request.result;
+                    try {
+                        const tx = db.transaction('videos', 'readwrite');
+                        const blob = new Blob([new Uint8Array([7, 8, 9])], {type: 'video/mp4'});
+                        tx.objectStore('videos').put({blob, name: 'webkit-smoke.mp4'}, 'webkit-smoke');
+                        tx.oncomplete = () => {
+                            const read = db.transaction('videos', 'readonly').objectStore('videos').get('webkit-smoke');
+                            read.onsuccess = () => {
+                                const saved = read.result;
+                                resolve({
+                                    opened: true,
+                                    blobSupported: saved?.blob instanceof Blob,
+                                    bytes: saved?.blob?.size || 0,
+                                    quotaApi: !!navigator.storage?.estimate,
+                                    progress: !!document.getElementById('videoSaveProgressBar'),
+                                    importProgress: !!document.getElementById('videoImportProgressBar')
+                                });
+                                db.close();
+                            };
+                            read.onerror = () => { resolve({opened: true, error: String(read.error)}); db.close(); };
+                        };
+                        tx.onerror = () => { resolve({opened: true, error: String(tx.error)}); db.close(); };
+                    } catch (error) {
+                        resolve({opened: true, error: String(error)});
+                        db.close();
+                    }
+                };
+            })""")
+            self.assertTrue(result["opened"] and result["blobSupported"], result)
             self.assertEqual(result["bytes"], 3, result)
             self.assertTrue(result["progress"] and result["importProgress"], result)
             context.close()
