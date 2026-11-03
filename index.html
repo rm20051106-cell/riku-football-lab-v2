@@ -1429,8 +1429,14 @@ function getGrowthGoalTrainingLinkage(){
 }
 function updateGrowthGoalStatus(status){
  const current=state.settings?.growthGoalPlan;if(!current||!['active','completed'].includes(status))return;
- const previous={...current};state.settings.growthGoalPlan={...current,status,completedAt:status==='completed'?today():null};
- if(!persist()){state.settings.growthGoalPlan=previous;alert('目標の状態を保存できませんでした。元の状態を維持しています。');return;}
+ const previous={...current},previousNextGoal=state.settings.nextMatchGoal?{...state.settings.nextMatchGoal}:null;
+ state.settings.growthGoalPlan={...current,status,completedAt:status==='completed'?today():null};
+ if(status==='completed'&&String(state.settings.nextMatchGoal?.id||'')===String(current.id))delete state.settings.nextMatchGoal;
+ if(!persist()){
+  state.settings.growthGoalPlan=previous;
+  if(previousNextGoal)state.settings.nextMatchGoal=previousNextGoal;else delete state.settings.nextMatchGoal;
+  alert('目標の状態を保存できませんでした。元の状態を維持しています。');return;
+ }
  renderAll();
 }
 function renderGrowthGoalTrainingLinkage(){
@@ -3606,7 +3612,7 @@ function applyMatchGrowthGoal(focus){
  const item=getMatchGrowthRecommendations().find(x=>x.key===focus);if(!item)return;
  state.settings=state.settings||{};
  const previousGoal=state.settings.nextMatchGoal?{...state.settings.nextMatchGoal}:null,previousPlan=state.settings.growthGoalPlan?{...state.settings.growthGoalPlan}:null;
- const goalId='growth-'+today()+'-'+String(focus).replace(/[^a-zA-Z0-9ぁ-んァ-ヶ一-龠_-]/g,'-');
+ const goalId='growth-'+Date.now()+'-'+String(focus).replace(/[^a-zA-Z0-9ぁ-んァ-ヶ一-龠_-]/g,'-');
  const evidence=Number(item.latest?.total)||0;
  state.settings.nextMatchGoal={id:goalId,focus:item.trainingFocus,note:item.goal,date:today(),source:'manual-reviewed-match-growth',growthFocus:item.key};
  state.settings.growthGoalPlan={id:goalId,focus:item.trainingFocus,growthFocus:item.key,note:item.goal,date:today(),source:'manual-reviewed-match-growth',status:'active',evidenceCount:evidence,sourceMatchDate:item.latest?.date||''};
