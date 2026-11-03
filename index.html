@@ -1727,7 +1727,7 @@ function renderMonthlyGrowthTrajectory(){
  const previousEvents=events.filter(e=>inRange(e.date,previousStart,currentStart));
  const assessed=list=>list.filter(e=>e.assessment==='良かった'||e.assessment==='改善したい');
  const curAssessed=assessed(currentEvents),prevAssessed=assessed(previousEvents);
- const trainings=(state.trainings||[]).filter(t=>!asOfDate||String(t.date||'')<=asOfDate);
+ const trainings=(state.trainings||[]);
  const currentTraining=trainings.filter(t=>inRange(t.date,currentStart,now.getTime()));
  const previousTraining=trainings.filter(t=>inRange(t.date,previousStart,currentStart));
  const forms=(state.aiFormAnalyses||[]);
