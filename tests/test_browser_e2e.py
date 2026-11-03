@@ -317,7 +317,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             context = browser.new_context(viewport={"width": 390, "height": 844})
             page = context.new_page()
             page.goto(self.base_url, wait_until="load")
-            page.wait_for_function("typeof storeClipVideo === 'function' and typeof getClipVideo === 'function'")
+            page.wait_for_function("typeof storeClipVideo === 'function' && typeof getClipVideo === 'function'")
             result = page.evaluate("""async () => {
                 try {
                     const blob = new Blob([new Uint8Array([7, 8, 9])], {type: 'video/mp4'});
