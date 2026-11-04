@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import subprocess
 import tempfile
@@ -59,6 +60,15 @@ class Stage48ResumableRestoreTests(unittest.TestCase):
         self.assertEqual(job["items"][0]["status"],"done")
         self.assertIn("完了動画",self.page.locator("#stage48Report").inner_text())
         self.assertIn("復元",self.page.locator("#stage48History").inner_text())
+
+    def test_interrupted_restore_resumes_from_saved_checkpoint(self):
+        self.seed([4803])
+        encoded=base64.b64encode(self.video_bytes).decode("ascii")
+        paused_status=self.page.evaluate("""async data => { const raw=atob(data); const bytes=Uint8Array.from(raw,c=>c.charCodeAt(0)); const file=new File([bytes],"riku-video__4803__stage48.webm",{type:"video/webm"}); setTimeout(()=>window.pauseStage48Restore(),0); await window.runStage48VideoRestore([file]); return JSON.parse(localStorage.getItem("rikuVideoRestoreJob_v1")).items[0].status; }""",encoded)
+        self.assertEqual(paused_status,"failed")
+        resumed=self.page.evaluate("""async data => { const raw=atob(data); const bytes=Uint8Array.from(raw,c=>c.charCodeAt(0)); const file=new File([bytes],"riku-video__4803__stage48.webm",{type:"video/webm"}); await window.runStage48VideoRestore([file]); return JSON.parse(localStorage.getItem("rikuVideoRestoreJob_v1")).items[0]; }""",encoded)
+        self.assertEqual(resumed["status"],"done")
+        self.assertEqual(resumed["savedHash"],self.digest)
 
     def test_webkit_streaming_sha256_is_compatible(self):
         browser=self.playwright.webkit.launch(headless=True)
