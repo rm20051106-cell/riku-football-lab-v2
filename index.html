@@ -4211,7 +4211,9 @@ if("serviceWorker" in navigator && window.isSecureContext){
  window.addEventListener("load",()=>{
   navigator.serviceWorker.register("./sw.js",{scope:"./"}).then(registration=>{
    const status=document.getElementById("pwaStatus");
-   if(status)status.textContent=registration.active?"オフライン用のアプリ画面を利用できます。":"オフライン用の準備をしています。初回は通信環境のよい場所で開いてください。";
+   const readyMessage="オフライン用のアプリ画面を利用できます。";
+   if(status)status.textContent=registration.active?readyMessage:"オフライン用の準備をしています。初回は通信環境のよい場所で開いてください。";
+   navigator.serviceWorker.ready.then(()=>{if(status)status.textContent=readyMessage;}).catch(()=>{});
   }).catch(error=>{
    console.warn("PWA service worker registration failed",error);
    const status=document.getElementById("pwaStatus");
