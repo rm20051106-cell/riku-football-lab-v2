@@ -720,7 +720,7 @@ def process_video(path: str, mode: str, camera_angle: str = "未選択", progres
                 current[side + "_foot_image_motion_per_sec"] = image_motion_per_width_per_second(a, b, dt, frame.shape[1], frame.shape[0])
             else:
                 current[side + "_foot_image_motion_per_sec"] = None
-    kick_phase_candidates = build_kick_phase_candidates(frames, actual_interval) if mode == "form" else None
+    kick_phase_candidates = build_kick_phase_candidates(frames, actual_interval, preferred_foot=preferred_foot) if mode == "form" else None
     summary = {
         "sampled_pose_frames": len(frames),
         "duration_seconds": round(duration, 2),
@@ -784,7 +784,7 @@ def root():
 def health():
     return {"ok": True, "service": APP_NAME, "pose_engine": "MediaPipe Pose"}
 
-async def analyze_upload(file: UploadFile, mode: str):
+async def analyze_upload(file: UploadFile, mode: str, preferred_foot: str = "right"):
     if not file.filename:
         raise HTTPException(status_code=400, detail="動画ファイルがありません。")
     suffix = Path(file.filename).suffix.lower()
@@ -837,7 +837,8 @@ async def analyze_upload(file: UploadFile, mode: str):
 
 @app.post("/analyze/form")
 async def analyze_form(file: UploadFile = File(...), kick_type: str = Form("シュート"), dominant_foot: str = Form("右足"), camera_angle: str = Form("未選択")):
-    result = await analyze_upload(file, "form")
+    normalized_foot = "left" if dominant_foot in ("左足", "left") else "right"
+    result = await analyze_upload(file, "form", preferred_foot=normalized_foot)
     result["kick_type"] = kick_type
     result["dominant_foot"] = dominant_foot
     result["camera_angle"] = camera_angle
