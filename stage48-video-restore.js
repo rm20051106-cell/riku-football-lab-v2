@@ -86,7 +86,8 @@
         const priorAlert=window.alert;
         window.__stage48BatchMode=true;
         window.alert=()=>{};
-        try{const outcome=await window.runStage47VideoRestore(ready);const preview=document.getElementById("videoRestorePreview")?.textContent||"";if(outcome?.ok===false||/^(復元中止|復元失敗|復元をキャンセル)/.test(preview))throw new Error(preview.split("\n")[0]||"Stage 47の事前検査に失敗しました");}
+        try{const outcome=await window.runStage47VideoRestore(ready);const preview=document.getElementById("videoRestorePreview")?.textContent||"";if(outcome?.ok===false||outcome===false||/^(復元中止|復元失敗|復元をキャンセル)/.test(preview))throw new Error(outcome?.error||preview.split("\n")[0]||"Stage 47の事前検査・保存に失敗しました");}
+        catch(error){for(const file of ready){const key=file.name+"|"+file.size+"|"+file.lastModified;const item=job.items.find(row=>row.name+"|"+row.size+"|"+row.lastModified===key);if(item&&item.status!=="done"){item.status="failed";item.error=String(error?.message||error).slice(0,240);}}saveJob(job);report(job,"復元失敗レポート");status("復元に失敗しました。失敗動画だけ再試行できます。");}
         finally{window.alert=priorAlert;if(priorBatchMode===undefined)delete window.__stage48BatchMode;else window.__stage48BatchMode=priorBatchMode;}
         for(const file of ready){
           const key=file.name+"|"+file.size+"|"+file.lastModified;
