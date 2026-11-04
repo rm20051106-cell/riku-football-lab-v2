@@ -150,6 +150,8 @@ def build_form_capture_quality(frames):
     frames = [frame if isinstance(frame, dict) else {} for frame in frames] if isinstance(frames, (list, tuple)) else []
 
     def is_finite_number(value):
+        if isinstance(value, bool):
+            return False
         try:
             number = float(value)
             return number == number and number not in (float("inf"), float("-inf"))
