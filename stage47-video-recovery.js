@@ -129,7 +129,7 @@
       host.textContent = "復元中止：事前検査で問題が見つかりました。\n" + errors.join("\n") + "\n現在の動画・分析記録は変更していません。";
       updateVideoTaskProgress("videoImportProgress", "事前検査に失敗しました。データは変更していません。", 0);
       if (!window.__stage48BatchMode) alert(host.textContent);
-      return;
+      return { ok: false, reason: "preflight", errors };
     }
 
     const uniqueRows = rows.filter(row => !row.duplicateInSelection);
@@ -143,7 +143,7 @@
       host.textContent = "復元中止：端末内の既存動画を安全に読み取れませんでした。\\n" + (error.message || String(error)) + "\\n現在の動画・分析記録は変更していません。";
       updateVideoTaskProgress("videoImportProgress", "既存動画の事前確認に失敗しました。データは変更していません。", 0);
       if (!window.__stage48BatchMode) alert(host.textContent);
-      return;
+      return { ok: false, reason: "snapshot", error: error.message || String(error) };
     }
     const collisions = [];
     const exactDuplicates = [];
@@ -167,8 +167,8 @@
     if (errors.length) {
       host.textContent = "復元中止：動画の事前検査に失敗しました。\n" + errors.join("\n") + "\n既存データは変更していません。";
       updateVideoTaskProgress("videoImportProgress", "動画の事前検査に失敗しました。データは変更していません。", 0);
-      alert(host.textContent);
-      return;
+      if (!window.__stage48BatchMode) alert(host.textContent);
+      return { ok: false, reason: "media-preflight", errors };
     }
 
     let estimateNote = "";
@@ -232,7 +232,7 @@
       if (typeof scanSavedVideoIntegrity === "function" && !window.__stage48BatchMode) await scanSavedVideoIntegrity();
       if (typeof refreshVideoStorageStatus === "function" && !window.__stage48BatchMode) refreshVideoStorageStatus();
       host.textContent = preview + "\n\n完了：保存後の動画バイト照合・再生メタデータ確認に成功。再生テストは下の照合結果から実行できます。";
-      alert("動画ファイルの復元が完了しました。\n新規保存・確認：" + imported + "本\n同一動画のためスキップ：" + skipped + "本\n未読込：" + errors.length + "本\n保存後のバイト照合・再生メタデータ確認：成功\n設定画面の「動画と記録を照合する」にある「再生テスト」から実際の再生も確認できます。");
+      if (!window.__stage48BatchMode) alert("動画ファイルの復元が完了しました。\n新規保存・確認：" + imported + "本\n同一動画のためスキップ：" + skipped + "本\n未読込：" + errors.length + "本\n保存後のバイト照合・再生メタデータ確認：成功\n設定画面の「動画と記録を照合する」にある「再生テスト」から実際の再生も確認できます。");
     } catch (error) {
       const rollbackErrors = await rollbackBatch(originalState, originalStored, originals, changedKeys);
       lastVideoImportFiles = files;
@@ -241,8 +241,10 @@
       const suffix = rollbackErrors.length ? "\nロールバック要確認：" + rollbackErrors.join("、") : "\nロールバック完了：今回の変更を元の状態へ戻しました。";
       host.textContent = "復元失敗：" + (error.message || String(error)) + suffix;
       updateVideoTaskProgress("videoImportProgress", "復元に失敗しました。元の状態へロールバックしました。再試行できます。", 0);
-      alert(host.textContent);
+      if (!window.__stage48BatchMode) alert(host.textContent);
+      return { ok: false, reason: "write", error: error.message || String(error), rollbackErrors };
     }
+    return { ok: true, imported, skipped, errors: errors.length };
   }
 
   const originalIntegrityScan = window.scanSavedVideoIntegrity;
