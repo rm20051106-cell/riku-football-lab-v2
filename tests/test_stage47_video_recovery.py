@@ -71,7 +71,7 @@ class Stage47VideoRecoveryTests(unittest.TestCase):
             window.alert = message => { window.__lastVideoImportAlert = String(message); };
         }""")
         page.locator("#videoImportFiles").set_input_files(self.named_file("4701"))
-        page.wait_for_function("state.clips[0].hasVideo === true")
+        page.wait_for_function("window.__lastVideoImportAlert.includes('バイト照合')")
         preview = page.locator("#videoRestorePreview").inner_text()
         self.assertIn("復元前プレビュー", preview)
         self.assertIn("事前確認：成功", preview)
