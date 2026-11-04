@@ -58,7 +58,7 @@
     const stableKey=value=>value.name+"|"+value.size;
     const byKey=new Map(files.map(file=>[stableKey(file),file]));
     const old=readJob();
-    let job=old&&old.items?.some(item=>item.status!=="done")?old:{id:"restore-"+Date.now(),action:"復元",at:new Date().toISOString(),items:[]};
+    let job=old&&Array.isArray(old.items)&&files.some(file=>old.items.some(item=>stableKey(item)===stableKey(file)))?old:{id:"restore-"+Date.now(),action:"復元",at:new Date().toISOString(),items:[]};
     if(!job.items.length) job.items=files.map(file=>({name:file.name,size:file.size,lastModified:file.lastModified,status:"pending",hash:null,savedHash:null,error:null}));
     for(const file of files){
       const key=stableKey(file);
