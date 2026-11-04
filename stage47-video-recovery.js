@@ -181,8 +181,8 @@
           if (totalBytes > free) {
             host.textContent = "復元中止：選択動画の合計サイズがブラウザ残り容量の目安を超えています。\n" + estimateNote + "／必要 " + (totalBytes / 1024 / 1024).toFixed(1) + "MB\n現在のデータは変更していません。";
             updateVideoTaskProgress("videoImportProgress", "保存容量不足の可能性があります。", 0);
-            alert(host.textContent);
-            return;
+            if (!window.__stage48BatchMode) alert(host.textContent);
+            return { ok: false, reason: "capacity" };
           }
         }
       }
