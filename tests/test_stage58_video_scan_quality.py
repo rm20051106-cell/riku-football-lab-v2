@@ -38,6 +38,18 @@ class Stage58VideoScanQualityTests(unittest.TestCase):
         self.assertEqual(result["pose_detected_frames"], 4)
         self.assertEqual(result["missed_pose_frames"], 0)
 
+    def test_match_and_form_summaries_use_their_own_sample_counters(self):
+        for name, expected in (
+            ("process_match_video", ("sample_index", "people_per_frame")),
+            ("process_video", ("sampled_video_frames", "pose_detected_frames")),
+        ):
+            node = next(n for n in TREE.body if isinstance(n, ast.FunctionDef) and n.name == name)
+            calls = [n for n in ast.walk(node) if isinstance(n, ast.Call)
+                     and isinstance(n.func, ast.Name) and n.func.id == "build_video_scan_quality"]
+            self.assertEqual(len(calls), 1, name)
+            args = tuple(arg.id for arg in calls[0].args if isinstance(arg, ast.Name))
+            self.assertEqual(args, expected, name)
+
     def test_boolean_and_negative_counts_are_not_accepted(self):
         result = build(True, -1)
         self.assertEqual(result["sampled_video_frames"], 0)
