@@ -759,7 +759,7 @@ def build_kick_phase_candidates(frames, sampling_interval_seconds, preferred_foo
         result["limitations"].append("撮影・解析サンプル間隔が粗いため、動作ピーク候補を表示していません。")
     return result
 
-def process_video(path: str, mode: str, camera_angle: str = "未選択", progress_callback=None, jersey_numbers=None):
+def process_video(path: str, mode: str, camera_angle: str = "未選択", progress_callback=None, jersey_numbers=None, preferred_foot: str = "right"):
     if mode == "match":
         return process_match_video(path, progress_callback=progress_callback, jersey_numbers=jersey_numbers)
     cap = cv2.VideoCapture(path)
@@ -908,7 +908,7 @@ async def analyze_upload(file: UploadFile, mode: str, preferred_foot: str = "rig
             tmp.write(data)
             temp_path = tmp.name
         try:
-            return process_video(temp_path, mode)
+            return process_video(temp_path, mode, preferred_foot=preferred_foot)
         except HTTPException as exc:
             # iPhone videos may be MOV/HEVC. OpenCV often cannot decode them
             # directly, so normalize to broadly supported H.264 MP4 with ffmpeg.
@@ -932,7 +932,7 @@ async def analyze_upload(file: UploadFile, mode: str, preferred_foot: str = "rig
                         status_code=422,
                         detail="動画をMP4に変換できませんでした。iPhoneの写真アプリで再生できる動画を選び直してください。"
                     )
-                return process_video(converted_path, mode)
+                return process_video(converted_path, mode, preferred_foot=preferred_foot)
             except subprocess.TimeoutExpired:
                 raise HTTPException(status_code=408, detail="動画変換が時間内に完了しませんでした。")
             finally:
