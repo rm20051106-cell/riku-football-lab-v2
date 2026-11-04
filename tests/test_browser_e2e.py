@@ -71,6 +71,37 @@ class RikuBrowserE2ETests(unittest.TestCase):
     def accept_dialogs(self):
         self.page.on("dialog", lambda dialog: dialog.accept())
 
+    def test_pwa_manifest_service_worker_and_offline_shell(self):
+        page = self.page
+        manifest = page.evaluate("""async () => {
+            const link = document.querySelector('link[rel="manifest"]');
+            if (!link) throw new Error("PWA manifest link missing");
+            const response = await fetch(link.href);
+            if (!response.ok) throw new Error("PWA manifest could not be fetched");
+            return response.json();
+        }""")
+        self.assertEqual(manifest["display"], "standalone")
+        self.assertEqual(manifest["scope"], "./")
+        self.assertEqual(manifest["start_url"], "./index.html")
+
+        registration = page.evaluate("""async () => {
+            if (!("serviceWorker" in navigator)) throw new Error("Service workers unavailable");
+            const ready = await navigator.serviceWorker.ready;
+            return {active: !!ready.active, scope: ready.scope};
+        }""")
+        self.assertTrue(registration["active"])
+        self.assertTrue(registration["scope"].endswith("/"))
+
+        page.reload(wait_until="load")
+        page.wait_for_function("!!navigator.serviceWorker.controller", timeout=10000)
+        self.context.set_offline(True)
+        try:
+            page.reload(wait_until="domcontentloaded", timeout=15000)
+            self.assertTrue(page.locator("#home").is_visible())
+            self.assertTrue(page.locator(".logo").inner_text().startswith("RIKU"))
+        finally:
+            self.context.set_offline(False)
+
     def test_mobile_navigation_accessibility_and_weekly_goal_link(self):
         page = self.page
         page.set_viewport_size({"width": 390, "height": 844})
