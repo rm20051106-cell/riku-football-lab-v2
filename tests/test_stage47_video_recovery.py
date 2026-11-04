@@ -117,6 +117,17 @@ class Stage47VideoRecoveryTests(unittest.TestCase):
         self.assertIsNone(result["second"])
         self.assertEqual(result["flags"], [True, False])
 
+    def test_integrity_scan_flags_nonempty_but_undecodable_video(self):
+        page = self.page
+        page.evaluate("""async () => {
+            await storeClipVideo('orphan-corrupt', new Blob([new Uint8Array([1, 2, 3, 4, 5])], {type:'video/webm'}));
+            await scanSavedVideoIntegrity();
+        }""")
+        page.wait_for_function("document.getElementById('videoIntegrityResult').textContent.includes('読み取り不可 1本')")
+        report = page.locator("#videoIntegrityResult").inner_text()
+        self.assertIn("Stage 47 再生情報検査", report)
+        self.assertIn("orphan-corrupt", report)
+
     def test_unknown_record_is_rejected_before_any_database_write(self):
         page = self.page
         page.evaluate("() => { state.clips=[]; state.forms=[]; persist(); window.__lastVideoImportAlert=''; window.alert=m=>window.__lastVideoImportAlert=String(m); }")
