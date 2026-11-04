@@ -2815,71 +2815,6 @@ function printMonthlyGrowthReport(){
  if(!win){alert('印刷画面を開けませんでした。Safariのポップアップ設定を確認してください。');return;}
  win.document.open();
  win.document.write('<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+title+'</title>'+style+'</head><body><header class="masthead"><div><div class="brand">RIKU FOOTBALL LAB｜PLAYER DEVELOPMENT</div><h1>'+title+'</h1><div class="date">対象月：'+key+'　｜　作成日：'+generated+'</div></div><div class="brand">PLAYER No. 10 / 74</div></header>'+summary+'<div class="tiny muted">このカルテは保存された練習・測定・本人確認済みの試合記録を整理したものです。記録件数は実力の点数ではなく、試合場面の評価も保護者・本人が確認して入力した内容です。</div>'+host.innerHTML+'<div class="brandline">RIKU FOOTBALL LAB　｜　陸玖の成長を、記録から武器に。　｜　'+generated+'</div><script>window.onload=function(){setTimeout(function(){window.print()},450)};<\/script>
-<script>
-function renderConnectionStatus(){
- const el=document.getElementById("connectionStatus");
- if(!el)return;
- const online=navigator.onLine!==false;
- el.textContent=online
-  ?"通信状態：オンライン。AIサーバーへの動画解析を利用できます（サーバー接続状況は別途確認）。"
-  :"通信状態：オフライン。端末内の保存済み記録を利用できます。AIサーバー解析には通信が必要です。";
-}
-function formatStorageBytes(value){
- const bytes=Math.max(0,Number(value)||0);
- if(bytes<1024*1024)return (bytes/1024).toFixed(0)+" KB";
- return (bytes/1024/1024).toFixed(1)+" MB";
-}
-async function refreshDeviceStorageStatus(){
- const el=document.getElementById("deviceStorageStatus");
- if(!el)return;
- if(!navigator.storage||typeof navigator.storage.estimate!=="function"){
-  el.textContent="このブラウザでは保存容量の概算を取得できません。";
-  return;
- }
- el.textContent="端末内の保存容量を確認しています…";
- try{
-  const estimate=await navigator.storage.estimate();
-  const usage=Number(estimate.usage)||0;
-  const quota=Number(estimate.quota)||0;
-  const percent=quota>0?Math.min(100,usage/quota*100):null;
-  let message="このサイトの保存領域の目安："+formatStorageBytes(usage);
-  if(quota>0)message+=" ／ 上限目安 "+formatStorageBytes(quota)+"（約"+percent.toFixed(1)+"%使用）";
-  else message+=" ／ 上限目安は取得できませんでした";
-  if(typeof navigator.storage.persisted==="function"){
-   try{message+=" ／ 保存保護："+(await navigator.storage.persisted()?"有効":"未確認・未許可")}catch(_){}
-  }
-  el.textContent=message;
- }catch(error){
-  console.warn("端末保存容量の確認に失敗しました",error);
-  el.textContent="保存容量を取得できませんでした。バックアップを定期的に保存してください。";
- }
-}
-async function requestPersistentStorage(){
- const el=document.getElementById("deviceStorageStatus");
- if(!el)return;
- if(!navigator.storage||typeof navigator.storage.persist!=="function"){
-  el.textContent="このブラウザは保存データの保護要求に対応していません。定期的なバックアップを続けてください。";
-  return;
- }
- el.textContent="ブラウザに保存データの保護を確認しています…";
- try{
-  const granted=await navigator.storage.persist();
-  el.textContent=granted
-   ?"ブラウザがこのサイトの保存データを保護する設定を許可しました。端末故障・削除に備え、バックアップは必要です。"
-   :"ブラウザは保存データの保護を許可しませんでした。保存容量を確認し、定期的にバックアップしてください。";
-  await refreshDeviceStorageStatus();
- }catch(error){
-  console.warn("保存データ保護の確認に失敗しました",error);
-  el.textContent="保存データの保護状態を確認できませんでした。定期的なバックアップを続けてください。";
- }
-}
-window.addEventListener("online",renderConnectionStatus);
-window.addEventListener("offline",renderConnectionStatus);
-window.addEventListener("load",()=>{
- renderConnectionStatus();
- refreshDeviceStorageStatus();
-});
-</script>
 </body></html>');
  win.document.close();
 }
@@ -4292,6 +4227,71 @@ if("serviceWorker" in navigator && window.isSecureContext){
   });
  });
 }
+</script>
+<script>
+function renderConnectionStatus(){
+ const el=document.getElementById("connectionStatus");
+ if(!el)return;
+ const online=navigator.onLine!==false;
+ el.textContent=online
+  ?"通信状態：オンライン。AIサーバーへの動画解析を利用できます（サーバー接続状況は別途確認）。"
+  :"通信状態：オフライン。端末内の保存済み記録を利用できます。AIサーバー解析には通信が必要です。";
+}
+function formatStorageBytes(value){
+ const bytes=Math.max(0,Number(value)||0);
+ if(bytes<1024*1024)return (bytes/1024).toFixed(0)+" KB";
+ return (bytes/1024/1024).toFixed(1)+" MB";
+}
+async function refreshDeviceStorageStatus(){
+ const el=document.getElementById("deviceStorageStatus");
+ if(!el)return;
+ if(!navigator.storage||typeof navigator.storage.estimate!=="function"){
+  el.textContent="このブラウザでは保存容量の概算を取得できません。";
+  return;
+ }
+ el.textContent="端末内の保存容量を確認しています…";
+ try{
+  const estimate=await navigator.storage.estimate();
+  const usage=Number(estimate.usage)||0;
+  const quota=Number(estimate.quota)||0;
+  const percent=quota>0?Math.min(100,usage/quota*100):null;
+  let message="このサイトの保存領域の目安："+formatStorageBytes(usage);
+  if(quota>0)message+=" ／ 上限目安 "+formatStorageBytes(quota)+"（約"+percent.toFixed(1)+"%使用）";
+  else message+=" ／ 上限目安は取得できませんでした";
+  if(typeof navigator.storage.persisted==="function"){
+   try{message+=" ／ 保存保護："+(await navigator.storage.persisted()?"有効":"未確認・未許可")}catch(_){}
+  }
+  el.textContent=message;
+ }catch(error){
+  console.warn("端末保存容量の確認に失敗しました",error);
+  el.textContent="保存容量を取得できませんでした。バックアップを定期的に保存してください。";
+ }
+}
+async function requestPersistentStorage(){
+ const el=document.getElementById("deviceStorageStatus");
+ if(!el)return;
+ if(!navigator.storage||typeof navigator.storage.persist!=="function"){
+  el.textContent="このブラウザは保存データの保護要求に対応していません。定期的なバックアップを続けてください。";
+  return;
+ }
+ el.textContent="ブラウザに保存データの保護を確認しています…";
+ try{
+  const granted=await navigator.storage.persist();
+  el.textContent=granted
+   ?"ブラウザがこのサイトの保存データを保護する設定を許可しました。端末故障・削除に備え、バックアップは必要です。"
+   :"ブラウザは保存データの保護を許可しませんでした。保存容量を確認し、定期的にバックアップしてください。";
+  await refreshDeviceStorageStatus();
+ }catch(error){
+  console.warn("保存データ保護の確認に失敗しました",error);
+  el.textContent="保存データの保護状態を確認できませんでした。定期的なバックアップを続けてください。";
+ }
+}
+window.addEventListener("online",renderConnectionStatus);
+window.addEventListener("offline",renderConnectionStatus);
+window.addEventListener("load",()=>{
+ renderConnectionStatus();
+ refreshDeviceStorageStatus();
+});
 </script>
 </body>
 </html>
