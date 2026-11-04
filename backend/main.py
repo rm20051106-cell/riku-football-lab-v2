@@ -478,7 +478,6 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
     knees = [x[k] for x in frames for k in ("left_knee_angle_deg", "right_knee_angle_deg") if x.get(k) is not None]
     hips = [x[k] for x in frames for k in ("left_hip_angle_deg", "right_hip_angle_deg") if x.get(k) is not None]
     trunks = [x["trunk_lean_image_angle_deg"] for x in frames if x.get("trunk_lean_image_angle_deg") is not None]
-    kick_phase_candidates = build_kick_phase_candidates(frames, actual_interval) if mode == "form" else None
     summary = {
         "sampled_pose_frames": len(frames),
         "duration_seconds": round(duration, 2),
@@ -645,6 +644,7 @@ def process_video(path: str, mode: str, camera_angle: str = "未選択", progres
                 current[side + "_foot_image_motion_per_sec"] = round(float(np.linalg.norm(np.array(a[:2]) - np.array(b[:2])) / dt), 4)
             else:
                 current[side + "_foot_image_motion_per_sec"] = None
+    kick_phase_candidates = build_kick_phase_candidates(frames, actual_interval) if mode == "form" else None
     summary = {
         "sampled_pose_frames": len(frames),
         "duration_seconds": round(duration, 2),
