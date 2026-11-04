@@ -302,6 +302,12 @@
     const files = [...(event.target.files || [])];
     if (!files.length) return;
     lastVideoImportFiles = files;
+    if (window.__stage48Intercept && typeof window.runStage48VideoRestore === "function") {
+      const retry = event.target.dataset.stage48Retry === "1";
+      event.target.dataset.stage48Retry = "0";
+      (retry ? window.retryStage48FailedVideos(files) : window.runStage48VideoRestore(files)).finally(() => { event.target.value = ""; });
+      return;
+    }
     restoreVideoBatch(files).finally(() => { event.target.value = ""; });
   }, true);
 
