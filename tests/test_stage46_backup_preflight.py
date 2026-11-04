@@ -19,6 +19,7 @@ class QuietHandler(SimpleHTTPRequestHandler):
 
 
 class Stage46BackupPreflightTests(unittest.TestCase):
+    # Browser-level checks ensure the preflight remains strictly read-only.
     @classmethod
     def setUpClass(cls):
         cls.server = ThreadingHTTPServer(("127.0.0.1", 0), partial(QuietHandler, directory=str(ROOT)))
