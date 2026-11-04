@@ -587,7 +587,12 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
 
 def build_kick_phase_candidates(frames, sampling_interval_seconds, preferred_foot="right"):
     """Return conservative image-motion time candidates, never definitive kick phases."""
-    interval = float(sampling_interval_seconds or 0)
+    try:
+        interval = float(sampling_interval_seconds or 0)
+    except (TypeError, ValueError, OverflowError):
+        interval = 0.0
+    if not np.isfinite(interval) or interval <= 0:
+        interval = 0.0
     preferred_foot = preferred_foot if preferred_foot in ("left", "right") else "right"
     result = {
         "sampling_interval_seconds": round(interval, 3),
@@ -608,17 +613,26 @@ def build_kick_phase_candidates(frames, sampling_interval_seconds, preferred_foo
         for index, frame in enumerate(frames):
             speed = frame.get(side + "_foot_image_motion_per_sec")
             timestamp = frame.get("time_seconds")
-            if isinstance(speed, (int, float)) and np.isfinite(speed) and isinstance(timestamp, (int, float)):
+            numeric_speed = isinstance(speed, (int, float)) and not isinstance(speed, bool)
+            numeric_time = isinstance(timestamp, (int, float)) and not isinstance(timestamp, bool)
+            if (numeric_speed and numeric_time and np.isfinite(speed) and np.isfinite(timestamp)
+                    and float(speed) >= 0):
                 valid.append({"frame_index": index, "time_seconds": round(float(timestamp), 3),
                               "image_motion_per_sec": round(float(speed), 5)})
         foot_result = {"sample_count": len(valid), "peak_candidate": None,
                        "post_peak_candidate": None, "opposite_foot_relative_stability": None,
                        "peak_support_samples": 0, "status": "insufficient_sampling"}
-        if interval <= 0.75 and len(valid) >= 4:
+        if 0 < interval <= 0.75 and len(valid) >= 4:
             peak = max(valid, key=lambda item: item["image_motion_per_sec"])
             peak_speed = peak["image_motion_per_sec"]
+            max_neighbor_gap = max(interval * 1.75, interval + 0.1)
             adjacent = [item for item in valid
-                        if abs(item["frame_index"] - peak["frame_index"]) == 1]
+                        if abs(item["frame_index"] - peak["frame_index"]) == 1
+                        and 0 < abs(item["time_seconds"] - peak["time_seconds"]) <= max_neighbor_gap
+                        and ((item["frame_index"] < peak["frame_index"]
+                              and item["time_seconds"] < peak["time_seconds"])
+                             or (item["frame_index"] > peak["frame_index"]
+                                 and item["time_seconds"] > peak["time_seconds"]))]
             support = [item for item in adjacent
                        if peak_speed > 0 and item["image_motion_per_sec"] >= peak_speed * 0.35]
             foot_result["peak_support_samples"] = len(support)
@@ -630,7 +644,9 @@ def build_kick_phase_candidates(frames, sampling_interval_seconds, preferred_foo
                     "peak_support_samples": len(support),
                     "label": "隣接サンプルの裏付けがある蹴り脚の動きのピーク候補",
                 }
-                later = [item for item in valid if item["frame_index"] > peak["frame_index"]]
+                later = [item for item in valid
+                         if item["frame_index"] > peak["frame_index"]
+                         and item["time_seconds"] > peak["time_seconds"]]
                 slowing = next((item for item in later
                                 if item["image_motion_per_sec"] <= peak_speed * 0.7), None)
                 if slowing:
