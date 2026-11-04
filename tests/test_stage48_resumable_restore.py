@@ -45,7 +45,7 @@ class Stage48ResumableRestoreTests(unittest.TestCase):
         self.playwright.stop()
 
     def file(self,key="4801"):
-        return {"name":"riku-video__"+key+"__stage48.webm","mimeType":"video/webm","buffer":self.video_bytes}
+        return {"name":"riku-video__"+key+"__stage48.webm","mimeType":"video/webm","lastModified":1700000000000,"buffer":self.video_bytes}
 
     def seed(self,ids):
         self.page.evaluate("""ids => { state.clips=ids.map(id=>({id,date:today(),title:"Stage 48 test "+id,hasVideo:false})); persist(); }""",ids)
@@ -64,7 +64,7 @@ class Stage48ResumableRestoreTests(unittest.TestCase):
     def test_interrupted_restore_resumes_from_saved_checkpoint(self):
         self.seed([4803])
         encoded=base64.b64encode(self.video_bytes).decode("ascii")
-        paused_status=self.page.evaluate("""async data => { const raw=atob(data); const bytes=Uint8Array.from(raw,c=>c.charCodeAt(0)); const file=new File([bytes],"riku-video__4803__stage48.webm",{type:"video/webm"}); setTimeout(()=>window.pauseStage48Restore(),0); await window.runStage48VideoRestore([file]); return JSON.parse(localStorage.getItem("rikuVideoRestoreJob_v1")).items[0].status; }""",encoded)
+        paused_status=self.page.evaluate("""async data => { const raw=atob(data); const bytes=Uint8Array.from(raw,c=>c.charCodeAt(0)); const file=new File([bytes],"riku-video__4803__stage48.webm",{type:"video/webm",lastModified:1700000000000}); setTimeout(()=>window.pauseStage48Restore(),0); await window.runStage48VideoRestore([file]); return JSON.parse(localStorage.getItem("rikuVideoRestoreJob_v1")).items[0].status; }""",encoded)
         self.assertEqual(paused_status,"pending")
         resumed=self.page.evaluate("""async data => { const raw=atob(data); const bytes=Uint8Array.from(raw,c=>c.charCodeAt(0)); const file=new File([bytes],"riku-video__4803__stage48.webm",{type:"video/webm"}); await window.runStage48VideoRestore([file]); return JSON.parse(localStorage.getItem("rikuVideoRestoreJob_v1")).items[0]; }""",encoded)
         self.assertEqual(resumed["status"],"done")
@@ -83,7 +83,7 @@ class Stage48ResumableRestoreTests(unittest.TestCase):
         self.page.evaluate("""() => { const original=window.storeClipVideo; window.__originalStore=original; window.storeClipVideo=async (...args)=>{window.storeClipVideo=window.__originalStore;throw new Error("simulated temporary write failure")}; }""")
         self.page.locator("#videoImportFiles").set_input_files(self.file("4802"))
         self.page.wait_for_function("JSON.parse(localStorage.getItem('rikuVideoRestoreJob_v1'))?.items?.[0]?.status === 'failed'",timeout=30000)
-        self.page.evaluate("window.storeClipVideo=window.__originalStore")
+        self.page.wait_for_function("document.getElementById('stage48Status')?.textContent.includes('失敗動画だけ再試行できます')",timeout=30000)
         self.page.locator("#stage48Retry").click()
         self.page.locator("#videoImportFiles").set_input_files(self.file("4802"))
         self.page.wait_for_function("JSON.parse(localStorage.getItem('rikuVideoRestoreJob_v1'))?.items?.[0]?.status === 'done'",timeout=30000)
