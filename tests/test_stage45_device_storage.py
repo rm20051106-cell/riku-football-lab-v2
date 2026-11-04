@@ -34,6 +34,11 @@ class Stage45DeviceStorageTests(unittest.TestCase):
         self.assertIn("保存容量を取得できませんでした", HTML)
         self.assertIn("保存データの保護状態を確認できませんでした", HTML)
 
+    def test_initial_status_refresh_runs_on_page_load(self):
+        self.assertIn('window.addEventListener("load",()=>{', HTML)
+        self.assertIn("renderConnectionStatus();", HTML)
+        self.assertIn("refreshDeviceStorageStatus();", HTML)
+
     def test_ai_analysis_network_requirement_is_preserved(self):
         self.assertIn("AIサーバー解析には通信が必要です", HTML)
         self.assertIn("AIサーバーへの動画解析にはインターネット接続が必要", HTML)
