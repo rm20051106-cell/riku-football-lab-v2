@@ -961,35 +961,84 @@ async def analyze_match(file: UploadFile = File(...), jersey_numbers: str = Form
 
 
 def build_movement_candidates(summary, max_events=8):
-    frames = summary.get('frames', [])
+    """Select conservative movement-change candidates from finite, timestamped pose evidence."""
+    if not isinstance(summary, dict):
+        return []
+    frames = summary.get("frames", [])
+    if not isinstance(frames, list):
+        return []
+    try:
+        limit = int(max_events)
+    except (TypeError, ValueError, OverflowError):
+        limit = 8
+    if isinstance(max_events, bool) or limit <= 0:
+        return []
+    limit = min(limit, 8)
+
+    def finite_nonnegative(value):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        try:
+            number = float(value)
+            if number != number or number in (float("inf"), float("-inf")) or number < 0:
+                return None
+            return number
+        except (TypeError, ValueError, OverflowError):
+            return None
+
     scored = []
     for frame in frames:
-        speeds = [frame.get('left_foot_image_motion_per_sec'), frame.get('right_foot_image_motion_per_sec')]
-        speeds = [float(v) for v in speeds if isinstance(v, (int, float))]
-        if not speeds:
+        if not isinstance(frame, dict):
             continue
-        score = max(speeds)
+        timestamp = finite_nonnegative(frame.get("time_seconds"))
+        if timestamp is None:
+            continue
+        speeds = [
+            finite_nonnegative(frame.get("left_foot_image_motion_per_sec")),
+            finite_nonnegative(frame.get("right_foot_image_motion_per_sec")),
+        ]
+        valid_speeds = [value for value in speeds if value is not None]
+        if not valid_speeds:
+            continue
+        score = max(valid_speeds)
         if score > 0:
-            scored.append({'time_seconds': float(frame.get('time_seconds', 0)), 'score': score})
+            scored.append({"time_seconds": timestamp, "score": score})
+
     if len(scored) < 3:
         return []
-    values = sorted(x['score'] for x in scored)
+    scored.sort(key=lambda item: item["time_seconds"])
+    # Duplicate timestamps are not independent temporal evidence; retain their strongest sample.
+    deduplicated = {}
+    for item in scored:
+        key = round(item["time_seconds"], 3)
+        if key not in deduplicated or item["score"] > deduplicated[key]["score"]:
+            deduplicated[key] = item
+    scored = list(deduplicated.values())
+    if len(scored) < 3:
+        return []
+
+    values = sorted(item["score"] for item in scored)
     threshold = values[min(len(values) - 1, int((len(values) - 1) * 0.75))]
-    selected = [x for x in scored if x['score'] >= threshold and x['score'] > 0.015]
-    selected.sort(key=lambda x: x['score'], reverse=True)
+    selected = [item for item in scored if item["score"] >= threshold and item["score"] > 0.015]
+    selected.sort(key=lambda item: item["score"], reverse=True)
     chosen = []
     for item in selected:
-        if all(abs(item['time_seconds'] - old['time_seconds']) >= 10 for old in chosen):
+        if all(abs(item["time_seconds"] - old["time_seconds"]) >= 10 for old in chosen):
             chosen.append(item)
-        if len(chosen) >= max_events:
+        if len(chosen) >= limit:
             break
-    chosen.sort(key=lambda x: x['time_seconds'])
-    return [{'id': str(i + 1), 'time_seconds': round(x['time_seconds'], 2),
-             'movement_score': round(x['score'], 4),
-             'label': '動きの変化候補',
-             'reason': '足先の画像上の移動量が、スキャンした場面の中で大きい時間帯です。',
-             'is_football_action_confirmed': False}
-            for i, x in enumerate(chosen)]
+    chosen.sort(key=lambda item: item["time_seconds"])
+    return [
+        {
+            "id": str(index + 1),
+            "time_seconds": round(item["time_seconds"], 2),
+            "movement_score": round(item["score"], 4),
+            "label": "動きの変化候補",
+            "reason": "足先の画像上の移動量が、スキャンした場面の中で大きい時間帯です。",
+            "is_football_action_confirmed": False,
+        }
+        for index, item in enumerate(chosen)
+    ]
 
 def extract_candidate_clips(video_path, job_id, candidates, duration):
     clips = []
