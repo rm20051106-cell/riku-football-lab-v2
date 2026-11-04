@@ -238,7 +238,7 @@
       lastVideoImportFiles = files;
       const retryButton = document.getElementById("videoImportRetry");
       if (retryButton) retryButton.style.display = "inline-flex";
-      const suffix = rollbackErrors.length ? "\nロールバック要確認：" + rollbackErrors.join("、") : "\n今回の変更は元の状態へ戻しました。";
+      const suffix = rollbackErrors.length ? "\nロールバック要確認：" + rollbackErrors.join("、") : "\nロールバック完了：今回の変更を元の状態へ戻しました。";
       host.textContent = "復元失敗：" + (error.message || String(error)) + suffix;
       updateVideoTaskProgress("videoImportProgress", "復元に失敗しました。元の状態へロールバックしました。再試行できます。", 0);
       alert(host.textContent);
