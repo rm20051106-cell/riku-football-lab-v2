@@ -196,7 +196,6 @@
     }
 
     const changedKeys = new Set();
-    const originalFlags = new Map(uniqueRows.map(row => [row.key, !!row.record.hasVideo]));
     let imported = 0;
     let skipped = exactDuplicates.length;
     try {
