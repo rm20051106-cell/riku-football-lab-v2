@@ -80,6 +80,20 @@ class Stage55FormEvidenceQualityTests(unittest.TestCase):
         self.assertEqual(result["metric_sample_coverage"]["right_knee"]["measured_samples"], 1)
         self.assertEqual(result["status"], "insufficient_samples")
 
+    def test_malformed_landmark_containers_are_treated_as_unobserved(self):
+        result = self.build([
+            {"person_height_ratio": 0.6, "landmarks": None},
+            {"person_height_ratio": 0.6, "landmarks": []},
+            {"person_height_ratio": 0.6, "landmarks": "invalid"},
+        ])
+        self.assertEqual(result["joint_visibility_rate"]["right_knee"], 0.0)
+        self.assertIn("right_knee", result["low_visibility_joints"])
+
+    def test_non_list_frame_input_is_treated_as_empty(self):
+        result = self.build(None)
+        self.assertEqual(result["sampled_pose_frames"], 0)
+        self.assertIsNone(result["joint_visibility_rate"]["right_knee"])
+
     def test_empty_frames_preserve_unknown_visibility_and_coverage(self):
         result = self.build([])
         self.assertIsNone(result["joint_visibility_rate"]["right_knee"])
