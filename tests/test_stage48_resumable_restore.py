@@ -60,6 +60,14 @@ class Stage48ResumableRestoreTests(unittest.TestCase):
         self.assertIn("完了動画",self.page.locator("#stage48Report").inner_text())
         self.assertIn("復元",self.page.locator("#stage48History").inner_text())
 
+    def test_webkit_streaming_sha256_is_compatible(self):
+        browser=self.playwright.webkit.launch(headless=True)
+        page=browser.new_page()
+        page.goto(self.url,wait_until="load")
+        digest=page.evaluate("""async () => { const data=new TextEncoder().encode("RIKU FOOTBALL LAB Stage 48 SHA-256"); return window.hashStage48Blob(new Blob([data])); }""")
+        self.assertEqual(digest,hashlib.sha256(b"RIKU FOOTBALL LAB Stage 48 SHA-256").hexdigest())
+        browser.close()
+
     def test_failed_video_only_retry_completes(self):
         self.seed([4802])
         self.page.evaluate("""() => { const original=window.storeClipVideo; window.__originalStore=original; window.storeClipVideo=async (...args)=>{window.storeClipVideo=window.__originalStore;throw new Error("simulated temporary write failure")}; }""")
