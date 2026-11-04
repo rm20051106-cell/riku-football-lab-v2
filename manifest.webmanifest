@@ -1,0 +1,21 @@
+{
+  "id": "./",
+  "name": "RIKU FOOTBALL LAB",
+  "short_name": "RIKU LAB",
+  "description": "陸玖のサッカー練習・試合・動画・フォーム・成長記録をまとめる個人用アプリ",
+  "lang": "ja",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0b1220",
+  "theme_color": "#101c2b",
+  "icons": [
+    {
+      "src": "./app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
