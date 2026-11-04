@@ -128,7 +128,7 @@
     if (errors.length) {
       host.textContent = "復元中止：事前検査で問題が見つかりました。\n" + errors.join("\n") + "\n現在の動画・分析記録は変更していません。";
       updateVideoTaskProgress("videoImportProgress", "事前検査に失敗しました。データは変更していません。", 0);
-      alert(host.textContent);
+      if (!window.__stage48BatchMode) alert(host.textContent);
       return;
     }
 
@@ -142,7 +142,7 @@
     catch (error) {
       host.textContent = "復元中止：端末内の既存動画を安全に読み取れませんでした。\\n" + (error.message || String(error)) + "\\n現在の動画・分析記録は変更していません。";
       updateVideoTaskProgress("videoImportProgress", "既存動画の事前確認に失敗しました。データは変更していません。", 0);
-      alert(host.textContent);
+      if (!window.__stage48BatchMode) alert(host.textContent);
       return;
     }
     const collisions = [];
@@ -199,7 +199,7 @@
       "復元中に失敗した場合は、今回変更した動画と記録情報を元に戻します。"
     ].filter(Boolean).join("\n");
     host.textContent = preview;
-    if (!confirm(preview + "\n\nこの内容で復元を開始しますか？")) {
+    if (!window.__stage48BatchMode && !confirm(preview + "\n\nこの内容で復元を開始しますか？")) {
       updateVideoTaskProgress("videoImportProgress", "復元をキャンセルしました。既存データは変更していません。", 0);
       return;
     }
