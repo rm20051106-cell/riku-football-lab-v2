@@ -56,6 +56,54 @@ class Stage49VisibilityQualityTests(unittest.TestCase):
         self.assertEqual(result["total"], 4)
         self.assertNotIn("体幹傾き", result["missing"])
 
+    def test_capture_quality_retake_status_blocks_reference_score(self):
+        frames = [
+            {"right_knee_angle_deg": 160, "metric_quality": {"right_knee": "measured"}}
+            for _ in range(4)
+        ]
+        result = self.evaluate({
+            "frames": frames,
+            "capture_quality": {
+                "status": "retake_recommended_joint_visibility",
+                "guidance": "複数の関節が映っていません。",
+            },
+        })
+        self.assertIsNone(result["score"])
+        self.assertTrue(result["captureBlocked"])
+        self.assertIn("関節", result["note"])
+
+    def test_low_video_pose_detection_blocks_reference_score(self):
+        frames = [
+            {"right_knee_angle_deg": 160, "metric_quality": {"right_knee": "measured"}}
+            for _ in range(4)
+        ]
+        result = self.evaluate({
+            "frames": frames,
+            "video_scan_quality": {
+                "status": "retake_recommended_low_detection",
+                "pose_detection_rate": 0.1,
+                "guidance": "姿勢検出率が低いです。",
+            },
+        })
+        self.assertIsNone(result["score"])
+        self.assertTrue(result["captureBlocked"])
+
+    def test_video_pose_detection_rate_scales_reference_quality_score(self):
+        frames = [
+            {"right_knee_angle_deg": value, "metric_quality": {"right_knee": "measured"}}
+            for value in (160, 161, 159, 160)
+        ]
+        full = self.evaluate({"frames": frames})
+        partial = self.evaluate({
+            "frames": frames,
+            "video_scan_quality": {
+                "status": "usable_with_caution_low_detection",
+                "pose_detection_rate": 0.5,
+            },
+        })
+        self.assertEqual(partial["detectionRate"], 0.5)
+        self.assertEqual(partial["score"], round(full["score"] * 0.5))
+
     def test_legacy_frames_without_metric_quality_remain_compatible(self):
         frames = [{"right_knee_angle_deg": 160} for _ in range(3)]
         result = self.evaluate({"frames": frames})
