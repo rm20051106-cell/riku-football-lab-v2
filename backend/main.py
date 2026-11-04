@@ -630,6 +630,7 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
     trunks = [x["trunk_lean_image_angle_deg"] for x in frames if x.get("trunk_lean_image_angle_deg") is not None]
     summary = {
         "sampled_pose_frames": len(frames),
+        "video_scan_quality": build_video_scan_quality(sampled_video_frames, pose_detected_frames),
         "duration_seconds": round(duration, 2),
         "average_left_right_knee_angle_deg": round(float(np.mean(knees)), 1) if knees else None,
         "average_trunk_lean_image_angle_deg": round(float(np.mean(trunks)), 1) if trunks else None,
@@ -759,6 +760,46 @@ def build_kick_phase_candidates(frames, sampling_interval_seconds, preferred_foo
         result["limitations"].append("撮影・解析サンプル間隔が粗いため、動作ピーク候補を表示していません。")
     return result
 
+def build_video_scan_quality(sampled_video_frames, pose_detected_frames):
+    """Report how often pose inference found a person in frames actually sampled."""
+    def safe_count(value):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return 0
+        try:
+            number = float(value)
+            if number != number or number in (float("inf"), float("-inf")) or number < 0:
+                return 0
+            return int(number)
+        except (TypeError, ValueError, OverflowError):
+            return 0
+
+    sampled = safe_count(sampled_video_frames)
+    detected = min(sampled, safe_count(pose_detected_frames))
+    missed = sampled - detected
+    rate = round(detected / sampled, 3) if sampled else None
+    if sampled == 0 or detected < 3:
+        status = "insufficient_samples"
+        guidance = "姿勢を確認できたサンプルが不足しています。人物全身が映る明るい動画で撮り直してください。"
+    elif rate < 0.25:
+        status = "retake_recommended_low_detection"
+        guidance = "サンプリングした映像の多くで姿勢を検出できません。人物の大きさ・明るさ・遮蔽を確認して撮り直してください。"
+    elif rate < 0.6:
+        status = "usable_with_caution_low_detection"
+        guidance = "姿勢を検出できない場面が多くあります。動作候補や平均値は映った場面に偏る可能性があります。"
+    else:
+        status = "usable_for_review"
+        guidance = "サンプリングした映像の姿勢検出率は確認用の目安を満たしています。本人識別やプレー内容の確定を意味しません。"
+    return {
+        "status": status,
+        "sampled_video_frames": sampled,
+        "pose_detected_frames": detected,
+        "missed_pose_frames": missed,
+        "pose_detection_rate": rate,
+        "guidance": guidance,
+        "note": "検出率はサンプリングしたフレーム内の姿勢検出割合です。人物本人の識別、プレー認識、撮影全時間の連続検出を保証しません。",
+    }
+
+
 def process_video(path: str, mode: str, camera_angle: str = "未選択", progress_callback=None, jersey_numbers=None, preferred_foot: str = "right"):
     if mode == "match":
         return process_match_video(path, progress_callback=progress_callback, jersey_numbers=jersey_numbers)
@@ -778,12 +819,14 @@ def process_video(path: str, mode: str, camera_angle: str = "未選択", progres
     actual_interval = interval / fps if fps > 0 else 1 / target_sample_rate
     max_samples = MATCH_MAX_SAMPLES if mode == "match" else 120
     frames = []
+    sampled_video_frames = 0
+    pose_detected_frames = 0
     frame_idx = 0
     target_jerseys = [x.strip() for x in (jersey_numbers or "10,74").replace("；", ",").split(",") if x.strip()]
     with mp_pose.Pose(static_image_mode=(mode == "match"), model_complexity=1,
                       enable_segmentation=False, min_detection_confidence=0.5,
                       min_tracking_confidence=0.5) as pose:
-        while len(frames) < max_samples:
+        while sampled_video_frames < max_samples:
             if mode == "match":
                 cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
                 ok, frame = cap.read()
@@ -796,12 +839,14 @@ def process_video(path: str, mode: str, camera_angle: str = "未選択", progres
             if not ok:
                 break
             if mode == "match" or current_frame_idx % interval == 0:
+                sampled_video_frames += 1
                 h, w = frame.shape[:2]
                 if w > 960:
                     new_h = max(1, int(round(h * 960 / w)))
                     frame = cv2.resize(frame, (960, new_h), interpolation=cv2.INTER_AREA)
                 metrics = analyze_frame(frame, pose)
                 if metrics:
+                    pose_detected_frames += 1
                     if mode == "match":
                         metrics["jersey_ocr_candidates"] = read_jersey_number(frame, metrics.get("landmarks", {}), target_jerseys)
                     frames.append({"time_seconds": round(current_frame_idx / fps, 2) if fps > 0 else current_frame_idx,
