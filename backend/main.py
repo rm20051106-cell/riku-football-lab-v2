@@ -1100,19 +1100,22 @@ def build_movement_candidates(summary, max_events=8):
             return []
     max_adjacent_gap = max(interval * 1.75, interval + 0.1)
 
-    def has_neighbor_support(item):
-        for other in scored:
-            gap = abs(item["time_seconds"] - other["time_seconds"])
-            if (gap > 0 and gap <= max_adjacent_gap
-                    and other["score"] >= item["score"] * 0.35):
-                return True
-        return False
+    def neighbor_support_count(item):
+        return sum(
+            1 for other in scored
+            if (other is not item
+                and 0 < abs(item["time_seconds"] - other["time_seconds"]) <= max_adjacent_gap
+                and other["score"] >= item["score"] * 0.35)
+        )
 
+    for item in scored:
+        item["temporal_support_samples"] = neighbor_support_count(item)
     values = sorted(item["score"] for item in scored)
     threshold = values[min(len(values) - 1, int((len(values) - 1) * 0.75))]
     selected = [
         item for item in scored
-        if item["score"] >= threshold and item["score"] > 0.015 and has_neighbor_support(item)
+        if item["score"] >= threshold and item["score"] > 0.015
+        and item["temporal_support_samples"] > 0
     ]
     selected.sort(key=lambda item: item["score"], reverse=True)
     chosen = []
@@ -1127,6 +1130,7 @@ def build_movement_candidates(summary, max_events=8):
             "id": str(index + 1),
             "time_seconds": round(item["time_seconds"], 2),
             "movement_score": round(item["score"], 4),
+            "temporal_support_samples": item["temporal_support_samples"],
             "label": "動きの変化候補",
             "reason": "足先の画像上の移動量が大きく、近い時刻のサンプルでも動きが確認できる時間帯です。",
             "is_football_action_confirmed": False,
