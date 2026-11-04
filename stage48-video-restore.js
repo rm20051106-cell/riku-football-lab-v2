@@ -122,8 +122,10 @@
         try{if(typeof scanSavedVideoIntegrity==="function")await scanSavedVideoIntegrity();if(typeof refreshVideoStorageStatus==="function")await refreshVideoStorageStatus();}catch(error){console.warn("Stage 48 final integrity scan",error);}
         window.alert("動画ファイルの復元が完了しました。\n新規保存・確認："+imported+"本\n同一動画のためスキップ："+skipped+"本\n未読込："+failed+"本\n保存後SHA-256照合："+done+"本\n設定画面の「動画と記録を照合する」から再生テストできます。");
       }
-      // Publish retry-ready status only after awaited finalization has completed.
-      // This prevents a retry tap from being ignored while the previous run is still active.
+      // Release the run lock before exposing the retry-ready UI. A tap can arrive
+      // as soon as status() updates the DOM; leaving active=true until finally would
+      // silently discard that retry request on slower iPhone Safari / browser polling.
+      active=false;
       status(paused?"一時停止しました。動画を同じファイル名で選び直すと続きから再開します。":pending?"未処理動画があります。選び直して再開してください。":failed?"完了（一部失敗）。失敗動画だけ再試行できます。":"全動画の復元とSHA-256照合が完了しました。");
       report(job,paused?"中断レポート":pending?"復元の進行レポート":"復元完了レポート");
     }finally{active=false;}
