@@ -1037,7 +1037,7 @@ async def analyze_match(file: UploadFile = File(...), jersey_numbers: str = Form
 
 
 def build_movement_candidates(summary, max_events=8):
-    """Select conservative movement-change candidates from finite, timestamped pose evidence."""
+    """Select conservative, temporally supported movement candidates from pose evidence."""
     if not isinstance(summary, dict):
         return []
     frames = summary.get("frames", [])
@@ -1062,7 +1062,7 @@ def build_movement_candidates(summary, max_events=8):
         except (TypeError, ValueError, OverflowError):
             return None
 
-    scored = []
+    by_time = {}
     for frame in frames:
         if not isinstance(frame, dict):
             continue
@@ -1074,28 +1074,46 @@ def build_movement_candidates(summary, max_events=8):
             finite_nonnegative(frame.get("right_foot_image_motion_per_sec")),
         ]
         valid_speeds = [value for value in speeds if value is not None]
-        if not valid_speeds:
-            continue
-        score = max(valid_speeds)
-        if score > 0:
-            scored.append({"time_seconds": timestamp, "score": score})
+        score = max(valid_speeds) if valid_speeds else None
+        key = round(timestamp, 3)
+        existing = by_time.get(key)
+        if existing is None or (score is not None and (existing["score"] is None or score > existing["score"])):
+            by_time[key] = {"time_seconds": timestamp, "score": score}
 
+    samples = sorted(by_time.values(), key=lambda item: item["time_seconds"])
+    scored = [item for item in samples if item["score"] is not None and item["score"] > 0]
     if len(scored) < 3:
         return []
-    scored.sort(key=lambda item: item["time_seconds"])
-    # Duplicate timestamps are not independent temporal evidence; retain their strongest sample.
-    deduplicated = {}
-    for item in scored:
-        key = round(item["time_seconds"], 3)
-        if key not in deduplicated or item["score"] > deduplicated[key]["score"]:
-            deduplicated[key] = item
-    scored = list(deduplicated.values())
-    if len(scored) < 3:
-        return []
+
+    interval = finite_nonnegative(summary.get("sampling_interval_seconds"))
+    if interval is None or interval <= 0:
+        gaps = [
+            samples[index]["time_seconds"] - samples[index - 1]["time_seconds"]
+            for index in range(1, len(samples))
+            if samples[index]["time_seconds"] > samples[index - 1]["time_seconds"]
+        ]
+        if gaps:
+            ordered_gaps = sorted(gaps)
+            middle = len(ordered_gaps) // 2
+            interval = ordered_gaps[middle] if len(ordered_gaps) % 2 else (ordered_gaps[middle - 1] + ordered_gaps[middle]) / 2
+        else:
+            return []
+    max_adjacent_gap = max(interval * 1.75, interval + 0.1)
+
+    def has_neighbor_support(item):
+        for other in scored:
+            gap = abs(item["time_seconds"] - other["time_seconds"])
+            if (gap > 0 and gap <= max_adjacent_gap
+                    and other["score"] >= item["score"] * 0.35):
+                return True
+        return False
 
     values = sorted(item["score"] for item in scored)
     threshold = values[min(len(values) - 1, int((len(values) - 1) * 0.75))]
-    selected = [item for item in scored if item["score"] >= threshold and item["score"] > 0.015]
+    selected = [
+        item for item in scored
+        if item["score"] >= threshold and item["score"] > 0.015 and has_neighbor_support(item)
+    ]
     selected.sort(key=lambda item: item["score"], reverse=True)
     chosen = []
     for item in selected:
@@ -1110,7 +1128,7 @@ def build_movement_candidates(summary, max_events=8):
             "time_seconds": round(item["time_seconds"], 2),
             "movement_score": round(item["score"], 4),
             "label": "動きの変化候補",
-            "reason": "足先の画像上の移動量が、スキャンした場面の中で大きい時間帯です。",
+            "reason": "足先の画像上の移動量が大きく、近い時刻のサンプルでも動きが確認できる時間帯です。",
             "is_football_action_confirmed": False,
         }
         for index, item in enumerate(chosen)
