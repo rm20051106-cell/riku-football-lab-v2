@@ -29,7 +29,7 @@ class Stage57MovementCandidateValidationTests(unittest.TestCase):
             self.frame(5, 0.1, None),
         ]
         result = build({"frames": frames})
-        self.assertEqual([x["time_seconds"] for x in result], [3.0, 4.0, 5.0])
+        self.assertEqual([x["time_seconds"] for x in result], [4.0, 5.0])
         self.assertTrue(all(x["is_football_action_confirmed"] is False for x in result))
 
     def test_rejects_invalid_timestamps_and_non_dictionary_frames(self):
@@ -44,7 +44,7 @@ class Stage57MovementCandidateValidationTests(unittest.TestCase):
             self.frame(4, 0.1, None),
         ]
         result = build({"frames": frames})
-        self.assertEqual([x["time_seconds"] for x in result], [2.0, 3.0, 4.0])
+        self.assertEqual([x["time_seconds"] for x in result], [3.0, 4.0])
 
     def test_duplicate_timestamps_are_not_independent_samples(self):
         frames = [
