@@ -28,7 +28,7 @@
   const yieldUI=()=>new Promise(resolve=>setTimeout(resolve,0));
   async function hashBlob(blob,onProgress){
     const hash=new SHA256();let offset=0;
-    while(offset<blob.size){if(paused)throw new Error("一時停止しました");const end=Math.min(blob.size,offset+CHUNK);const bytes=new Uint8Array(await blob.slice(offset,end).arrayBuffer());hash.update(bytes);offset=end;if(onProgress)onProgress(offset/blob.size);await yieldUI();}
+    while(offset<blob.size){if(paused)throw new Error("一時停止しました");const end=Math.min(blob.size,offset+CHUNK);const bytes=new Uint8Array(await blob.slice(offset,end).arrayBuffer());hash.update(bytes);offset=end;if(onProgress)onProgress(offset/blob.size);await yieldUI();if(paused)throw new Error("一時停止しました");}
     return hash.digest();
   }
   function readJob(){try{return JSON.parse(localStorage.getItem(JOB_KEY)||"null")}catch(_){return null}}
