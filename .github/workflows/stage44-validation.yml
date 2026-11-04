@@ -5,6 +5,10 @@ on:
     branches:
       - feature/stage44-pwa-offline-shell-20261104
 
+concurrency:
+  group: stage44-validation-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   validate:
     runs-on: ubuntu-latest
