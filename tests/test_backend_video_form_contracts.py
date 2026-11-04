@@ -1,6 +1,8 @@
 import ast
+import math
 import pathlib
 import unittest
+from types import SimpleNamespace
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SOURCE = (ROOT / "backend" / "main.py").read_text(encoding="utf-8")
@@ -60,6 +62,18 @@ class BackendVideoFormAnalysisContracts(unittest.TestCase):
         self.assertIn("dy = (float(a[1]) - float(b[1])) * height", helper_source)
         self.assertIn("np.hypot(dx, dy) / width / elapsed", helper_source)
         self.assertEqual(SOURCE.count("image_motion_per_width_per_second(a, b, dt, frame.shape[1], frame.shape[0])"), 2)
+
+    def test_kick_motion_is_consistent_for_landscape_and_portrait_frames(self):
+        node = function_node("image_motion_per_width_per_second")
+        module = ast.Module(body=[node], type_ignores=[])
+        namespace = {"np": SimpleNamespace(hypot=math.hypot)}
+        exec(compile(module, "<motion-helper>", "exec"), namespace)
+        measure = namespace["image_motion_per_width_per_second"]
+        # Both clips depict the same 0.1-frame-width horizontal and vertical movement.
+        landscape = measure((0.5, 0.5), (0.6, 0.5 + 0.1 * 1920 / 1080), 1, 1920, 1080)
+        portrait = measure((0.5, 0.5), (0.6, 0.5 + 0.1 * 1080 / 1920), 1, 1080, 1920)
+        self.assertAlmostEqual(landscape, math.sqrt(0.02), places=4)
+        self.assertAlmostEqual(portrait, math.sqrt(0.02), places=4)
 
     def test_kick_phase_candidates_require_sufficient_sampling_and_remain_provisional(self):
         phase_builder = function_node("build_kick_phase_candidates")
