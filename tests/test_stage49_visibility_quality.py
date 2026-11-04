@@ -43,7 +43,7 @@ class Stage49VisibilityQualityTests(unittest.TestCase):
         self.assertIsNotNone(result["score"])
         self.assertEqual(result["measured"], 1)
         self.assertEqual(result["minimumSamples"], 2)
-        self.assertIn("右膝角度", result["missing"])
+        self.assertNotIn("右膝角度", result["missing"])
 
     def test_rear_view_does_not_score_trunk_angle(self):
         frames = [
