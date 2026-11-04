@@ -47,8 +47,19 @@ class Stage58VideoScanQualityTests(unittest.TestCase):
             calls = [n for n in ast.walk(node) if isinstance(n, ast.Call)
                      and isinstance(n.func, ast.Name) and n.func.id == "build_video_scan_quality"]
             self.assertEqual(len(calls), 1, name)
-            args = tuple(arg.id for arg in calls[0].args if isinstance(arg, ast.Name))
-            self.assertEqual(args, expected, name)
+            if name == "process_match_video":
+                self.assertEqual(len(calls[0].args), 2)
+                self.assertIsInstance(calls[0].args[0], ast.Name)
+                self.assertEqual(calls[0].args[0].id, "sample_index")
+                self.assertIsInstance(calls[0].args[1], ast.Call)
+                self.assertIsInstance(calls[0].args[1].func, ast.Name)
+                self.assertEqual(calls[0].args[1].func.id, "sum")
+                self.assertIsInstance(calls[0].args[1].args[0], ast.GeneratorExp)
+                self.assertIsInstance(calls[0].args[1].args[0].generators[0].iter, ast.Name)
+                self.assertEqual(calls[0].args[1].args[0].generators[0].iter.id, "people_per_frame")
+            else:
+                args = tuple(arg.id for arg in calls[0].args if isinstance(arg, ast.Name))
+                self.assertEqual(args, expected, name)
 
     def test_boolean_and_negative_counts_are_not_accepted(self):
         result = build(True, -1)

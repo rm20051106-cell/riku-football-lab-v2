@@ -147,7 +147,7 @@ def analyze_frame(frame, pose):
 
 def build_form_capture_quality(frames):
     """Summarize framing and metric evidence; missing or malformed samples never count as visible."""
-    frames = [frame for frame in frames if isinstance(frame, dict)] if isinstance(frames, (list, tuple)) else []
+    frames = [frame if isinstance(frame, dict) else {} for frame in frames] if isinstance(frames, (list, tuple)) else []
 
     def is_finite_number(value):
         try:

@@ -94,6 +94,17 @@ class Stage55FormEvidenceQualityTests(unittest.TestCase):
         self.assertEqual(result["sampled_pose_frames"], 0)
         self.assertIsNone(result["joint_visibility_rate"]["right_knee"])
 
+    def test_malformed_frame_entries_remain_in_visibility_denominator(self):
+        valid_frame = {
+            "person_height_ratio": 0.6,
+            "landmarks": {"right_knee": [0.5, 0.5, 0.9]},
+            "right_knee_angle_deg": 170.0,
+        }
+        result = self.build([valid_frame, "malformed-frame", valid_frame, valid_frame])
+        self.assertEqual(result["sampled_pose_frames"], 4)
+        self.assertEqual(result["joint_visibility_rate"]["right_knee"], 0.75)
+        self.assertEqual(result["metric_sample_coverage"]["right_knee"]["coverage_rate"], 0.75)
+
     def test_empty_frames_preserve_unknown_visibility_and_coverage(self):
         result = self.build([])
         self.assertIsNone(result["joint_visibility_rate"]["right_knee"])
