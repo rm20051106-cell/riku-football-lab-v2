@@ -224,7 +224,7 @@
       if (typeof scanSavedVideoIntegrity === "function") await scanSavedVideoIntegrity();
       if (typeof refreshVideoStorageStatus === "function") refreshVideoStorageStatus();
       host.textContent = preview + "\n\n完了：保存後の動画バイト照合・再生メタデータ確認に成功。再生テストは下の照合結果から実行できます。";
-      alert("動画ファイルの復元が完了しました。\n新規保存・再生情報確認：" + imported + "本\n同一動画のためスキップ：" + skipped + "本\n未読込：" + errors.length + "本\n保存後の照合・再生メタデータ確認：成功\n設定画面の「動画と記録を照合する」にある「再生テスト」から実際の再生も確認できます。");
+      alert("動画ファイルの復元が完了しました。\n新規保存・確認：" + imported + "本\n同一動画のためスキップ：" + skipped + "本\n未読込：" + errors.length + "本\n保存後の照合・再生メタデータ確認：成功\n設定画面の「動画と記録を照合する」にある「再生テスト」から実際の再生も確認できます。");
     } catch (error) {
       const rollbackErrors = await rollbackBatch(originalState, originalStored, originals, changedKeys);
       lastVideoImportFiles = files;
