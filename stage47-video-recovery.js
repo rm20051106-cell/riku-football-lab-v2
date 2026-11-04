@@ -207,8 +207,8 @@
         if (previous?.blob instanceof Blob && previous.blob.size > 0 && !confirm("同じ記録キーに別の動画が保存されています。\n「" + row.name + "」で置き換えますか？")) {
           throw new Error("既存動画の上書きがキャンセルされました。バッチ全体を元に戻します");
         }
-        await storeClipVideo(row.key, new File([row.file], row.name, { type: row.file.type || "application/octet-stream", lastModified: row.file.lastModified }));
         changedKeys.add(row.key);
+        await storeClipVideo(row.key, new File([row.file], row.name, { type: row.file.type || "application/octet-stream", lastModified: row.file.lastModified }));
         const saved = await getClipVideo(row.key);
         if (!saved?.blob || !(await compareVideoBlobs(saved.blob, row.file))) throw new Error(row.name + "：保存後のバイト照合に失敗しました");
         await probePlayable(saved.blob);
@@ -227,7 +227,6 @@
       alert("動画ファイルの復元が完了しました。\n新規保存・再生情報確認：" + imported + "本\n同一動画のためスキップ：" + skipped + "本\n未読込：" + errors.length + "本\n保存後の照合・再生メタデータ確認：成功\n設定画面の「動画と記録を照合する」にある「再生テスト」から実際の再生も確認できます。");
     } catch (error) {
       const rollbackErrors = await rollbackBatch(originalState, originalStored, originals, changedKeys);
-      for (const row of uniqueRows) row.record.hasVideo = originalFlags.get(row.key);
       lastVideoImportFiles = files;
       const retryButton = document.getElementById("videoImportRetry");
       if (retryButton) retryButton.style.display = "inline-flex";
