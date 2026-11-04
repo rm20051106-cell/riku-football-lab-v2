@@ -528,6 +528,27 @@ def associate_person_tracks(frames, max_gap_seconds=9.0):
         "note": "約4秒間隔の検出位置・大きさ・背番号OCR候補による暫定的な関連付けです。選手の継続追跡・背番号・陸玖本人を保証せず、交差や遮蔽でIDが入れ替わる可能性があります。"
     }
 
+def has_adjacent_sample_timing(current_time, previous_time, sampling_interval):
+    """Reject motion comparisons spanning missing samples or invalid timestamps."""
+    values = (current_time, previous_time, sampling_interval)
+    numbers = []
+    for value in values:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return False
+        try:
+            number = float(value)
+        except (TypeError, ValueError, OverflowError):
+            return False
+        if number != number or number in (float("inf"), float("-inf")):
+            return False
+        numbers.append(number)
+    current, previous, interval = numbers
+    if interval <= 0 or current <= previous:
+        return False
+    gap = current - previous
+    return gap <= max(interval * 1.75, interval + 0.1)
+
+
 def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
     cap = cv2.VideoCapture(path)
     if not cap.isOpened():
@@ -623,7 +644,10 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
             b = prev.get("landmarks", {}).get(key) if prev else None
             dt = current.get("time_seconds", 0) - prev.get("time_seconds", 0) if prev else 0
             unique_person = current.get("detected_people_in_frame") == 1 and prev and prev.get("detected_people_in_frame") == 1
-            if unique_person and a and b and dt > 0 and a[2] >= 0.5 and b[2] >= 0.5:
+            adjacent_sample = has_adjacent_sample_timing(
+                current.get("time_seconds"), prev.get("time_seconds"), actual_interval
+            ) if prev else False
+            if unique_person and adjacent_sample and a and b and a[2] >= 0.5 and b[2] >= 0.5:
                 current[side + "_foot_image_motion_per_sec"] = image_motion_per_width_per_second(a, b, dt, frame.shape[1], frame.shape[0])
             else:
                 current[side + "_foot_image_motion_per_sec"] = None
@@ -871,7 +895,10 @@ def process_video(path: str, mode: str, camera_angle: str = "未選択", progres
             a = current.get("landmarks", {}).get(key)
             b = prev.get("landmarks", {}).get(key) if prev else None
             dt = (current.get("time_seconds", 0) - prev.get("time_seconds", 0)) if prev else 0
-            if a and b and dt > 0 and a[2] >= 0.5 and b[2] >= 0.5:
+            adjacent_sample = has_adjacent_sample_timing(
+                current.get("time_seconds"), prev.get("time_seconds"), actual_interval
+            ) if prev else False
+            if a and b and adjacent_sample and a[2] >= 0.5 and b[2] >= 0.5:
                 current[side + "_foot_image_motion_per_sec"] = image_motion_per_width_per_second(a, b, dt, frame.shape[1], frame.shape[0])
             else:
                 current[side + "_foot_image_motion_per_sec"] = None
