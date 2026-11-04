@@ -39,6 +39,10 @@ class Stage45DeviceStorageTests(unittest.TestCase):
         self.assertIn("renderConnectionStatus();", HTML)
         self.assertIn("refreshDeviceStorageStatus();", HTML)
 
+    def test_runtime_status_script_is_at_document_end(self):
+        self.assertLess(HTML.rfind("function renderConnectionStatus"), HTML.rfind("</body>"))
+        self.assertGreater(HTML.rfind("function renderConnectionStatus"), HTML.rfind("</script>", 0, HTML.rfind("function renderConnectionStatus")))
+
     def test_ai_analysis_network_requirement_is_preserved(self):
         self.assertIn("AIサーバー解析には通信が必要です", HTML)
         self.assertIn("AIサーバーへの動画解析にはインターネット接続が必要", HTML)
