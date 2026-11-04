@@ -594,11 +594,12 @@ def build_kick_phase_candidates(frames, sampling_interval_seconds, preferred_foo
         "sampling_rate_fps": round(1 / interval, 2) if interval > 0 else None,
         "preferred_kicking_foot": preferred_foot,
         "preferred_foot_note": "右足キックを重点確認する初期設定です。反対足の候補も同じ条件で保持し、本人・蹴り足は撮影者が確認してください。" if preferred_foot == "right" else "左足キックを重点確認する初期設定です。反対足の候補も同じ条件で保持し、本人・蹴り足は撮影者が確認してください。",
-        "method": "foot_index landmark image-coordinate motion",
+        "method": "foot_index landmark image-coordinate motion with adjacent-frame support check",
         "limitations": [
             "画像上の足先移動候補であり、実空間速度・ボール接触・キック成功を示しません。",
             "助走・軸足接地・インパクトは骨格点だけでは確定できず、目視確認が必要です。",
             "カメラ移動・遠近・足先の遮蔽・別人物への検出切替で候補時刻がずれる場合があります。",
+            "単独フレームだけの急な移動量は誤検出の可能性があるため、隣接サンプルの裏付けがないピークは候補にしません。",
         ],
         "feet": {},
     }
@@ -612,16 +613,22 @@ def build_kick_phase_candidates(frames, sampling_interval_seconds, preferred_foo
                               "image_motion_per_sec": round(float(speed), 5)})
         foot_result = {"sample_count": len(valid), "peak_candidate": None,
                        "post_peak_candidate": None, "opposite_foot_relative_stability": None,
-                       "status": "insufficient_sampling"}
+                       "peak_support_samples": 0, "status": "insufficient_sampling"}
         if interval <= 0.75 and len(valid) >= 4:
             peak = max(valid, key=lambda item: item["image_motion_per_sec"])
             peak_speed = peak["image_motion_per_sec"]
-            if peak_speed > 0:
+            adjacent = [item for item in valid
+                        if abs(item["frame_index"] - peak["frame_index"]) == 1]
+            support = [item for item in adjacent
+                       if peak_speed > 0 and item["image_motion_per_sec"] >= peak_speed * 0.35]
+            foot_result["peak_support_samples"] = len(support)
+            if peak_speed > 0 and support:
                 foot_result["peak_candidate"] = {
                     "time_seconds": peak["time_seconds"],
                     "image_motion_per_sec": peak_speed,
                     "frame_index": peak["frame_index"],
-                    "label": "蹴り脚の動きのピーク候補",
+                    "peak_support_samples": len(support),
+                    "label": "隣接サンプルの裏付けがある蹴り脚の動きのピーク候補",
                 }
                 later = [item for item in valid if item["frame_index"] > peak["frame_index"]]
                 slowing = next((item for item in later
@@ -643,6 +650,8 @@ def build_kick_phase_candidates(frames, sampling_interval_seconds, preferred_foo
                         "label": "反対足の移動量参考値（軸足接地の確定ではありません）",
                     }
                 foot_result["status"] = "candidate_only"
+            else:
+                foot_result["status"] = "insufficient_peak_support"
         result["feet"][side] = foot_result
     focus = result["feet"][preferred_foot]
     result["preferred_foot_peak_candidate"] = focus.get("peak_candidate")
@@ -651,14 +660,15 @@ def build_kick_phase_candidates(frames, sampling_interval_seconds, preferred_foo
     result["phases"] = [
         {"key": "approach", "label": "助走", "status": "manual_review_required", "time_seconds": None},
         {"key": "plant", "label": "軸足接地", "status": "manual_review_required", "time_seconds": None},
-        {"key": "swing", "label": "蹴り脚の振り出し", "status": "candidate_only", "time_source": "preferred_foot_peak", "foot": preferred_foot},
+        {"key": "swing", "label": "蹴り脚の振り出し", "status": "candidate_only" if focus.get("peak_candidate") else "manual_review_required",
+         "time_source": "preferred_foot_peak" if focus.get("peak_candidate") else None, "foot": preferred_foot},
         {"key": "impact", "label": "インパクト", "status": "manual_review_required", "time_seconds": None},
-        {"key": "follow_through", "label": "フォロースルー", "status": "candidate_only", "time_source": "preferred_foot_post_peak_drop", "foot": preferred_foot},
+        {"key": "follow_through", "label": "フォロースルー", "status": "candidate_only" if focus.get("post_peak_candidate") else "manual_review_required",
+         "time_source": "preferred_foot_post_peak_drop" if focus.get("post_peak_candidate") else None, "foot": preferred_foot},
     ]
     if interval > 0.75:
         result["limitations"].append("撮影・解析サンプル間隔が粗いため、動作ピーク候補を表示していません。")
     return result
-
 
 def process_video(path: str, mode: str, camera_angle: str = "未選択", progress_callback=None, jersey_numbers=None):
     if mode == "match":
