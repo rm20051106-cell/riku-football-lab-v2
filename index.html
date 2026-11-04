@@ -7,6 +7,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="RIKU FOOTBALL LAB">
+<meta name="description" content="陸玖のサッカー練習・試合・動画・フォーム・成長記録をまとめる個人用アプリ">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" type="image/svg+xml" href="./app-icon.svg">
+<link rel="apple-touch-icon" href="./app-icon.svg">
 <title>RIKU FOOTBALL LAB</title>
 <style>
 :root{--bg:#0b1220;--panel:#121e30;--panel2:#18283d;--line:#2a3b53;--text:#f4f7fb;--muted:#9fb0c5;--lime:#c8f169;--blue:#78c8ff;--orange:#ffbd69;--red:#ff7777;--radius:18px}
@@ -107,6 +111,7 @@ button:focus-visible,.button:focus-visible,a:focus-visible,input:focus-visible,s
 
 <section class="view" id="settings">
  <h1 class="section-title">設定・バックアップ</h1><p class="section-desc">選手番号やデータを管理します。</p>
+ <div class="card"><h2>iPhoneホーム画面に追加・オフライン利用</h2><p class="tiny muted">Safariの共有ボタンから「ホーム画面に追加」を選ぶと、RIKU FOOTBALL LABをアプリのように起動できます。初回にアプリ画面を開くと、画面本体を端末に保存し、次回から通信が不安定な場所でも開きやすくします。</p><ol class="tiny"><li>Safariでこのアプリを開く</li><li>共有ボタンを押す</li><li>「ホーム画面に追加」を選ぶ</li><li>追加したアイコンから起動する</li></ol><div class="note">オフラインで使えるのはアプリ画面と端末内の保存済み記録です。AIサーバーへの動画解析にはインターネット接続が必要です。動画・記録を守るため、バックアップも定期的に保存してください。</div><div id="pwaStatus" class="tiny muted" role="status" aria-live="polite">アプリのオフライン準備状態を確認中…</div></div>
  <div class="card"><h2>AI解析サーバー接続</h2><p class="tiny muted">Renderで公開したサーバーURLを入力します。URLが決まるまでは空欄のままでOKです。</p><label class="label">AIサーバーURL</label><input id="apiBaseUrl" placeholder="https://your-service.onrender.com"><div class="btnrow"><button onclick="saveApiUrl()">接続先を保存</button><button class="secondary" onclick="testApiConnection()">接続テスト</button></div><div id="apiStatus" class="tiny muted" style="margin-top:8px">未設定</div><div class="note">動画をサーバーへ送る前に、必ず自分が管理するサーバーのURLを確認してください。アップロードした動画は解析のためサーバーに送信されます。</div></div><div class="card"><h2>選手設定</h2><label class="label">選手名</label><input id="playerName" value="陸玖"><div class="two"><div><label class="label">背番号 1</label><input type="number" id="jersey1" value="10" min="0" max="99"></div><div><label class="label">背番号 2</label><input type="number" id="jersey2" value="74" min="0" max="99"></div></div><div class="btnrow"><button onclick="saveSettings()">設定を保存</button></div></div>
  <div class="card"><h2>陸玖の選手特徴登録</h2><p class="tiny muted">写真から整理した初期プロフィールです。顔認識ではなく、ユニフォーム・背番号・装備・映像内の位置や動きの連続性を使う追跡機能向けの参考情報として保存します。</p><label class="label">サッカー時の基本ユニフォーム</label><input id="profileKit" value="赤いシャツ・白いパンツ・赤いソックス"><label class="label">チーム・メーカーの目印</label><input id="profileMarks" value="FCプリメーロのエンブレム・ミズノ"><div class="two"><div><label class="label">背番号候補</label><input id="profileNumbers" value="10,74"></div><div><label class="label">利き足</label><select id="profileFoot"><option value="右足">右足</option><option value="左足">左足</option><option value="両足">両足</option></select></div></div><label class="label">映像追跡の補助メモ</label><textarea id="profileNotes" placeholder="例：ユニフォームが変わった試合、別の練習着など"></textarea><div class="btnrow"><button onclick="savePlayerProfile()">選手特徴を保存</button></div><div id="profileStatus" class="tiny muted" style="margin-top:8px">写真をもとにした初期情報。AIによる本人判定・追跡はまだ未実装です。</div><div class="note">重要：背番号や服装が見えない場面では誤認の可能性があります。確信度が低い場合は「判別不能」とする設計にし、別の選手を陸玖として記録しないことを優先します。</div></div>
  <div class="card"><h2>動画保存・記録の整合性チェック</h2><p class="tiny muted">プレー分析・フォーム分析の記録と、iPhone内に保存された動画ファイルを照合します。動画の消失や紐づけ漏れを確認できます。</p><div class="btnrow"><button class="secondary" onclick="scanSavedVideoIntegrity()">動画と記録を照合する</button></div><div id="videoIntegrityResult" class="tiny muted" style="margin-top:8px">まだ照合していません。</div></div>
@@ -4200,6 +4205,20 @@ let pendingMatchSave=Promise.resolve(null);videoFile.addEventListener('change',(
 let pendingFormSave=Promise.resolve(null);formFile.addEventListener('change',()=>{let f=formFile.files[0];if(!f)return;const phaseStatus=document.getElementById('formPhaseMarkerStatus');if(phaseStatus)phaseStatus.textContent='動画を読み込みました。AI解析後、節目を手動登録できます。';formVideo.src=URL.createObjectURL(f);pendingFormSave=storeClipVideo('__pending_form_video__',f).then(()=>f).catch(e=>{console.error('フォーム動画の仮保存失敗',e);return null})})
 formKind.addEventListener('change',renderChecks);
 load();renderChecks();renderAll();renderKickManualReview();if(typeof apiBaseUrl!=='undefined'){apiBaseUrl.value=state.settings.apiBaseUrl||'';apiStatus.textContent=state.settings.apiBaseUrl?'保存済み：'+state.settings.apiBaseUrl:'未設定'}
+</script>
+<script>
+if("serviceWorker" in navigator && location.protocol === "https:"){
+ window.addEventListener("load",()=>{
+  navigator.serviceWorker.register("./sw.js",{scope:"./"}).then(registration=>{
+   const status=document.getElementById("pwaStatus");
+   if(status)status.textContent=registration.active?"オフライン用のアプリ画面を利用できます。":"オフライン用の準備をしています。初回は通信環境のよい場所で開いてください。";
+  }).catch(error=>{
+   console.warn("PWA service worker registration failed",error);
+   const status=document.getElementById("pwaStatus");
+   if(status)status.textContent="オフライン保存を利用できません。通常のオンライン利用は可能です。";
+  });
+ });
+}
 </script>
 </body>
 </html>
