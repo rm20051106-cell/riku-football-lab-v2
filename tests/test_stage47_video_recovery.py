@@ -48,6 +48,7 @@ class Stage47VideoRecoveryTests(unittest.TestCase):
         self.page = self.context.new_page()
         self.page.goto(self.url, wait_until="load")
         self.page.wait_for_function("typeof window.runStage47VideoRestore === 'function'")
+        self.page.evaluate("window.__stage48Intercept = false")
         self.page.on("dialog", lambda dialog: dialog.accept())
 
     def tearDown(self):

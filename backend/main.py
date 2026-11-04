@@ -49,8 +49,12 @@ LANDMARK_NAMES = [
     "right_heel", "left_foot_index", "right_foot_index"
 ]
 
-def angle(a, b, c):
-    a, b, c = np.array(a, dtype=float), np.array(b, dtype=float), np.array(c, dtype=float)
+def angle(a, b, c, image_width=1, image_height=1):
+    # MediaPipe x/y are normalized independently by image width/height.
+    # Convert back to pixel-space before Euclidean geometry to avoid aspect-ratio distortion.
+    a = np.array([float(a[0]) * image_width, float(a[1]) * image_height], dtype=float)
+    b = np.array([float(b[0]) * image_width, float(b[1]) * image_height], dtype=float)
+    c = np.array([float(c[0]) * image_width, float(c[1]) * image_height], dtype=float)
     ba, bc = a - b, c - b
     denom = np.linalg.norm(ba) * np.linalg.norm(bc)
     if denom < 1e-8:
@@ -58,12 +62,23 @@ def angle(a, b, c):
     cosine = float(np.clip(np.dot(ba, bc) / denom, -1.0, 1.0))
     return round(float(np.degrees(np.arccos(cosine))), 1)
 
+def image_motion_per_width_per_second(a, b, dt, image_width, image_height):
+    """Aspect-ratio-corrected 2D image displacement, expressed in frame-widths/second."""
+    width, height, elapsed = float(image_width or 0), float(image_height or 0), float(dt or 0)
+    if width <= 0 or height <= 0 or elapsed <= 0 or a is None or b is None:
+        return None
+    dx = (float(a[0]) - float(b[0])) * width
+    dy = (float(a[1]) - float(b[1])) * height
+    return round(float(np.hypot(dx, dy) / width / elapsed), 4)
+
+
 def lm_point(landmarks, name):
     idx = mp_pose.PoseLandmark[name.upper()].value
     p = landmarks[idx]
     return [round(float(p.x), 5), round(float(p.y), 5), round(float(p.visibility), 4)]
 
 def analyze_frame(frame, pose):
+    image_height, image_width = frame.shape[:2]
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     result = pose.process(rgb)
     if not result.pose_landmarks:
@@ -75,10 +90,10 @@ def analyze_frame(frame, pose):
     visible = sum(1 for v in lm if v.visibility >= 0.5)
     def visible_points(*names):
         return all(p(name)[2] >= 0.5 for name in names)
-    left_knee = angle(p("LEFT_HIP")[:2], p("LEFT_KNEE")[:2], p("LEFT_ANKLE")[:2]) if visible_points("LEFT_HIP", "LEFT_KNEE", "LEFT_ANKLE") else None
-    right_knee = angle(p("RIGHT_HIP")[:2], p("RIGHT_KNEE")[:2], p("RIGHT_ANKLE")[:2]) if visible_points("RIGHT_HIP", "RIGHT_KNEE", "RIGHT_ANKLE") else None
-    left_hip = angle(p("LEFT_SHOULDER")[:2], p("LEFT_HIP")[:2], p("LEFT_KNEE")[:2]) if visible_points("LEFT_SHOULDER", "LEFT_HIP", "LEFT_KNEE") else None
-    right_hip = angle(p("RIGHT_SHOULDER")[:2], p("RIGHT_HIP")[:2], p("RIGHT_KNEE")[:2]) if visible_points("RIGHT_SHOULDER", "RIGHT_HIP", "RIGHT_KNEE") else None
+    left_knee = angle(p("LEFT_HIP")[:2], p("LEFT_KNEE")[:2], p("LEFT_ANKLE")[:2], image_width, image_height) if visible_points("LEFT_HIP", "LEFT_KNEE", "LEFT_ANKLE") else None
+    right_knee = angle(p("RIGHT_HIP")[:2], p("RIGHT_KNEE")[:2], p("RIGHT_ANKLE")[:2], image_width, image_height) if visible_points("RIGHT_HIP", "RIGHT_KNEE", "RIGHT_ANKLE") else None
+    left_hip = angle(p("LEFT_SHOULDER")[:2], p("LEFT_HIP")[:2], p("LEFT_KNEE")[:2], image_width, image_height) if visible_points("LEFT_SHOULDER", "LEFT_HIP", "LEFT_KNEE") else None
+    right_hip = angle(p("RIGHT_SHOULDER")[:2], p("RIGHT_HIP")[:2], p("RIGHT_KNEE")[:2], image_width, image_height) if visible_points("RIGHT_SHOULDER", "RIGHT_HIP", "RIGHT_KNEE") else None
     trunk_angle = None
     if visible_points("LEFT_SHOULDER", "RIGHT_SHOULDER", "LEFT_HIP", "RIGHT_HIP"):
         shoulder_mid = [(p("LEFT_SHOULDER")[0] + p("RIGHT_SHOULDER")[0]) / 2,
@@ -87,7 +102,7 @@ def analyze_frame(frame, pose):
                    (p("LEFT_HIP")[1] + p("RIGHT_HIP")[1]) / 2]
         trunk_dx = shoulder_mid[0] - hip_mid[0]
         trunk_dy = shoulder_mid[1] - hip_mid[1]
-        trunk_angle = round(float(np.degrees(np.arctan2(abs(trunk_dx), max(1e-6, abs(trunk_dy))))), 1)
+        trunk_angle = round(float(np.degrees(np.arctan2(abs(trunk_dx) * image_width, max(1e-6, abs(trunk_dy) * image_height)))), 1)
     metric_quality = {
         "left_knee": "measured" if left_knee is not None else "insufficient_visibility",
         "right_knee": "measured" if right_knee is not None else "insufficient_visibility",
@@ -104,6 +119,17 @@ def analyze_frame(frame, pose):
             round(float(lm[mp_pose.PoseLandmark[name].value].y), 5),
             round(float(lm[mp_pose.PoseLandmark[name].value].visibility), 4),
         ]
+    visible_points_xy = [(float(item.x), float(item.y)) for item in lm
+                         if float(item.visibility) >= 0.5 and 0 <= float(item.x) <= 1 and 0 <= float(item.y) <= 1]
+    person_bbox = None
+    person_height_ratio = None
+    if visible_points_xy:
+        min_x = min(point[0] for point in visible_points_xy)
+        max_x = max(point[0] for point in visible_points_xy)
+        min_y = min(point[1] for point in visible_points_xy)
+        max_y = max(point[1] for point in visible_points_xy)
+        person_bbox = [round(min_x, 4), round(min_y, 4), round(max_x, 4), round(max_y, 4)]
+        person_height_ratio = round(max_y - min_y, 4)
     return {
         "visible_landmarks": visible,
         "measurement_source": "MediaPipe Pose landmark geometry",
@@ -113,7 +139,58 @@ def analyze_frame(frame, pose):
         "left_hip_angle_deg": left_hip,
         "right_hip_angle_deg": right_hip,
         "trunk_lean_image_angle_deg": trunk_angle,
+        "person_bbox_norm": person_bbox,
+        "person_height_ratio": person_height_ratio,
         "landmarks": landmarks,
+    }
+
+
+def build_form_capture_quality(frames):
+    """Summarize framing and joint visibility without turning missing evidence into scores."""
+    ratios = [float(frame["person_height_ratio"]) for frame in frames
+              if isinstance(frame.get("person_height_ratio"), (int, float))]
+    def median(values):
+        ordered = sorted(values)
+        if not ordered:
+            return None
+        middle = len(ordered) // 2
+        return ordered[middle] if len(ordered) % 2 else (ordered[middle - 1] + ordered[middle]) / 2
+    joint_names = ["left_shoulder", "right_shoulder", "left_hip", "right_hip",
+                   "left_knee", "right_knee", "left_ankle", "right_ankle",
+                   "left_heel", "right_heel", "left_foot_index", "right_foot_index"]
+    visibility = {}
+    for name in joint_names:
+        # Missing landmark entries count as unobserved samples. Excluding them
+        # would inflate visibility when a joint disappears from some frames.
+        visible_count = 0
+        for frame in frames:
+            point = frame.get("landmarks", {}).get(name)
+            if isinstance(point, (list, tuple)) and len(point) >= 3:
+                try:
+                    visible_count += int(float(point[2]) >= 0.5)
+                except (TypeError, ValueError):
+                    pass
+        visibility[name] = round(visible_count / len(frames), 3) if frames else None
+    median_height = median(ratios)
+    if len(ratios) < 3:
+        status = "insufficient_samples"
+        guidance = "人物サイズを安定して評価できません。全身が映る動画を撮り直してください。"
+    elif median_height < 0.25:
+        status = "retake_recommended_subject_too_small"
+        guidance = "選手が小さく映っています。カメラを近づけ、頭から足先まで画面に入れて撮り直してください。"
+    elif median_height < 0.40:
+        status = "usable_with_caution_subject_small"
+        guidance = "選手がやや小さく映っています。動作確認はできますが、関節角度の数値は慎重に扱ってください。"
+    else:
+        status = "usable_for_review"
+        guidance = "人物サイズは確認用の目安を満たしています。関節ごとの可視性と撮影角度を別途確認してください。"
+    return {
+        "status": status,
+        "sampled_pose_frames": len(frames),
+        "median_person_height_ratio": round(median_height, 3) if median_height is not None else None,
+        "joint_visibility_rate": visibility,
+        "guidance": guidance,
+        "note": "人物サイズは画面内の姿勢ランドマーク範囲からの目安です。画質・遮蔽・撮影角度を保証せず、フォームの良否や測定精度の証明ではありません。",
     }
 
 
@@ -209,7 +286,7 @@ def camera_angle_guidance(camera_angle: str):
         "撮影角度が未指定です。全身とボールが映る動画で、5つの標準視点のいずれかから撮影すると比較しやすくなります。"
     ])
 
-def analyze_task_pose(lm):
+def analyze_task_pose(lm, image_width=1, image_height=1):
     def p(name):
         item = lm[mp_pose.PoseLandmark[name].value]
         visibility = float(getattr(item, "visibility", 1.0))
@@ -217,18 +294,18 @@ def analyze_task_pose(lm):
     visible = sum(1 for item in lm if float(getattr(item, "visibility", 1.0)) >= 0.5)
     def visible_points(*names):
         return all(p(name)[2] >= 0.5 for name in names)
-    left_knee = angle(p("LEFT_HIP")[:2], p("LEFT_KNEE")[:2], p("LEFT_ANKLE")[:2]) if visible_points("LEFT_HIP", "LEFT_KNEE", "LEFT_ANKLE") else None
-    right_knee = angle(p("RIGHT_HIP")[:2], p("RIGHT_KNEE")[:2], p("RIGHT_ANKLE")[:2]) if visible_points("RIGHT_HIP", "RIGHT_KNEE", "RIGHT_ANKLE") else None
-    left_hip = angle(p("LEFT_SHOULDER")[:2], p("LEFT_HIP")[:2], p("LEFT_KNEE")[:2]) if visible_points("LEFT_SHOULDER", "LEFT_HIP", "LEFT_KNEE") else None
-    right_hip = angle(p("RIGHT_SHOULDER")[:2], p("RIGHT_HIP")[:2], p("RIGHT_KNEE")[:2]) if visible_points("RIGHT_SHOULDER", "RIGHT_HIP", "RIGHT_KNEE") else None
+    left_knee = angle(p("LEFT_HIP")[:2], p("LEFT_KNEE")[:2], p("LEFT_ANKLE")[:2], image_width, image_height) if visible_points("LEFT_HIP", "LEFT_KNEE", "LEFT_ANKLE") else None
+    right_knee = angle(p("RIGHT_HIP")[:2], p("RIGHT_KNEE")[:2], p("RIGHT_ANKLE")[:2], image_width, image_height) if visible_points("RIGHT_HIP", "RIGHT_KNEE", "RIGHT_ANKLE") else None
+    left_hip = angle(p("LEFT_SHOULDER")[:2], p("LEFT_HIP")[:2], p("LEFT_KNEE")[:2], image_width, image_height) if visible_points("LEFT_SHOULDER", "LEFT_HIP", "LEFT_KNEE") else None
+    right_hip = angle(p("RIGHT_SHOULDER")[:2], p("RIGHT_HIP")[:2], p("RIGHT_KNEE")[:2], image_width, image_height) if visible_points("RIGHT_SHOULDER", "RIGHT_HIP", "RIGHT_KNEE") else None
     trunk_angle = None
     if visible_points("LEFT_SHOULDER", "RIGHT_SHOULDER", "LEFT_HIP", "RIGHT_HIP"):
         shoulder_mid = [(p("LEFT_SHOULDER")[0] + p("RIGHT_SHOULDER")[0]) / 2,
                         (p("LEFT_SHOULDER")[1] + p("RIGHT_SHOULDER")[1]) / 2]
         hip_mid = [(p("LEFT_HIP")[0] + p("RIGHT_HIP")[0]) / 2,
                    (p("LEFT_HIP")[1] + p("RIGHT_HIP")[1]) / 2]
-        trunk_angle = round(float(np.degrees(np.arctan2(abs(shoulder_mid[0] - hip_mid[0]),
-                                                         max(1e-6, abs(shoulder_mid[1] - hip_mid[1]))))), 1)
+        trunk_angle = round(float(np.degrees(np.arctan2(abs(shoulder_mid[0] - hip_mid[0]) * image_width,
+                                                         max(1e-6, abs(shoulder_mid[1] - hip_mid[1]) * image_height)))), 1)
     metric_quality = {
         "left_knee": "measured" if left_knee is not None else "insufficient_visibility",
         "right_knee": "measured" if right_knee is not None else "insufficient_visibility",
@@ -424,7 +501,7 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
                 time_seconds = round(current_frame_idx / fps, 2) if fps > 0 else round(sample_index * actual_interval, 2)
                 detected_count = len(detected.pose_landmarks or [])
                 for person_index, pose_lm in enumerate(detected.pose_landmarks or []):
-                    metrics = analyze_task_pose(pose_lm)
+                    metrics = analyze_task_pose(pose_lm, frame.shape[1], frame.shape[0])
                     ocr = read_jersey_number(frame, metrics["landmarks"], targets)
                     for item in ocr:
                         jersey_counts[item["number"]] = jersey_counts.get(item["number"], 0) + 1
@@ -471,14 +548,13 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
             dt = current.get("time_seconds", 0) - prev.get("time_seconds", 0) if prev else 0
             unique_person = current.get("detected_people_in_frame") == 1 and prev and prev.get("detected_people_in_frame") == 1
             if unique_person and a and b and dt > 0 and a[2] >= 0.5 and b[2] >= 0.5:
-                current[side + "_foot_image_motion_per_sec"] = round(float(np.linalg.norm(np.array(a[:2]) - np.array(b[:2])) / dt), 4)
+                current[side + "_foot_image_motion_per_sec"] = image_motion_per_width_per_second(a, b, dt, frame.shape[1], frame.shape[0])
             else:
                 current[side + "_foot_image_motion_per_sec"] = None
     track_summary = associate_person_tracks(frames, max_gap_seconds=max(9.0, actual_interval * 2.1))
     knees = [x[k] for x in frames for k in ("left_knee_angle_deg", "right_knee_angle_deg") if x.get(k) is not None]
     hips = [x[k] for x in frames for k in ("left_hip_angle_deg", "right_hip_angle_deg") if x.get(k) is not None]
     trunks = [x["trunk_lean_image_angle_deg"] for x in frames if x.get("trunk_lean_image_angle_deg") is not None]
-    kick_phase_candidates = build_kick_phase_candidates(frames, actual_interval) if mode == "form" else None
     summary = {
         "sampled_pose_frames": len(frames),
         "duration_seconds": round(duration, 2),
@@ -509,17 +585,26 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
     return {"ok": True, "mode": "match", "engine": "MediaPipe Pose Landmarker multi-pose + Tesseract OCR", "summary": summary}
 
 
-def build_kick_phase_candidates(frames, sampling_interval_seconds):
+def build_kick_phase_candidates(frames, sampling_interval_seconds, preferred_foot="right"):
     """Return conservative image-motion time candidates, never definitive kick phases."""
-    interval = float(sampling_interval_seconds or 0)
+    try:
+        interval = float(sampling_interval_seconds or 0)
+    except (TypeError, ValueError, OverflowError):
+        interval = 0.0
+    if not np.isfinite(interval) or interval <= 0:
+        interval = 0.0
+    preferred_foot = preferred_foot if preferred_foot in ("left", "right") else "right"
     result = {
         "sampling_interval_seconds": round(interval, 3),
         "sampling_rate_fps": round(1 / interval, 2) if interval > 0 else None,
-        "method": "foot_index landmark image-coordinate motion",
+        "preferred_kicking_foot": preferred_foot,
+        "preferred_foot_note": "右足キックを重点確認する初期設定です。反対足の候補も同じ条件で保持し、本人・蹴り足は撮影者が確認してください。" if preferred_foot == "right" else "左足キックを重点確認する初期設定です。反対足の候補も同じ条件で保持し、本人・蹴り足は撮影者が確認してください。",
+        "method": "foot_index landmark image-coordinate motion with adjacent-frame support check",
         "limitations": [
             "画像上の足先移動候補であり、実空間速度・ボール接触・キック成功を示しません。",
             "助走・軸足接地・インパクトは骨格点だけでは確定できず、目視確認が必要です。",
             "カメラ移動・遠近・足先の遮蔽・別人物への検出切替で候補時刻がずれる場合があります。",
+            "単独フレームだけの急な移動量は誤検出の可能性があるため、隣接サンプルの裏付けがないピークは候補にしません。",
         ],
         "feet": {},
     }
@@ -528,23 +613,40 @@ def build_kick_phase_candidates(frames, sampling_interval_seconds):
         for index, frame in enumerate(frames):
             speed = frame.get(side + "_foot_image_motion_per_sec")
             timestamp = frame.get("time_seconds")
-            if isinstance(speed, (int, float)) and np.isfinite(speed) and isinstance(timestamp, (int, float)):
+            numeric_speed = isinstance(speed, (int, float)) and not isinstance(speed, bool)
+            numeric_time = isinstance(timestamp, (int, float)) and not isinstance(timestamp, bool)
+            if (numeric_speed and numeric_time and np.isfinite(speed) and np.isfinite(timestamp)
+                    and float(speed) >= 0):
                 valid.append({"frame_index": index, "time_seconds": round(float(timestamp), 3),
                               "image_motion_per_sec": round(float(speed), 5)})
         foot_result = {"sample_count": len(valid), "peak_candidate": None,
                        "post_peak_candidate": None, "opposite_foot_relative_stability": None,
-                       "status": "insufficient_sampling"}
-        if interval <= 0.75 and len(valid) >= 4:
+                       "peak_support_samples": 0, "status": "insufficient_sampling"}
+        if 0 < interval <= 0.75 and len(valid) >= 4:
             peak = max(valid, key=lambda item: item["image_motion_per_sec"])
             peak_speed = peak["image_motion_per_sec"]
-            if peak_speed > 0:
+            max_neighbor_gap = max(interval * 1.75, interval + 0.1)
+            adjacent = [item for item in valid
+                        if abs(item["frame_index"] - peak["frame_index"]) == 1
+                        and 0 < abs(item["time_seconds"] - peak["time_seconds"]) <= max_neighbor_gap
+                        and ((item["frame_index"] < peak["frame_index"]
+                              and item["time_seconds"] < peak["time_seconds"])
+                             or (item["frame_index"] > peak["frame_index"]
+                                 and item["time_seconds"] > peak["time_seconds"]))]
+            support = [item for item in adjacent
+                       if peak_speed > 0 and item["image_motion_per_sec"] >= peak_speed * 0.35]
+            foot_result["peak_support_samples"] = len(support)
+            if peak_speed > 0 and support:
                 foot_result["peak_candidate"] = {
                     "time_seconds": peak["time_seconds"],
                     "image_motion_per_sec": peak_speed,
                     "frame_index": peak["frame_index"],
-                    "label": "蹴り脚の動きのピーク候補",
+                    "peak_support_samples": len(support),
+                    "label": "隣接サンプルの裏付けがある蹴り脚の動きのピーク候補",
                 }
-                later = [item for item in valid if item["frame_index"] > peak["frame_index"]]
+                later = [item for item in valid
+                         if item["frame_index"] > peak["frame_index"]
+                         and item["time_seconds"] > peak["time_seconds"]]
                 slowing = next((item for item in later
                                 if item["image_motion_per_sec"] <= peak_speed * 0.7), None)
                 if slowing:
@@ -564,18 +666,25 @@ def build_kick_phase_candidates(frames, sampling_interval_seconds):
                         "label": "反対足の移動量参考値（軸足接地の確定ではありません）",
                     }
                 foot_result["status"] = "candidate_only"
+            else:
+                foot_result["status"] = "insufficient_peak_support"
         result["feet"][side] = foot_result
+    focus = result["feet"][preferred_foot]
+    result["preferred_foot_peak_candidate"] = focus.get("peak_candidate")
+    result["preferred_foot_follow_through_candidate"] = focus.get("post_peak_candidate")
+    result["opposite_foot_candidate"] = result["feet"]["left" if preferred_foot == "right" else "right"].get("peak_candidate")
     result["phases"] = [
         {"key": "approach", "label": "助走", "status": "manual_review_required", "time_seconds": None},
         {"key": "plant", "label": "軸足接地", "status": "manual_review_required", "time_seconds": None},
-        {"key": "swing", "label": "蹴り脚の振り出し", "status": "candidate_only", "time_source": "foot_motion_peak"},
+        {"key": "swing", "label": "蹴り脚の振り出し", "status": "candidate_only" if focus.get("peak_candidate") else "manual_review_required",
+         "time_source": "preferred_foot_peak" if focus.get("peak_candidate") else None, "foot": preferred_foot},
         {"key": "impact", "label": "インパクト", "status": "manual_review_required", "time_seconds": None},
-        {"key": "follow_through", "label": "フォロースルー", "status": "candidate_only", "time_source": "post_peak_motion_drop"},
+        {"key": "follow_through", "label": "フォロースルー", "status": "candidate_only" if focus.get("post_peak_candidate") else "manual_review_required",
+         "time_source": "preferred_foot_post_peak_drop" if focus.get("post_peak_candidate") else None, "foot": preferred_foot},
     ]
     if interval > 0.75:
         result["limitations"].append("撮影・解析サンプル間隔が粗いため、動作ピーク候補を表示していません。")
     return result
-
 
 def process_video(path: str, mode: str, camera_angle: str = "未選択", progress_callback=None, jersey_numbers=None):
     if mode == "match":
@@ -632,8 +741,8 @@ def process_video(path: str, mode: str, camera_angle: str = "未選択", progres
     knees = [x[k] for x in frames for k in ("left_knee_angle_deg", "right_knee_angle_deg") if x.get(k) is not None]
     trunks = [x["trunk_lean_image_angle_deg"] for x in frames if x.get("trunk_lean_image_angle_deg") is not None]
     hips = [x[k] for x in frames for k in ("left_hip_angle_deg", "right_hip_angle_deg") if x.get(k) is not None]
-    # Estimate ankle/foot landmark movement between sampled frames in normalized image coordinates.
-    # Values are image-widths per second, not real-world speed; camera motion and perspective affect them.
+    # Estimate ankle/foot landmark movement after converting normalized x/y to pixel geometry.
+    # Values are frame-widths per second, not real-world speed; camera motion and perspective affect them.
     for i, current in enumerate(frames):
         for side in ("left", "right"):
             key = side + "_foot_index"
@@ -642,9 +751,10 @@ def process_video(path: str, mode: str, camera_angle: str = "未選択", progres
             b = prev.get("landmarks", {}).get(key) if prev else None
             dt = (current.get("time_seconds", 0) - prev.get("time_seconds", 0)) if prev else 0
             if a and b and dt > 0 and a[2] >= 0.5 and b[2] >= 0.5:
-                current[side + "_foot_image_motion_per_sec"] = round(float(np.linalg.norm(np.array(a[:2]) - np.array(b[:2])) / dt), 4)
+                current[side + "_foot_image_motion_per_sec"] = image_motion_per_width_per_second(a, b, dt, frame.shape[1], frame.shape[0])
             else:
                 current[side + "_foot_image_motion_per_sec"] = None
+    kick_phase_candidates = build_kick_phase_candidates(frames, actual_interval, preferred_foot=preferred_foot) if mode == "form" else None
     summary = {
         "sampled_pose_frames": len(frames),
         "duration_seconds": round(duration, 2),
@@ -656,6 +766,7 @@ def process_video(path: str, mode: str, camera_angle: str = "未選択", progres
         "frames": frames,
     }
     if mode == "form":
+        summary["capture_quality"] = build_form_capture_quality(frames)
         summary["kick_phase_candidates"] = kick_phase_candidates
     if mode == "match":
         jersey_counts = {}
@@ -707,7 +818,7 @@ def root():
 def health():
     return {"ok": True, "service": APP_NAME, "pose_engine": "MediaPipe Pose"}
 
-async def analyze_upload(file: UploadFile, mode: str):
+async def analyze_upload(file: UploadFile, mode: str, preferred_foot: str = "right"):
     if not file.filename:
         raise HTTPException(status_code=400, detail="動画ファイルがありません。")
     suffix = Path(file.filename).suffix.lower()
@@ -760,7 +871,8 @@ async def analyze_upload(file: UploadFile, mode: str):
 
 @app.post("/analyze/form")
 async def analyze_form(file: UploadFile = File(...), kick_type: str = Form("シュート"), dominant_foot: str = Form("右足"), camera_angle: str = Form("未選択")):
-    result = await analyze_upload(file, "form")
+    normalized_foot = "left" if dominant_foot in ("左足", "left") else "right"
+    result = await analyze_upload(file, "form", preferred_foot=normalized_foot)
     result["kick_type"] = kick_type
     result["dominant_foot"] = dominant_foot
     result["camera_angle"] = camera_angle
@@ -867,7 +979,7 @@ def analyze_candidate_clip_dense(clip_path, jersey_numbers=None, sample_rate=1.5
                 detected = landmarker.detect_for_video(mp_image, timestamp_ms)
                 people = []
                 for person_index, pose_lm in enumerate(detected.pose_landmarks or []):
-                    metrics = analyze_task_pose(pose_lm)
+                    metrics = analyze_task_pose(pose_lm, frame.shape[1], frame.shape[0])
                     ocr = read_jersey_number(frame, metrics["landmarks"], targets)
                     for item in ocr:
                         jersey_counts[item["number"]] = jersey_counts.get(item["number"], 0) + 1

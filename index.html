@@ -893,21 +893,23 @@ function buildAiFormAutoScore(sm,cameraAngle){
  const metrics=definitions[angle]||[];
  if(!metrics.length)return {score:null,coverage:0,stability:null,measured:0,total:0,angle,grade:'採点対象外',note:'撮影角度を5視点（右側・左側・斜め右後ろ・斜め左後ろ・後ろ）から選択してください。'};
  const qualityKey={left_knee_angle_deg:'left_knee',right_knee_angle_deg:'right_knee',left_hip_angle_deg:'left_hip',right_hip_angle_deg:'right_hip',trunk_lean_image_angle_deg:'trunk'};
- const valid=metrics.filter(m=>frames.some(f=>Number.isFinite(f[m.key])&&(!f.metric_quality||f.metric_quality[qualityKey[m.key]]==='measured')));
+ // A metric must be visible in multiple sampled frames. A single lucky detection is not enough evidence.
+ const minimumSamples=Math.max(2,Math.ceil(frames.length*0.35));
+ const samplesFor=m=>frames.filter(f=>Number.isFinite(f[m.key])&&(!f.metric_quality||f.metric_quality[qualityKey[m.key]]==='measured'));
+ const valid=metrics.filter(m=>samplesFor(m).length>=minimumSamples);
  const measured=valid.length;
  const coverage=metrics.length?measured/metrics.length:0;
  const stabilityValues=valid.map(m=>{
-  const vals=frames.filter(f=>Number.isFinite(f[m.key])&&(!f.metric_quality||f.metric_quality[qualityKey[m.key]]==='measured')).map(f=>Number(f[m.key]));
-  if(vals.length<2)return null;
+  const vals=samplesFor(m).map(f=>Number(f[m.key]));
   const mean=vals.reduce((a,b)=>a+b,0)/vals.length;
   const sd=Math.sqrt(vals.reduce((a,b)=>a+(b-mean)**2,0)/vals.length);
   return Math.max(0,Math.min(100,100-(sd/45)*100));
  }).filter(Number.isFinite);
  const stability=stabilityValues.length?stabilityValues.reduce((a,b)=>a+b,0)/stabilityValues.length:null;
- const score=measured?Math.round(coverage*70+(stability===null?0.5:stability/100)*30):null;
+ const score=measured?Math.round(coverage*70+(stability===null?0:stability/100)*30):null;
  const grade=score===null?'採点対象外':score>=85?'計測良好':score>=65?'参考計測': '計測不足';
  const missing=metrics.filter(m=>!valid.some(v=>v.key===m.key)).map(m=>m.label);
- return {score,coverage:Math.round(coverage*100),stability:stability===null?null:Math.round(stability),measured,total:metrics.length,angle,grade,missing,note:'これはフォームの上手さ・キック技術の点数ではなく、姿勢データの取得率と時間的な変動の参考スコアです。角度変化が大きいこと自体を悪い動作とは判定しません。'};
+ return {score,coverage:Math.round(coverage*100),stability:stability===null?null:Math.round(stability),measured,total:metrics.length,angle,grade,missing,minimumSamples,note:'これはフォームの上手さ・キック技術の点数ではなく、複数フレームで取得できた姿勢データの取得率と時間的な変動の参考スコアです。関節の検出が一瞬だけの場合は採点せず、角度変化が大きいこと自体を悪い動作とは判定しません。'};
 }
 function renderAiFormAutoScore(score){
  if(!score)return '';
@@ -4332,5 +4334,6 @@ window.addEventListener("load",()=>{
 });
 </script>
 <script src="./stage47-video-recovery.js"></script>
+<script src="./stage48-video-restore.js"></script>
 </body>
 </html>

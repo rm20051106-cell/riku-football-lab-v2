@@ -12,7 +12,7 @@ class Stage31KickPhaseTests(unittest.TestCase):
         self.assertIn('max_samples = MATCH_MAX_SAMPLES if mode == "match" else 120', BACKEND)
 
     def test_candidates_are_based_on_visible_foot_motion_and_time(self):
-        self.assertIn("def build_kick_phase_candidates(frames, sampling_interval_seconds):", BACKEND)
+        self.assertIn('def build_kick_phase_candidates(frames, sampling_interval_seconds, preferred_foot="right"):', BACKEND)
         self.assertIn('frame.get(side + "_foot_image_motion_per_sec")', BACKEND)
         self.assertIn('interval <= 0.75 and len(valid) >= 4', BACKEND)
         self.assertIn('"peak_candidate"', BACKEND)
