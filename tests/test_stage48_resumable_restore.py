@@ -84,9 +84,23 @@ class Stage48ResumableRestoreTests(unittest.TestCase):
         self.page.locator("#videoImportFiles").set_input_files(self.file("4802"))
         self.page.wait_for_function("JSON.parse(localStorage.getItem('rikuVideoRestoreJob_v1'))?.items?.[0]?.status === 'failed'",timeout=30000)
         self.page.wait_for_function("document.getElementById('stage48Status')?.textContent.includes('失敗動画だけ再試行できます')",timeout=30000)
-        self.page.evaluate("document.getElementById('stage48Retry').click()")
+        self.page.evaluate("""() => {
+            const input = document.getElementById("videoImportFiles");
+            // Keep the real retry-button handler, but avoid opening a native file picker
+            // in Playwright; the next line supplies the selected file deterministically.
+            input.click = () => {};
+            document.getElementById("stage48Retry").click();
+        }""")
         self.page.locator("#videoImportFiles").set_input_files(self.file("4802"))
-        self.page.wait_for_function("JSON.parse(localStorage.getItem('rikuVideoRestoreJob_v1'))?.items?.[0]?.status === 'done'",timeout=30000)
+        try:
+            self.page.wait_for_function("JSON.parse(localStorage.getItem('rikuVideoRestoreJob_v1'))?.items?.[0]?.status === 'done'",timeout=30000)
+        except Exception:
+            state = self.page.evaluate("""() => ({
+                job: JSON.parse(localStorage.getItem("rikuVideoRestoreJob_v1")),
+                status: document.getElementById("stage48Status")?.textContent,
+                preview: document.getElementById("videoRestorePreview")?.textContent
+            })""")
+            self.fail("failed-video retry did not complete: " + str(state))
         self.assertEqual(self.page.evaluate("JSON.parse(localStorage.getItem('rikuVideoRestoreJob_v1')).items[0].savedHash"),self.digest)
 
 if __name__ == "__main__":
