@@ -887,11 +887,16 @@ function aiRange(values){let a=values.filter(v=>Number.isFinite(v));return a.len
 function buildAiFormAutoScore(sm,cameraAngle){
  const frames=(sm.frames||[]).filter(f=>f&&typeof f==='object');
  const angle=String(cameraAngle||sm.camera_angle||'未選択');
+ const captureQuality=sm.capture_quality||{};
+ const videoScanQuality=sm.video_scan_quality||{};
+ const blockingStatuses=['insufficient_samples','retake_recommended_subject_too_small','retake_recommended_joint_visibility','retake_recommended_low_detection'];
+ const blockingStatus=blockingStatuses.includes(captureQuality.status)||blockingStatuses.includes(videoScanQuality.status);
  const sideMetrics=[{key:'left_knee_angle_deg',label:'左膝角度'},{key:'right_knee_angle_deg',label:'右膝角度'},{key:'left_hip_angle_deg',label:'左股関節角度'},{key:'right_hip_angle_deg',label:'右股関節角度'},{key:'trunk_lean_image_angle_deg',label:'体幹傾き'}];
  const rearMetrics=sideMetrics.filter(m=>m.key!=='trunk_lean_image_angle_deg');
  const definitions={'右側から':sideMetrics,'左側から':sideMetrics,'斜め右後ろから':sideMetrics,'斜め左後ろから':sideMetrics,'後ろから':rearMetrics};
  const metrics=definitions[angle]||[];
  if(!metrics.length)return {score:null,coverage:0,stability:null,measured:0,total:0,angle,grade:'採点対象外',note:'撮影角度を5視点（右側・左側・斜め右後ろ・斜め左後ろ・後ろ）から選択してください。'};
+ if(blockingStatus)return {score:null,coverage:0,stability:null,measured:0,total:metrics.length,angle,grade:'採点対象外',missing:metrics.map(m=>m.label),captureBlocked:true,note:captureQuality.guidance||videoScanQuality.guidance||'撮影・姿勢検出の証拠が不足しているため、計測品質スコアを表示しません。全身が安定して映る動画で撮り直してください。'};
  const qualityKey={left_knee_angle_deg:'left_knee',right_knee_angle_deg:'right_knee',left_hip_angle_deg:'left_hip',right_hip_angle_deg:'right_hip',trunk_lean_image_angle_deg:'trunk'};
  // A metric must be visible in multiple sampled frames. A single lucky detection is not enough evidence.
  const minimumSamples=Math.max(2,Math.ceil(frames.length*0.35));
@@ -906,15 +911,17 @@ function buildAiFormAutoScore(sm,cameraAngle){
   return Math.max(0,Math.min(100,100-(sd/45)*100));
  }).filter(Number.isFinite);
  const stability=stabilityValues.length?stabilityValues.reduce((a,b)=>a+b,0)/stabilityValues.length:null;
- const score=measured?Math.round(coverage*70+(stability===null?0:stability/100)*30):null;
+ const baseScore=measured?coverage*70+(stability===null?0:stability/100)*30:null;
+ const detectionRate=Number.isFinite(videoScanQuality.pose_detection_rate)&&videoScanQuality.pose_detection_rate>=0&&videoScanQuality.pose_detection_rate<=1?videoScanQuality.pose_detection_rate:1;
+ const score=baseScore===null?null:Math.round(baseScore*detectionRate);
  const grade=score===null?'採点対象外':score>=85?'計測良好':score>=65?'参考計測': '計測不足';
  const missing=metrics.filter(m=>!valid.some(v=>v.key===m.key)).map(m=>m.label);
- return {score,coverage:Math.round(coverage*100),stability:stability===null?null:Math.round(stability),measured,total:metrics.length,angle,grade,missing,minimumSamples,note:'これはフォームの上手さ・キック技術の点数ではなく、複数フレームで取得できた姿勢データの取得率と時間的な変動の参考スコアです。関節の検出が一瞬だけの場合は採点せず、角度変化が大きいこと自体を悪い動作とは判定しません。'};
+ return {score,coverage:Math.round(coverage*100),stability:stability===null?null:Math.round(stability),detectionRate,measured,total:metrics.length,angle,grade,missing,minimumSamples,note:'これはフォームの上手さ・キック技術の点数ではなく、複数フレームで取得できた姿勢データの取得率・時間的な変動・動画全体の姿勢検出率を組み合わせた計測品質の参考スコアです。撮影品質が不足する動画は採点対象外にし、角度変化が大きいこと自体を悪い動作とは判定しません。'};
 }
 function renderAiFormAutoScore(score){
  if(!score)return '';
  if(score.score===null)return '<div class="note"><b>AI自動採点：採点対象外</b><p class="tiny">'+esc(score.note)+'</p></div>';
- return '<div class="note"><b>AI自動スコア（計測品質）</b><div style="font-size:30px;font-weight:800">'+score.score+'<span class="tiny"> / 100</span></div><b>'+esc(score.grade)+'</b><div class="tiny">撮影角度：'+esc(score.angle)+'｜計測項目：'+score.measured+'/'+score.total+'｜取得率：'+score.coverage+'%｜姿勢変動参考値：'+(score.stability===null?'算出不可':score.stability+'/100')+'</div>'+(score.missing?.length?'<div class="tiny">未計測：'+score.missing.map(esc).join('・')+'</div>':'')+'<p class="tiny muted">'+esc(score.note)+'</p></div>';
+ return '<div class="note"><b>AI自動スコア（計測品質）</b><div style="font-size:30px;font-weight:800">'+score.score+'<span class="tiny"> / 100</span></div><b>'+esc(score.grade)+'</b><div class="tiny">撮影角度：'+esc(score.angle)+'｜計測項目：'+score.measured+'/'+score.total+'｜取得率：'+score.coverage+'%｜動画姿勢検出率：'+(score.detectionRate==null?'未記録':Math.round(score.detectionRate*100)+'%')+'｜姿勢変動参考値：'+(score.stability===null?'算出不可':score.stability+'/100')+'</div>'+(score.missing?.length?'<div class="tiny">未計測：'+score.missing.map(esc).join('・')+'</div>':'')+'<p class="tiny muted">'+esc(score.note)+'</p></div>';
 }
 function renderManualKickPhaseReview(record){
  const phases=[['approach','助走'],['plant','軸足接地'],['swing','蹴り脚の振り出し'],['impact','インパクト'],['follow_through','フォロースルー']];
