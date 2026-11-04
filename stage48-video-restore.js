@@ -94,6 +94,7 @@
     return true;
   }
   window.hashStage48Blob=async blob=>{paused=false;return hashBlob(blob);};
+  window.pauseStage48Restore=()=>{paused=true;};
   window.runStage48VideoRestore=files=>run(files,false);
   window.retryStage48FailedVideos=files=>run(files,true);
   window.addEventListener("change",event=>{
