@@ -160,9 +160,17 @@ def build_form_capture_quality(frames):
                    "left_heel", "right_heel", "left_foot_index", "right_foot_index"]
     visibility = {}
     for name in joint_names:
-        observed = [frame.get("landmarks", {}).get(name) for frame in frames]
-        observed = [point for point in observed if isinstance(point, (list, tuple)) and len(point) >= 3]
-        visibility[name] = round(sum(1 for point in observed if float(point[2]) >= 0.5) / len(observed), 3) if observed else None
+        # Missing landmark entries count as unobserved samples. Excluding them
+        # would inflate visibility when a joint disappears from some frames.
+        visible_count = 0
+        for frame in frames:
+            point = frame.get("landmarks", {}).get(name)
+            if isinstance(point, (list, tuple)) and len(point) >= 3:
+                try:
+                    visible_count += int(float(point[2]) >= 0.5)
+                except (TypeError, ValueError):
+                    pass
+        visibility[name] = round(visible_count / len(frames), 3) if frames else None
     median_height = median(ratios)
     if len(ratios) < 3:
         status = "insufficient_samples"
