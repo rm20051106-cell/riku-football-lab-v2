@@ -51,45 +51,73 @@
   function renderHistory(){const el=document.getElementById("stage48History");if(!el)return;const rows=history();el.textContent=rows.length?"バックアップ・復元履歴（最新5件）\n"+rows.slice(0,5).map(x=>new Date(x.at).toLocaleString("ja-JP")+"｜"+x.action+"｜成功 "+x.success+"本／失敗 "+x.failed+"本｜"+(x.bytes/1048576).toFixed(1)+"MB").join("\n"):"バックアップ・復元履歴はまだありません。";}
   function report(job,heading){const ok=job.items.filter(x=>x.status==="done"),bad=job.items.filter(x=>x.status==="failed"),pending=job.items.filter(x=>x.status!=="done"&&x.status!=="failed");const lines=[heading,"対象 "+job.items.length+"本／完了 "+ok.length+"本／失敗 "+bad.length+"本／未処理 "+pending.length+"本","SHA-256照合：完了動画 "+ok.filter(x=>x.hash).length+"本","完了動画："+ok.map(x=>x.name).join("、"),bad.length?"失敗動画："+bad.map(x=>x.name+"（"+(x.error||"失敗")+"）").join("、"):"失敗動画なし","このレポートは端末内に保存されます。"];const el=document.getElementById("stage48Report");if(el)el.textContent=lines.join("\n");}
   async function run(files, retryOnly){
-    if(active)return true;
-    if(!files?.length)return true;
+    if(active || !files?.length) return true;
     active=true;paused=false;selectedFiles=[...files];panel();
-    const old=readJob();const byKey=new Map(files.map(f=>[f.name+"|"+f.size+"|"+f.lastModified,f]));
-    let job=old&&old.items?.some(x=>x.status!=="done")?old:{id:"restore-"+Date.now(),action:"復元",at:new Date().toISOString(),items:[]};
-    if(!job.items.length)job.items=files.map(f=>({name:f.name,size:f.size,lastModified:f.lastModified,status:"pending",hash:null,error:null}));
-    else for(const f of files){const key=f.name+"|"+f.size+"|"+f.lastModified;if(!job.items.some(x=>x.name+"|"+x.size+"|"+x.lastModified===key))job.items.push({name:f.name,size:f.size,lastModified:f.lastModified,status:"pending",hash:null,error:null});}
-    const work=job.items.filter(x=>byKey.has(x.name+"|"+x.size+"|"+x.lastModified)&&(retryOnly?x.status==="failed":x.status!=="done"));
+    const byKey=new Map(files.map(file=>[file.name+"|"+file.size+"|"+file.lastModified,file]));
+    const old=readJob();
+    let job=old&&old.items?.some(item=>item.status!=="done")?old:{id:"restore-"+Date.now(),action:"復元",at:new Date().toISOString(),items:[]};
+    if(!job.items.length) job.items=files.map(file=>({name:file.name,size:file.size,lastModified:file.lastModified,status:"pending",hash:null,savedHash:null,error:null}));
+    for(const file of files){
+      const key=file.name+"|"+file.size+"|"+file.lastModified;
+      if(!job.items.some(item=>item.name+"|"+item.size+"|"+item.lastModified===key)) job.items.push({name:file.name,size:file.size,lastModified:file.lastModified,status:"pending",hash:null,savedHash:null,error:null});
+    }
+    const work=job.items.filter(item=>byKey.has(item.name+"|"+item.size+"|"+item.lastModified)&&(retryOnly?item.status==="failed":item.status!=="done"));
     if(!work.length){status("再開対象がありません。中断した動画ファイルを選び直してください。");active=false;return true;}
-    saveJob(job);let bytes=0;
+    saveJob(job);
     try{
+      // Hash every selected source first. The existing Stage 47 batch transaction then
+      // remains responsible for atomic writes/rollback across this batch.
+      const ready=[];
       for(let i=0;i<work.length;i++){
         const item=work[i],file=byKey.get(item.name+"|"+item.size+"|"+item.lastModified);
-        if(paused)break;
-        status("SHA-256計算中："+file.name+"（"+(i+1)+"/"+work.length+"）");
+        if(paused) break;
         try{
-          const digest=await hashBlob(file,p=>status("SHA-256計算中："+file.name+" "+Math.round(p*100)+"%"));
-          if(paused)break;
-          item.hash=digest;item.status="verifying";item.error=null;saveJob(job);
-          const result=await window.runStage47VideoRestore([file]);
-          const keyPart=file.name.startsWith("riku-video__")?decodeURIComponent(file.name.slice(12,file.name.indexOf("__",12))):"";
-          const saved=keyPart?await getClipVideo(keyPart):null;
-          if(!saved?.blob||saved.blob.size!==file.size)throw new Error("保存後の動画サイズ照合に失敗");
-          const savedHash=await hashBlob(saved.blob,p=>status("保存後SHA-256照合中："+file.name+" "+Math.round(p*100)+"%"));
-          if(savedHash!==digest)throw new Error("保存後SHA-256不一致");
-          item.status="done";item.savedHash=savedHash;item.error=null;bytes+=file.size;
-        }catch(error){item.status="failed";item.error=String(error?.message||error).slice(0,240);}
-        saveJob(job);report(job,"復元の進行レポート");
-        await yieldUI();
-        if(paused)break;
+          status("元動画SHA-256計算中："+file.name+"（"+(i+1)+"/"+work.length+"）");
+          item.hash=await hashBlob(file,p=>status("元動画SHA-256計算中："+file.name+" "+Math.round(p*100)+"%"));
+          item.status="verifying";item.error=null;saveJob(job);ready.push(file);
+        }catch(error){
+          item.status="failed";item.error=String(error?.message||error).slice(0,240);saveJob(job);
+          if(paused) break;
+        }
+      }
+      if(!paused && ready.length){
+        status("Stage 47の一括事前検査・復元・ロールバック処理を実行中…");
+        const priorBatchMode=window.__stage48BatchMode;
+        const priorAlert=window.alert;
+        window.__stage48BatchMode=true;
+        window.alert=()=>{};
+        try{await window.runStage47VideoRestore(ready);}
+        finally{window.alert=priorAlert;if(priorBatchMode===undefined)delete window.__stage48BatchMode;else window.__stage48BatchMode=priorBatchMode;}
+        for(const file of ready){
+          const key=file.name+"|"+file.size+"|"+file.lastModified;
+          const item=job.items.find(row=>row.name+"|"+row.size+"|"+row.lastModified===key);
+          try{
+            const match=file.name.match(/^riku-video__(.+?)__(.+)$/);
+            if(!match) throw new Error("動画バックアップのファイル名形式が不正です");
+            const storageKey=decodeURIComponent(match[1]);
+            const saved=await getClipVideo(storageKey);
+            if(!saved?.blob || saved.blob.size!==file.size) throw new Error("保存後の動画サイズ照合に失敗（Stage 47の復元処理が完了していない可能性）");
+            const savedHash=await hashBlob(saved.blob,p=>status("保存後SHA-256照合中："+file.name+" "+Math.round(p*100)+"%"));
+            if(savedHash!==item.hash) throw new Error("保存後SHA-256不一致");
+            item.savedHash=savedHash;item.status="done";item.error=null;
+          }catch(error){item.status="failed";item.error=String(error?.message||error).slice(0,240);}
+          saveJob(job);report(job,"復元の進行レポート");await yieldUI();
+        }
       }
       job.updatedAt=new Date().toISOString();saveJob(job);
-      const remaining=job.items.some(x=>x.status==="pending"||x.status==="verifying");
-      const failed=job.items.filter(x=>x.status==="failed").length;
-      const done=job.items.filter(x=>x.status==="done").length;
-      status(paused?"一時停止しました。動画を同じファイル名で選び直すと続きから再開します。":remaining?"未処理動画があります。選び直して再開してください。":failed?"完了（一部失敗）。失敗動画だけ再試行できます。":"全動画の復元とSHA-256照合が完了しました。");
-      if(!remaining){addHistory({at:new Date().toISOString(),action:"復元",success:done,failed,bytes:job.items.filter(x=>x.status==="done").reduce((n,x)=>n+x.size,0)});renderHistory();}
-      if(!paused && !remaining){try{if(typeof scanSavedVideoIntegrity==="function")await scanSavedVideoIntegrity();if(typeof refreshVideoStorageStatus==="function")await refreshVideoStorageStatus();}catch(error){console.warn("Stage 48 final integrity scan",error);}}
-      report(job,paused?"中断レポート":"復元完了レポート");
+      const pending=job.items.some(item=>item.status==="pending"||item.status==="verifying");
+      const failed=job.items.filter(item=>item.status==="failed").length;
+      const done=job.items.filter(item=>item.status==="done").length;
+      const skipped=job.items.filter(item=>item.status==="done"&&item.duplicate===true).length;
+      const imported=done-skipped;
+      status(paused?"一時停止しました。動画を同じファイル名で選び直すと続きから再開します。":pending?"未処理動画があります。選び直して再開してください。":failed?"完了（一部失敗）。失敗動画だけ再試行できます。":"全動画の復元とSHA-256照合が完了しました。");
+      if(!pending && !paused){
+        addHistory({at:new Date().toISOString(),action:"復元",success:done,failed,bytes:job.items.filter(item=>item.status==="done").reduce((n,item)=>n+item.size,0)});
+        renderHistory();
+        try{if(typeof scanSavedVideoIntegrity==="function")await scanSavedVideoIntegrity();if(typeof refreshVideoStorageStatus==="function")await refreshVideoStorageStatus();}catch(error){console.warn("Stage 48 final integrity scan",error);}
+        window.alert("動画ファイルの復元が完了しました。\n新規保存・確認："+imported+"本\n同一動画のためスキップ："+skipped+"本\n未読込："+failed+"本\n保存後SHA-256照合："+done+"本\n設定画面の「動画と記録を照合する」から再生テストできます。");
+      }
+      report(job,paused?"中断レポート":pending?"復元の進行レポート":"復元完了レポート");
     }finally{active=false;}
     return true;
   }
