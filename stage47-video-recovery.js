@@ -245,6 +245,56 @@
     }
   }
 
+  const originalIntegrityScan = window.scanSavedVideoIntegrity;
+  if (typeof originalIntegrityScan === "function") {
+    window.scanSavedVideoIntegrity = async function () {
+      await originalIntegrityScan();
+      const output = document.getElementById("videoIntegrityResult");
+      if (!output) return;
+      let db;
+      try {
+        db = await openVideoDB();
+        const keys = await new Promise((resolve, reject) => {
+          const tx = db.transaction("videos", "readonly");
+          const request = tx.objectStore("videos").getAllKeys();
+          request.onsuccess = () => resolve((request.result || []).map(String));
+          request.onerror = () => reject(request.error || new Error("動画キーを読み取れません"));
+          tx.onerror = () => reject(tx.error || new Error("動画一覧を読み取れません"));
+        });
+        let playable = 0;
+        const unreadable = [];
+        for (const key of keys) {
+          try {
+            const saved = await getClipVideo(key);
+            if (!saved?.blob || !(saved.blob instanceof Blob) || saved.blob.size <= 0) {
+              unreadable.push(key + "（動画データなし・空）");
+              continue;
+            }
+            await probePlayable(saved.blob);
+            playable++;
+          } catch (error) {
+            unreadable.push(key + "（" + (error.message || "再生情報を確認できません") + "）");
+          }
+        }
+        const report = document.createElement("div");
+        report.className = "tiny";
+        report.style.marginTop = "8px";
+        report.textContent = "Stage 47 再生情報検査：確認 " + playable + "本／読み取り不可 " + unreadable.length + "本" +
+          (unreadable.length ? "：" + unreadable.join("、") : "。全動画の長さ・映像サイズを読み取れました。") +
+          " 実際の再生は各動画の「再生テスト」で確認してください。検査中に動画・記録は変更していません。";
+        output.appendChild(report);
+      } catch (error) {
+        const report = document.createElement("div");
+        report.className = "tiny";
+        report.style.marginTop = "8px";
+        report.textContent = "Stage 47 再生情報検査を完了できませんでした：" + (error.message || String(error));
+        output.appendChild(report);
+      } finally {
+        if (db) db.close();
+      }
+    };
+  }
+
   window.addEventListener("change", event => {
     if (event.target?.id !== "videoImportFiles") return;
     event.stopImmediatePropagation();
