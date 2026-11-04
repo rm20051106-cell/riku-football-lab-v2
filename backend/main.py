@@ -147,7 +147,7 @@ def analyze_frame(frame, pose):
 
 def build_form_capture_quality(frames):
     """Summarize framing and metric evidence; missing or malformed samples never count as visible."""
-    frames = [frame for frame in frames if isinstance(frame, dict)]
+    frames = [frame for frame in frames if isinstance(frame, dict)] if isinstance(frames, (list, tuple)) else []
 
     def is_finite_number(value):
         try:
@@ -189,7 +189,10 @@ def build_form_capture_quality(frames):
         # Missing, non-finite, out-of-range and low-confidence points are unobserved.
         visible_count = 0
         for frame in frames:
-            point = frame.get("landmarks", {}).get(name)
+            landmarks = frame.get("landmarks")
+            if not isinstance(landmarks, dict):
+                continue
+            point = landmarks.get(name)
             if not isinstance(point, (list, tuple)) or len(point) < 3:
                 continue
             try:
