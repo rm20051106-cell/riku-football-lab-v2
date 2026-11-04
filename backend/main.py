@@ -49,8 +49,12 @@ LANDMARK_NAMES = [
     "right_heel", "left_foot_index", "right_foot_index"
 ]
 
-def angle(a, b, c):
-    a, b, c = np.array(a, dtype=float), np.array(b, dtype=float), np.array(c, dtype=float)
+def angle(a, b, c, image_width=1, image_height=1):
+    # MediaPipe x/y are normalized independently by image width/height.
+    # Convert back to pixel-space before Euclidean geometry to avoid aspect-ratio distortion.
+    a = np.array([float(a[0]) * image_width, float(a[1]) * image_height], dtype=float)
+    b = np.array([float(b[0]) * image_width, float(b[1]) * image_height], dtype=float)
+    c = np.array([float(c[0]) * image_width, float(c[1]) * image_height], dtype=float)
     ba, bc = a - b, c - b
     denom = np.linalg.norm(ba) * np.linalg.norm(bc)
     if denom < 1e-8:
@@ -64,6 +68,7 @@ def lm_point(landmarks, name):
     return [round(float(p.x), 5), round(float(p.y), 5), round(float(p.visibility), 4)]
 
 def analyze_frame(frame, pose):
+    image_height, image_width = frame.shape[:2]
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     result = pose.process(rgb)
     if not result.pose_landmarks:
@@ -75,10 +80,10 @@ def analyze_frame(frame, pose):
     visible = sum(1 for v in lm if v.visibility >= 0.5)
     def visible_points(*names):
         return all(p(name)[2] >= 0.5 for name in names)
-    left_knee = angle(p("LEFT_HIP")[:2], p("LEFT_KNEE")[:2], p("LEFT_ANKLE")[:2]) if visible_points("LEFT_HIP", "LEFT_KNEE", "LEFT_ANKLE") else None
-    right_knee = angle(p("RIGHT_HIP")[:2], p("RIGHT_KNEE")[:2], p("RIGHT_ANKLE")[:2]) if visible_points("RIGHT_HIP", "RIGHT_KNEE", "RIGHT_ANKLE") else None
-    left_hip = angle(p("LEFT_SHOULDER")[:2], p("LEFT_HIP")[:2], p("LEFT_KNEE")[:2]) if visible_points("LEFT_SHOULDER", "LEFT_HIP", "LEFT_KNEE") else None
-    right_hip = angle(p("RIGHT_SHOULDER")[:2], p("RIGHT_HIP")[:2], p("RIGHT_KNEE")[:2]) if visible_points("RIGHT_SHOULDER", "RIGHT_HIP", "RIGHT_KNEE") else None
+    left_knee = angle(p("LEFT_HIP")[:2], p("LEFT_KNEE")[:2], p("LEFT_ANKLE")[:2], image_width, image_height) if visible_points("LEFT_HIP", "LEFT_KNEE", "LEFT_ANKLE") else None
+    right_knee = angle(p("RIGHT_HIP")[:2], p("RIGHT_KNEE")[:2], p("RIGHT_ANKLE")[:2], image_width, image_height) if visible_points("RIGHT_HIP", "RIGHT_KNEE", "RIGHT_ANKLE") else None
+    left_hip = angle(p("LEFT_SHOULDER")[:2], p("LEFT_HIP")[:2], p("LEFT_KNEE")[:2], image_width, image_height) if visible_points("LEFT_SHOULDER", "LEFT_HIP", "LEFT_KNEE") else None
+    right_hip = angle(p("RIGHT_SHOULDER")[:2], p("RIGHT_HIP")[:2], p("RIGHT_KNEE")[:2], image_width, image_height) if visible_points("RIGHT_SHOULDER", "RIGHT_HIP", "RIGHT_KNEE") else None
     trunk_angle = None
     if visible_points("LEFT_SHOULDER", "RIGHT_SHOULDER", "LEFT_HIP", "RIGHT_HIP"):
         shoulder_mid = [(p("LEFT_SHOULDER")[0] + p("RIGHT_SHOULDER")[0]) / 2,
@@ -87,7 +92,7 @@ def analyze_frame(frame, pose):
                    (p("LEFT_HIP")[1] + p("RIGHT_HIP")[1]) / 2]
         trunk_dx = shoulder_mid[0] - hip_mid[0]
         trunk_dy = shoulder_mid[1] - hip_mid[1]
-        trunk_angle = round(float(np.degrees(np.arctan2(abs(trunk_dx), max(1e-6, abs(trunk_dy))))), 1)
+        trunk_angle = round(float(np.degrees(np.arctan2(abs(trunk_dx) * image_width, max(1e-6, abs(trunk_dy) * image_height)))), 1)
     metric_quality = {
         "left_knee": "measured" if left_knee is not None else "insufficient_visibility",
         "right_knee": "measured" if right_knee is not None else "insufficient_visibility",
@@ -209,7 +214,7 @@ def camera_angle_guidance(camera_angle: str):
         "撮影角度が未指定です。全身とボールが映る動画で、5つの標準視点のいずれかから撮影すると比較しやすくなります。"
     ])
 
-def analyze_task_pose(lm):
+def analyze_task_pose(lm, image_width=1, image_height=1):
     def p(name):
         item = lm[mp_pose.PoseLandmark[name].value]
         visibility = float(getattr(item, "visibility", 1.0))
@@ -217,18 +222,18 @@ def analyze_task_pose(lm):
     visible = sum(1 for item in lm if float(getattr(item, "visibility", 1.0)) >= 0.5)
     def visible_points(*names):
         return all(p(name)[2] >= 0.5 for name in names)
-    left_knee = angle(p("LEFT_HIP")[:2], p("LEFT_KNEE")[:2], p("LEFT_ANKLE")[:2]) if visible_points("LEFT_HIP", "LEFT_KNEE", "LEFT_ANKLE") else None
-    right_knee = angle(p("RIGHT_HIP")[:2], p("RIGHT_KNEE")[:2], p("RIGHT_ANKLE")[:2]) if visible_points("RIGHT_HIP", "RIGHT_KNEE", "RIGHT_ANKLE") else None
-    left_hip = angle(p("LEFT_SHOULDER")[:2], p("LEFT_HIP")[:2], p("LEFT_KNEE")[:2]) if visible_points("LEFT_SHOULDER", "LEFT_HIP", "LEFT_KNEE") else None
-    right_hip = angle(p("RIGHT_SHOULDER")[:2], p("RIGHT_HIP")[:2], p("RIGHT_KNEE")[:2]) if visible_points("RIGHT_SHOULDER", "RIGHT_HIP", "RIGHT_KNEE") else None
+    left_knee = angle(p("LEFT_HIP")[:2], p("LEFT_KNEE")[:2], p("LEFT_ANKLE")[:2], image_width, image_height) if visible_points("LEFT_HIP", "LEFT_KNEE", "LEFT_ANKLE") else None
+    right_knee = angle(p("RIGHT_HIP")[:2], p("RIGHT_KNEE")[:2], p("RIGHT_ANKLE")[:2], image_width, image_height) if visible_points("RIGHT_HIP", "RIGHT_KNEE", "RIGHT_ANKLE") else None
+    left_hip = angle(p("LEFT_SHOULDER")[:2], p("LEFT_HIP")[:2], p("LEFT_KNEE")[:2], image_width, image_height) if visible_points("LEFT_SHOULDER", "LEFT_HIP", "LEFT_KNEE") else None
+    right_hip = angle(p("RIGHT_SHOULDER")[:2], p("RIGHT_HIP")[:2], p("RIGHT_KNEE")[:2], image_width, image_height) if visible_points("RIGHT_SHOULDER", "RIGHT_HIP", "RIGHT_KNEE") else None
     trunk_angle = None
     if visible_points("LEFT_SHOULDER", "RIGHT_SHOULDER", "LEFT_HIP", "RIGHT_HIP"):
         shoulder_mid = [(p("LEFT_SHOULDER")[0] + p("RIGHT_SHOULDER")[0]) / 2,
                         (p("LEFT_SHOULDER")[1] + p("RIGHT_SHOULDER")[1]) / 2]
         hip_mid = [(p("LEFT_HIP")[0] + p("RIGHT_HIP")[0]) / 2,
                    (p("LEFT_HIP")[1] + p("RIGHT_HIP")[1]) / 2]
-        trunk_angle = round(float(np.degrees(np.arctan2(abs(shoulder_mid[0] - hip_mid[0]),
-                                                         max(1e-6, abs(shoulder_mid[1] - hip_mid[1]))))), 1)
+        trunk_angle = round(float(np.degrees(np.arctan2(abs(shoulder_mid[0] - hip_mid[0]) * image_width,
+                                                         max(1e-6, abs(shoulder_mid[1] - hip_mid[1]) * image_height)))), 1)
     metric_quality = {
         "left_knee": "measured" if left_knee is not None else "insufficient_visibility",
         "right_knee": "measured" if right_knee is not None else "insufficient_visibility",
@@ -424,7 +429,7 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
                 time_seconds = round(current_frame_idx / fps, 2) if fps > 0 else round(sample_index * actual_interval, 2)
                 detected_count = len(detected.pose_landmarks or [])
                 for person_index, pose_lm in enumerate(detected.pose_landmarks or []):
-                    metrics = analyze_task_pose(pose_lm)
+                    metrics = analyze_task_pose(pose_lm, frame.shape[1], frame.shape[0])
                     ocr = read_jersey_number(frame, metrics["landmarks"], targets)
                     for item in ocr:
                         jersey_counts[item["number"]] = jersey_counts.get(item["number"], 0) + 1
