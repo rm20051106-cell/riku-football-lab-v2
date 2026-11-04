@@ -630,7 +630,7 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
     trunks = [x["trunk_lean_image_angle_deg"] for x in frames if x.get("trunk_lean_image_angle_deg") is not None]
     summary = {
         "sampled_pose_frames": len(frames),
-        "video_scan_quality": build_video_scan_quality(sampled_video_frames, pose_detected_frames),
+        "video_scan_quality": build_video_scan_quality(sample_index, sum(1 for count in people_per_frame if count > 0)),
         "duration_seconds": round(duration, 2),
         "average_left_right_knee_angle_deg": round(float(np.mean(knees)), 1) if knees else None,
         "average_trunk_lean_image_angle_deg": round(float(np.mean(trunks)), 1) if trunks else None,
@@ -875,6 +875,7 @@ def process_video(path: str, mode: str, camera_angle: str = "未選択", progres
     kick_phase_candidates = build_kick_phase_candidates(frames, actual_interval, preferred_foot=preferred_foot) if mode == "form" else None
     summary = {
         "sampled_pose_frames": len(frames),
+        "video_scan_quality": build_video_scan_quality(sampled_video_frames, pose_detected_frames),
         "duration_seconds": round(duration, 2),
         "average_left_right_knee_angle_deg": round(float(np.mean(knees)), 1) if knees else None,
         "average_trunk_lean_image_angle_deg": round(float(np.mean(trunks)), 1) if trunks else None,
