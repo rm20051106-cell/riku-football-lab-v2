@@ -111,7 +111,12 @@ button:focus-visible,.button:focus-visible,a:focus-visible,input:focus-visible,s
 
 <section class="view" id="settings">
  <h1 class="section-title">設定・バックアップ</h1><p class="section-desc">選手番号やデータを管理します。</p>
- <div class="card"><h2>iPhoneホーム画面に追加・オフライン利用</h2><p class="tiny muted">Safariの共有ボタンから「ホーム画面に追加」を選ぶと、RIKU FOOTBALL LABをアプリのように起動できます。初回にアプリ画面を開くと、画面本体を端末に保存し、次回から通信が不安定な場所でも開きやすくします。</p><ol class="tiny"><li>Safariでこのアプリを開く</li><li>共有ボタンを押す</li><li>「ホーム画面に追加」を選ぶ</li><li>追加したアイコンから起動する</li></ol><div class="note">オフラインで使えるのはアプリ画面と端末内の保存済み記録です。AIサーバーへの動画解析にはインターネット接続が必要です。動画・記録を守るため、バックアップも定期的に保存してください。</div><div id="pwaStatus" class="tiny muted" role="status" aria-live="polite">アプリのオフライン準備状態を確認中…</div></div>
+ <div class="card"><h2>iPhoneホーム画面に追加・オフライン利用</h2><p class="tiny muted">Safariの共有ボタンから「ホーム画面に追加」を選ぶと、RIKU FOOTBALL LABをアプリのように起動できます。初回にアプリ画面を開くと、画面本体を端末に保存し、次回から通信が不安定な場所でも開きやすくします。</p><ol class="tiny"><li>Safariでこのアプリを開く</li><li>共有ボタンを押す</li><li>「ホーム画面に追加」を選ぶ</li><li>追加したアイコンから起動する</li></ol><div class="note">オフラインで使えるのはアプリ画面と端末内の保存済み記録です。AIサーバーへの動画解析にはインターネット接続が必要です。動画・記録を守るため、バックアップも定期的に保存してください。</div><div id="pwaStatus" class="tiny muted" role="status" aria-live="polite">アプリのオフライン準備状態を確認中…</div>
+ <div id="connectionStatus" class="tiny muted" role="status" aria-live="polite" style="margin-top:8px">通信状態を確認中…</div>
+ <div id="deviceStorageStatus" class="tiny muted" role="status" aria-live="polite" style="margin-top:6px">端末内の保存容量は未確認です。</div>
+ <div class="btnrow"><button class="secondary small" onclick="refreshDeviceStorageStatus()">保存容量を確認</button><button class="secondary small" onclick="requestPersistentStorage()">保存データの保護を確認</button></div>
+ <div class="tiny muted">保存容量はブラウザが返す概算です。端末の空き容量や動画ファイルすべてを正確に示すものではありません。大切な記録はバックアップも残してください。</div>
+ </div>
  <div class="card"><h2>AI解析サーバー接続</h2><p class="tiny muted">Renderで公開したサーバーURLを入力します。URLが決まるまでは空欄のままでOKです。</p><label class="label">AIサーバーURL</label><input id="apiBaseUrl" placeholder="https://your-service.onrender.com"><div class="btnrow"><button onclick="saveApiUrl()">接続先を保存</button><button class="secondary" onclick="testApiConnection()">接続テスト</button></div><div id="apiStatus" class="tiny muted" style="margin-top:8px">未設定</div><div class="note">動画をサーバーへ送る前に、必ず自分が管理するサーバーのURLを確認してください。アップロードした動画は解析のためサーバーに送信されます。</div></div><div class="card"><h2>選手設定</h2><label class="label">選手名</label><input id="playerName" value="陸玖"><div class="two"><div><label class="label">背番号 1</label><input type="number" id="jersey1" value="10" min="0" max="99"></div><div><label class="label">背番号 2</label><input type="number" id="jersey2" value="74" min="0" max="99"></div></div><div class="btnrow"><button onclick="saveSettings()">設定を保存</button></div></div>
  <div class="card"><h2>陸玖の選手特徴登録</h2><p class="tiny muted">写真から整理した初期プロフィールです。顔認識ではなく、ユニフォーム・背番号・装備・映像内の位置や動きの連続性を使う追跡機能向けの参考情報として保存します。</p><label class="label">サッカー時の基本ユニフォーム</label><input id="profileKit" value="赤いシャツ・白いパンツ・赤いソックス"><label class="label">チーム・メーカーの目印</label><input id="profileMarks" value="FCプリメーロのエンブレム・ミズノ"><div class="two"><div><label class="label">背番号候補</label><input id="profileNumbers" value="10,74"></div><div><label class="label">利き足</label><select id="profileFoot"><option value="右足">右足</option><option value="左足">左足</option><option value="両足">両足</option></select></div></div><label class="label">映像追跡の補助メモ</label><textarea id="profileNotes" placeholder="例：ユニフォームが変わった試合、別の練習着など"></textarea><div class="btnrow"><button onclick="savePlayerProfile()">選手特徴を保存</button></div><div id="profileStatus" class="tiny muted" style="margin-top:8px">写真をもとにした初期情報。AIによる本人判定・追跡はまだ未実装です。</div><div class="note">重要：背番号や服装が見えない場面では誤認の可能性があります。確信度が低い場合は「判別不能」とする設計にし、別の選手を陸玖として記録しないことを優先します。</div></div>
  <div class="card"><h2>動画保存・記録の整合性チェック</h2><p class="tiny muted">プレー分析・フォーム分析の記録と、iPhone内に保存された動画ファイルを照合します。動画の消失や紐づけ漏れを確認できます。</p><div class="btnrow"><button class="secondary" onclick="scanSavedVideoIntegrity()">動画と記録を照合する</button></div><div id="videoIntegrityResult" class="tiny muted" style="margin-top:8px">まだ照合していません。</div></div>
@@ -4221,6 +4226,71 @@ if("serviceWorker" in navigator && window.isSecureContext){
   });
  });
 }
+</script>
+<script>
+function renderConnectionStatus(){
+ const el=document.getElementById("connectionStatus");
+ if(!el)return;
+ const online=navigator.onLine!==false;
+ el.textContent=online
+  ?"通信状態：オンライン。AIサーバーへの動画解析を利用できます（サーバー接続状況は別途確認）。"
+  :"通信状態：オフライン。端末内の保存済み記録を利用できます。AIサーバー解析には通信が必要です。";
+}
+function formatStorageBytes(value){
+ const bytes=Math.max(0,Number(value)||0);
+ if(bytes<1024*1024)return (bytes/1024).toFixed(0)+" KB";
+ return (bytes/1024/1024).toFixed(1)+" MB";
+}
+async function refreshDeviceStorageStatus(){
+ const el=document.getElementById("deviceStorageStatus");
+ if(!el)return;
+ if(!navigator.storage||typeof navigator.storage.estimate!=="function"){
+  el.textContent="このブラウザでは保存容量の概算を取得できません。";
+  return;
+ }
+ el.textContent="端末内の保存容量を確認しています…";
+ try{
+  const estimate=await navigator.storage.estimate();
+  const usage=Number(estimate.usage)||0;
+  const quota=Number(estimate.quota)||0;
+  const percent=quota>0?Math.min(100,usage/quota*100):null;
+  let message="このサイトの保存領域の目安："+formatStorageBytes(usage);
+  if(quota>0)message+=" ／ 上限目安 "+formatStorageBytes(quota)+"（約"+percent.toFixed(1)+"%使用）";
+  else message+=" ／ 上限目安は取得できませんでした";
+  if(typeof navigator.storage.persisted==="function"){
+   try{message+=" ／ 保存保護："+(await navigator.storage.persisted()?"有効":"未確認・未許可")}catch(_){}
+  }
+  el.textContent=message;
+ }catch(error){
+  console.warn("端末保存容量の確認に失敗しました",error);
+  el.textContent="保存容量を取得できませんでした。バックアップを定期的に保存してください。";
+ }
+}
+async function requestPersistentStorage(){
+ const el=document.getElementById("deviceStorageStatus");
+ if(!el)return;
+ if(!navigator.storage||typeof navigator.storage.persist!=="function"){
+  el.textContent="このブラウザは保存データの保護要求に対応していません。定期的なバックアップを続けてください。";
+  return;
+ }
+ el.textContent="ブラウザに保存データの保護を確認しています…";
+ try{
+  const granted=await navigator.storage.persist();
+  el.textContent=granted
+   ?"ブラウザがこのサイトの保存データを保護する設定を許可しました。端末故障・削除に備え、バックアップは必要です。"
+   :"ブラウザは保存データの保護を許可しませんでした。保存容量を確認し、定期的にバックアップしてください。";
+  await refreshDeviceStorageStatus();
+ }catch(error){
+  console.warn("保存データ保護の確認に失敗しました",error);
+  el.textContent="保存データの保護状態を確認できませんでした。定期的なバックアップを続けてください。";
+ }
+}
+window.addEventListener("online",renderConnectionStatus);
+window.addEventListener("offline",renderConnectionStatus);
+window.addEventListener("load",()=>{
+ renderConnectionStatus();
+ refreshDeviceStorageStatus();
+});
 </script>
 </body>
 </html>
