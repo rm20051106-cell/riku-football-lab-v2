@@ -76,7 +76,7 @@
           item.hash=await hashBlob(file,p=>status("元動画SHA-256計算中："+file.name+" "+Math.round(p*100)+"%"));
           item.status="verifying";item.error=null;saveJob(job);ready.push(file);
         }catch(error){
-          item.status="failed";item.error=String(error?.message||error).slice(0,240);saveJob(job);
+          if(paused || String(error?.message||error).includes("一時停止しました")){item.status="pending";item.error=null;}else{item.status="failed";item.error=String(error?.message||error).slice(0,240);}saveJob(job);
           if(paused) break;
         }
       }
@@ -86,7 +86,7 @@
         const priorAlert=window.alert;
         window.__stage48BatchMode=true;
         window.alert=()=>{};
-        try{await window.runStage47VideoRestore(ready);}
+        try{const outcome=await window.runStage47VideoRestore(ready);const preview=document.getElementById("videoRestorePreview")?.textContent||"";if(outcome?.ok===false||/^(復元中止|復元失敗|復元をキャンセル)/.test(preview))throw new Error(preview.split("\n")[0]||"Stage 47の事前検査に失敗しました");}
         finally{window.alert=priorAlert;if(priorBatchMode===undefined)delete window.__stage48BatchMode;else window.__stage48BatchMode=priorBatchMode;}
         for(const file of ready){
           const key=file.name+"|"+file.size+"|"+file.lastModified;
