@@ -28,7 +28,7 @@ class Stage50PreferredFootCandidateTests(unittest.TestCase):
             {"time_seconds": i * 0.5,
              "right_foot_image_motion_per_sec": speed,
              "left_foot_image_motion_per_sec": left}
-            for i, (speed, left) in enumerate([(0.1, 0.2), (0.4, 0.1), (1.0, 0.1), (0.2, 0.1), (0.1, 0.1)])]
+            for i, (speed, left) in enumerate([(0.1, 0.2), (0.4, 0.1), (1.0, 0.1), (0.2, 0.1), (0.1, 0.1)])
         ]
 
     def test_right_foot_is_default_focus_but_both_feet_are_preserved(self):
