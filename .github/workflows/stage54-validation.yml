@@ -6,7 +6,7 @@ on:
       - feature/stage54-restore-checkpoint-integrity-20261105
 
 concurrency:
-  group: stage54-checkpoint-validation-${{ github.ref }}
+  group: stage54-checkpoint-validation-\${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -34,10 +34,10 @@ jobs:
           import re
           from pathlib import Path
           html = Path("index.html").read_text(encoding="utf-8")
-          scripts = re.findall(r"<script\\b[^>]*>([\\s\\S]*?)</script>", html, re.I)
+          scripts = re.findall(r"<script\b[^>]*>([\s\S]*?)</script>", html, re.I)
           if not scripts:
               raise SystemExit("No inline scripts found")
-          Path("/tmp/riku-inline.js").write_text("\\n".join(scripts), encoding="utf-8")
+          Path("/tmp/riku-inline.js").write_text("\n".join(scripts), encoding="utf-8")
           PY
           node --check /tmp/riku-inline.js
           node --check stage47-video-recovery.js
