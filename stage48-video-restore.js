@@ -49,7 +49,7 @@
   }
   function status(message){const el=document.getElementById("stage48Status");if(el)el.textContent=message;}
   function renderHistory(){const el=document.getElementById("stage48History");if(!el)return;const rows=history();el.textContent=rows.length?"バックアップ・復元履歴（最新5件）\n"+rows.slice(0,5).map(x=>new Date(x.at).toLocaleString("ja-JP")+"｜"+x.action+"｜成功 "+x.success+"本／失敗 "+x.failed+"本｜"+(x.bytes/1048576).toFixed(1)+"MB").join("\n"):"バックアップ・復元履歴はまだありません。";}
-  function report(job,heading){const ok=job.items.filter(x=>x.status==="done"),bad=job.items.filter(x=>x.status==="failed"),pending=job.items.filter(x=>x.status!=="done"&&x.status!=="failed");const lines=[heading,"対象 "+job.items.length+"本／完了 "+ok.length+"本／失敗 "+bad.length+"本／未処理 "+pending.length+"本,"SHA-256照合：完了動画 "+ok.filter(x=>x.hash).length+"本","完了動画："+ok.map(x=>x.name).join("、"),bad.length?"失敗動画："+bad.map(x=>x.name+"（"+(x.error||"失敗")+"）").join("、"):"失敗動画なし","このレポートは端末内に保存されます。"];const el=document.getElementById("stage48Report");if(el)el.textContent=lines.join("\n");}
+  function report(job,heading){const ok=job.items.filter(x=>x.status==="done"),bad=job.items.filter(x=>x.status==="failed"),pending=job.items.filter(x=>x.status!=="done"&&x.status!=="failed");const lines=[heading,"対象 "+job.items.length+"本／完了 "+ok.length+"本／失敗 "+bad.length+"本／未処理 "+pending.length+"本","SHA-256照合：完了動画 "+ok.filter(x=>x.hash).length+"本","完了動画："+ok.map(x=>x.name).join("、"),bad.length?"失敗動画："+bad.map(x=>x.name+"（"+(x.error||"失敗")+"）").join("、"):"失敗動画なし","このレポートは端末内に保存されます。"];const el=document.getElementById("stage48Report");if(el)el.textContent=lines.join("\n");}
   async function run(files, retryOnly){
     if(active)return true;
     if(!files?.length)return true;
