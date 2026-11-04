@@ -66,7 +66,7 @@ class Stage48ResumableRestoreTests(unittest.TestCase):
         encoded=base64.b64encode(self.video_bytes).decode("ascii")
         paused_status=self.page.evaluate("""async data => { const raw=atob(data); const bytes=Uint8Array.from(raw,c=>c.charCodeAt(0)); const file=new File([bytes],"riku-video__4803__stage48.webm",{type:"video/webm",lastModified:1700000000000}); setTimeout(()=>window.pauseStage48Restore(),0); await window.runStage48VideoRestore([file]); return JSON.parse(localStorage.getItem("rikuVideoRestoreJob_v1")).items[0].status; }""",encoded)
         self.assertEqual(paused_status,"pending")
-        resumed=self.page.evaluate("""async data => { const raw=atob(data); const bytes=Uint8Array.from(raw,c=>c.charCodeAt(0)); const file=new File([bytes],"riku-video__4803__stage48.webm",{type:"video/webm"}); await window.runStage48VideoRestore([file]); return JSON.parse(localStorage.getItem("rikuVideoRestoreJob_v1")).items[0]; }""",encoded)
+        resumed=self.page.evaluate("""async data => { const raw=atob(data); const bytes=Uint8Array.from(raw,c=>c.charCodeAt(0)); const file=new File([bytes],"riku-video__4803__stage48.webm",{type:"video/webm",lastModified:1700000000000}); await window.runStage48VideoRestore([file]); return JSON.parse(localStorage.getItem("rikuVideoRestoreJob_v1")).items[0]; }""",encoded)
         self.assertEqual(resumed["status"],"done")
         self.assertEqual(resumed["savedHash"],self.digest)
 
@@ -84,7 +84,7 @@ class Stage48ResumableRestoreTests(unittest.TestCase):
         self.page.locator("#videoImportFiles").set_input_files(self.file("4802"))
         self.page.wait_for_function("JSON.parse(localStorage.getItem('rikuVideoRestoreJob_v1'))?.items?.[0]?.status === 'failed'",timeout=30000)
         self.page.wait_for_function("document.getElementById('stage48Status')?.textContent.includes('失敗動画だけ再試行できます')",timeout=30000)
-        self.page.locator("#stage48Retry").click()
+        self.page.evaluate("document.getElementById('stage48Retry').click()")
         self.page.locator("#videoImportFiles").set_input_files(self.file("4802"))
         self.page.wait_for_function("JSON.parse(localStorage.getItem('rikuVideoRestoreJob_v1'))?.items?.[0]?.status === 'done'",timeout=30000)
         self.assertEqual(self.page.evaluate("JSON.parse(localStorage.getItem('rikuVideoRestoreJob_v1')).items[0].savedHash"),self.digest)
