@@ -89,6 +89,14 @@ class Stage55FormEvidenceQualityTests(unittest.TestCase):
         self.assertEqual(result["joint_visibility_rate"]["right_knee"], 0.0)
         self.assertIn("right_knee", result["low_visibility_joints"])
 
+    def test_boolean_landmark_values_are_not_counted_as_visible(self):
+        result = self.build([
+            {"person_height_ratio": 0.6, "landmarks": {"right_knee": [True, 0.5, 0.99]}},
+            {"person_height_ratio": 0.6, "landmarks": {"right_knee": [0.5, True, 0.99]}},
+            {"person_height_ratio": 0.6, "landmarks": {"right_knee": [0.5, 0.5, True]}},
+        ])
+        self.assertEqual(result["joint_visibility_rate"]["right_knee"], 0.0)
+
     def test_non_list_frame_input_is_treated_as_empty(self):
         result = self.build(None)
         self.assertEqual(result["sampled_pose_frames"], 0)
