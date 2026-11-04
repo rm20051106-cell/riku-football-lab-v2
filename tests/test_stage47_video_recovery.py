@@ -88,8 +88,8 @@ class Stage47VideoRecoveryTests(unittest.TestCase):
         old = base64.b64encode(b"original-video-sentinel").decode("ascii")
         page.evaluate("""old => {
             state.clips = [
-                {id: 4702, title: 'Existing', hasVideo: true},
-                {id: 4703, title: 'New', hasVideo: false}
+                {id: 4702, date: today(), title: 'Existing', hasVideo: true},
+                {id: 4703, date: today(), title: 'New', hasVideo: false}
             ];
             persist();
             const bytes = Uint8Array.from(atob(old), c => c.charCodeAt(0));
