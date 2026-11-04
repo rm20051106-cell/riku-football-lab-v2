@@ -13,7 +13,9 @@
       host.setAttribute("role", "status");
       host.setAttribute("aria-live", "polite");
       const input = document.getElementById("videoImportFiles");
-      if (input && input.parentElement) input.parentElement.insertBefore(host, document.getElementById("videoImportProgress"));
+      const progress = document.getElementById("videoImportProgress");
+      const parent = progress?.parentElement || input?.parentElement;
+      if (parent) parent.insertBefore(host, progress?.parentElement === parent ? progress : null);
     }
     return host;
   }
@@ -135,7 +137,14 @@
     const originalState = JSON.parse(JSON.stringify(state));
     const originalStored = localStorage.getItem(KEY);
     const keys = [...new Set(uniqueRows.map(row => row.key))];
-    const originals = await snapshotVideoRows(keys);
+    let originals;
+    try { originals = await snapshotVideoRows(keys); }
+    catch (error) {
+      host.textContent = "復元中止：端末内の既存動画を安全に読み取れませんでした。\\n" + (error.message || String(error)) + "\\n現在の動画・分析記録は変更していません。";
+      updateVideoTaskProgress("videoImportProgress", "既存動画の事前確認に失敗しました。データは変更していません。", 0);
+      alert(host.textContent);
+      return;
+    }
     const collisions = [];
     const exactDuplicates = [];
     const replacementRows = [];
@@ -148,7 +157,7 @@
       } else replacementRows.push(row);
     }
 
-    const probeRows = replacementRows;
+    const probeRows = uniqueRows;
     for (let index = 0; index < probeRows.length; index++) {
       const row = probeRows[index];
       updateVideoTaskProgress("videoImportProgress", "動画の再生可能性を事前確認しています… " + (index + 1) + " / " + probeRows.length, Math.round(5 + (index / Math.max(1, probeRows.length)) * 25));
@@ -182,7 +191,7 @@
     const preview = [
       "復元前プレビュー",
       "対象動画 " + uniqueRows.length + "本／合計 " + (totalBytes / 1024 / 1024).toFixed(1) + "MB",
-      "新規復元 " + replacementRows.length + "本／同一動画のためスキップ " + exactDuplicates.length + "本／上書き確認が必要 " + collisions.length + "本",
+      "新規復元 " + (replacementRows.length - collisions.length) + "本／上書き " + collisions.length + "本／同一動画のためスキップ " + exactDuplicates.length + "本",
       "動画形式・再生メタデータの事前確認：成功",
       estimateNote,
       "対象記録：" + uniqueRows.map(row => row.kind + "「" + row.record.title + "」").join("、"),
