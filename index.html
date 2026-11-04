@@ -4207,7 +4207,7 @@ formKind.addEventListener('change',renderChecks);
 load();renderChecks();renderAll();renderKickManualReview();if(typeof apiBaseUrl!=='undefined'){apiBaseUrl.value=state.settings.apiBaseUrl||'';apiStatus.textContent=state.settings.apiBaseUrl?'保存済み：'+state.settings.apiBaseUrl:'未設定'}
 </script>
 <script>
-if("serviceWorker" in navigator && location.protocol === "https:"){
+if("serviceWorker" in navigator && window.isSecureContext){
  window.addEventListener("load",()=>{
   navigator.serviceWorker.register("./sw.js",{scope:"./"}).then(registration=>{
    const status=document.getElementById("pwaStatus");
