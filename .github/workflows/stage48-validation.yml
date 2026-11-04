@@ -1,9 +1,9 @@
-name: Stage 48 video recovery integrity validation
+name: Stage 48 resumable video backup validation
 
 on:
   push:
     branches:
-      - feature/stage48-video-restore-integrity-20261104
+      - feature/stage48-resumable-video-backup-20261104
   pull_request:
     branches:
       - main
@@ -43,7 +43,8 @@ jobs:
           Path("/tmp/riku-inline.js").write_text("\n".join(scripts), encoding="utf-8")
           PY
           node --check /tmp/riku-inline.js
-          node --check stage48-video-recovery.js
+          node --check stage47-video-recovery.js
+          node --check stage48-video-restore.js
           node --check sw.js
       - name: Run complete unit and browser regression suite
         run: python -m unittest discover -s tests -v
