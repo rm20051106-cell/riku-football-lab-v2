@@ -88,10 +88,12 @@
       const done=job.items.filter(x=>x.status==="done").length;
       status(paused?"一時停止しました。動画を同じファイル名で選び直すと続きから再開します。":remaining?"未処理動画があります。選び直して再開してください。":failed?"完了（一部失敗）。失敗動画だけ再試行できます。":"全動画の復元とSHA-256照合が完了しました。");
       if(!remaining){addHistory({at:new Date().toISOString(),action:"復元",success:done,failed,bytes:job.items.filter(x=>x.status==="done").reduce((n,x)=>n+x.size,0)});renderHistory();}
+      if(!paused && !remaining){try{if(typeof scanSavedVideoIntegrity==="function")await scanSavedVideoIntegrity();if(typeof refreshVideoStorageStatus==="function")await refreshVideoStorageStatus();}catch(error){console.warn("Stage 48 final integrity scan",error);}}
       report(job,paused?"中断レポート":"復元完了レポート");
     }finally{active=false;}
     return true;
   }
+  window.hashStage48Blob=async blob=>{paused=false;return hashBlob(blob);};
   window.runStage48VideoRestore=files=>run(files,false);
   window.retryStage48FailedVideos=files=>run(files,true);
   window.addEventListener("change",event=>{
