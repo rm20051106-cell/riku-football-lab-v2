@@ -6,7 +6,7 @@ on:
       - feature/stage54-restore-checkpoint-integrity-20261105
 
 concurrency:
-  group: stage54-checkpoint-validation-\${{ github.ref }}
+  group: stage54-checkpoint-validation-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
