@@ -119,6 +119,17 @@ def analyze_frame(frame, pose):
             round(float(lm[mp_pose.PoseLandmark[name].value].y), 5),
             round(float(lm[mp_pose.PoseLandmark[name].value].visibility), 4),
         ]
+    visible_points_xy = [(float(item.x), float(item.y)) for item in lm
+                         if float(item.visibility) >= 0.5 and 0 <= float(item.x) <= 1 and 0 <= float(item.y) <= 1]
+    person_bbox = None
+    person_height_ratio = None
+    if visible_points_xy:
+        min_x = min(point[0] for point in visible_points_xy)
+        max_x = max(point[0] for point in visible_points_xy)
+        min_y = min(point[1] for point in visible_points_xy)
+        max_y = max(point[1] for point in visible_points_xy)
+        person_bbox = [round(min_x, 4), round(min_y, 4), round(max_x, 4), round(max_y, 4)]
+        person_height_ratio = round(max_y - min_y, 4)
     return {
         "visible_landmarks": visible,
         "measurement_source": "MediaPipe Pose landmark geometry",
@@ -128,7 +139,50 @@ def analyze_frame(frame, pose):
         "left_hip_angle_deg": left_hip,
         "right_hip_angle_deg": right_hip,
         "trunk_lean_image_angle_deg": trunk_angle,
+        "person_bbox_norm": person_bbox,
+        "person_height_ratio": person_height_ratio,
         "landmarks": landmarks,
+    }
+
+
+def build_form_capture_quality(frames):
+    """Summarize framing and joint visibility without turning missing evidence into scores."""
+    ratios = [float(frame["person_height_ratio"]) for frame in frames
+              if isinstance(frame.get("person_height_ratio"), (int, float))]
+    def median(values):
+        ordered = sorted(values)
+        if not ordered:
+            return None
+        middle = len(ordered) // 2
+        return ordered[middle] if len(ordered) % 2 else (ordered[middle - 1] + ordered[middle]) / 2
+    joint_names = ["left_shoulder", "right_shoulder", "left_hip", "right_hip",
+                   "left_knee", "right_knee", "left_ankle", "right_ankle",
+                   "left_heel", "right_heel", "left_foot_index", "right_foot_index"]
+    visibility = {}
+    for name in joint_names:
+        observed = [frame.get("landmarks", {}).get(name) for frame in frames]
+        observed = [point for point in observed if isinstance(point, (list, tuple)) and len(point) >= 3]
+        visibility[name] = round(sum(1 for point in observed if float(point[2]) >= 0.5) / len(observed), 3) if observed else None
+    median_height = median(ratios)
+    if len(ratios) < 3:
+        status = "insufficient_samples"
+        guidance = "人物サイズを安定して評価できません。全身が映る動画を撮り直してください。"
+    elif median_height < 0.25:
+        status = "retake_recommended_subject_too_small"
+        guidance = "選手が小さく映っています。カメラを近づけ、頭から足先まで画面に入れて撮り直してください。"
+    elif median_height < 0.40:
+        status = "usable_with_caution_subject_small"
+        guidance = "選手がやや小さく映っています。動作確認はできますが、関節角度の数値は慎重に扱ってください。"
+    else:
+        status = "usable_for_review"
+        guidance = "人物サイズは確認用の目安を満たしています。関節ごとの可視性と撮影角度を別途確認してください。"
+    return {
+        "status": status,
+        "sampled_pose_frames": len(frames),
+        "median_person_height_ratio": round(median_height, 3) if median_height is not None else None,
+        "joint_visibility_rate": visibility,
+        "guidance": guidance,
+        "note": "人物サイズは画面内の姿勢ランドマーク範囲からの目安です。画質・遮蔽・撮影角度を保証せず、フォームの良否や測定精度の証明ではありません。",
     }
 
 
@@ -671,6 +725,7 @@ def process_video(path: str, mode: str, camera_angle: str = "未選択", progres
         "frames": frames,
     }
     if mode == "form":
+        summary["capture_quality"] = build_form_capture_quality(frames)
         summary["kick_phase_candidates"] = kick_phase_candidates
     if mode == "match":
         jersey_counts = {}
