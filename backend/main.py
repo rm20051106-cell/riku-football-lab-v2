@@ -577,12 +577,15 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
     return {"ok": True, "mode": "match", "engine": "MediaPipe Pose Landmarker multi-pose + Tesseract OCR", "summary": summary}
 
 
-def build_kick_phase_candidates(frames, sampling_interval_seconds):
+def build_kick_phase_candidates(frames, sampling_interval_seconds, preferred_foot="right"):
     """Return conservative image-motion time candidates, never definitive kick phases."""
     interval = float(sampling_interval_seconds or 0)
+    preferred_foot = preferred_foot if preferred_foot in ("left", "right") else "right"
     result = {
         "sampling_interval_seconds": round(interval, 3),
         "sampling_rate_fps": round(1 / interval, 2) if interval > 0 else None,
+        "preferred_kicking_foot": preferred_foot,
+        "preferred_foot_note": "右足キックを重点確認する初期設定です。反対足の候補も同じ条件で保持し、本人・蹴り足は撮影者が確認してください。" if preferred_foot == "right" else "左足キックを重点確認する初期設定です。反対足の候補も同じ条件で保持し、本人・蹴り足は撮影者が確認してください。",
         "method": "foot_index landmark image-coordinate motion",
         "limitations": [
             "画像上の足先移動候補であり、実空間速度・ボール接触・キック成功を示しません。",
@@ -633,12 +636,16 @@ def build_kick_phase_candidates(frames, sampling_interval_seconds):
                     }
                 foot_result["status"] = "candidate_only"
         result["feet"][side] = foot_result
+    focus = result["feet"][preferred_foot]
+    result["preferred_foot_peak_candidate"] = focus.get("peak_candidate")
+    result["preferred_foot_follow_through_candidate"] = focus.get("post_peak_candidate")
+    result["opposite_foot_candidate"] = result["feet"]["left" if preferred_foot == "right" else "right"].get("peak_candidate")
     result["phases"] = [
         {"key": "approach", "label": "助走", "status": "manual_review_required", "time_seconds": None},
         {"key": "plant", "label": "軸足接地", "status": "manual_review_required", "time_seconds": None},
-        {"key": "swing", "label": "蹴り脚の振り出し", "status": "candidate_only", "time_source": "foot_motion_peak"},
+        {"key": "swing", "label": "蹴り脚の振り出し", "status": "candidate_only", "time_source": "preferred_foot_peak", "foot": preferred_foot},
         {"key": "impact", "label": "インパクト", "status": "manual_review_required", "time_seconds": None},
-        {"key": "follow_through", "label": "フォロースルー", "status": "candidate_only", "time_source": "post_peak_motion_drop"},
+        {"key": "follow_through", "label": "フォロースルー", "status": "candidate_only", "time_source": "preferred_foot_post_peak_drop", "foot": preferred_foot},
     ]
     if interval > 0.75:
         result["limitations"].append("撮影・解析サンプル間隔が粗いため、動作ピーク候補を表示していません。")
