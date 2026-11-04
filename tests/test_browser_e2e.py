@@ -211,7 +211,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         }""")
         page.locator("#videoImportFiles").set_input_files([str(x) for x in exported_paths])
         page.wait_for_function(
-            "() => window.__lastVideoImportAlert.includes('動画ファイルの復元が完了しました')",
+            "() => window.__lastVideoImportAlert.includes('動画ファイルの復元処理が完了しました')",
             timeout=30000,
         )
         import_result = page.evaluate("window.__lastVideoImportAlert")
