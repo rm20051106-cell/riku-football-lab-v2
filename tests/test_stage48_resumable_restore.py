@@ -65,7 +65,7 @@ class Stage48ResumableRestoreTests(unittest.TestCase):
         self.seed([4803])
         encoded=base64.b64encode(self.video_bytes).decode("ascii")
         paused_status=self.page.evaluate("""async data => { const raw=atob(data); const bytes=Uint8Array.from(raw,c=>c.charCodeAt(0)); const file=new File([bytes],"riku-video__4803__stage48.webm",{type:"video/webm"}); setTimeout(()=>window.pauseStage48Restore(),0); await window.runStage48VideoRestore([file]); return JSON.parse(localStorage.getItem("rikuVideoRestoreJob_v1")).items[0].status; }""",encoded)
-        self.assertEqual(paused_status,"failed")
+        self.assertEqual(paused_status,"pending")
         resumed=self.page.evaluate("""async data => { const raw=atob(data); const bytes=Uint8Array.from(raw,c=>c.charCodeAt(0)); const file=new File([bytes],"riku-video__4803__stage48.webm",{type:"video/webm"}); await window.runStage48VideoRestore([file]); return JSON.parse(localStorage.getItem("rikuVideoRestoreJob_v1")).items[0]; }""",encoded)
         self.assertEqual(resumed["status"],"done")
         self.assertEqual(resumed["savedHash"],self.digest)
