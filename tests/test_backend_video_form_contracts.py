@@ -53,6 +53,22 @@ class BackendVideoFormAnalysisContracts(unittest.TestCase):
         self.assertIn("abs(trunk_dx) * image_width", SOURCE)
         self.assertIn("abs(trunk_dy) * image_height", SOURCE)
 
+    def test_kick_foot_motion_corrects_non_square_frame_aspect_ratio(self):
+        helper = function_node("image_motion_per_width_per_second")
+        helper_source = ast.get_source_segment(SOURCE, helper)
+        self.assertIn("dx = (float(a[0]) - float(b[0])) * width", helper_source)
+        self.assertIn("dy = (float(a[1]) - float(b[1])) * height", helper_source)
+        self.assertIn("np.hypot(dx, dy) / width / elapsed", helper_source)
+        self.assertEqual(SOURCE.count("image_motion_per_width_per_second(a, b, dt, frame.shape[1], frame.shape[0])"), 2)
+
+    def test_kick_phase_candidates_require_sufficient_sampling_and_remain_provisional(self):
+        phase_builder = function_node("build_kick_phase_candidates")
+        source = ast.get_source_segment(SOURCE, phase_builder)
+        self.assertIn("interval <= 0.75", source)
+        self.assertIn("len(valid) >= 4", source)
+        self.assertIn('"status": "manual_review_required"', source)
+        self.assertIn('"status": "candidate_only"', source)
+
     def test_invisible_joint_measurements_are_not_fabricated(self):
         self.assertIn('"insufficient_visibility"', SOURCE)
         self.assertIn('"left_knee_angle_deg": left_knee', SOURCE)
