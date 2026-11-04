@@ -106,6 +106,9 @@
   // Backup export audit: record JSON backup generation without altering its payload.
   const originalExportData=window.exportData;
   if(typeof originalExportData==="function")window.exportData=async function(){const before=history().length;await originalExportData();if(history().length===before){addHistory({at:new Date().toISOString(),action:"記録JSONバックアップ",success:1,failed:0,bytes:0});renderHistory();}};
+  const originalPrepareVideoExport=window.prepareVideoExport;
+  if(typeof originalPrepareVideoExport==="function")window.prepareVideoExport=async function(){await originalPrepareVideoExport();try{const stats=await readVideoStorageUsage();addHistory({at:new Date().toISOString(),action:"動画バックアップ一覧作成",success:stats.count,failed:stats.invalid,bytes:stats.bytes});renderHistory();}catch(error){console.warn("Stage 48 backup history",error);}};
+  document.addEventListener("visibilitychange",()=>{if(document.hidden&&active){paused=true;status("Safariがバックグラウンドになりました。安全な区切りで一時停止します。前面に戻ったら動画を選び直して再開してください。");}});
   window.__stage48Intercept=true;
   panel();
 })();
