@@ -39,6 +39,7 @@ class Stage61TemporalMovementSupportTests(unittest.TestCase):
         result = build({"sampling_interval_seconds": 1, "frames": frames})
         self.assertTrue(result)
         self.assertEqual(result[0]["time_seconds"], 1.0)
+        self.assertGreaterEqual(result[0]["temporal_support_samples"], 1)
         self.assertFalse(result[0]["is_football_action_confirmed"])
 
     def test_missing_sample_gap_cannot_support_a_peak(self):
