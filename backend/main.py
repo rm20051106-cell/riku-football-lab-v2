@@ -62,6 +62,16 @@ def angle(a, b, c, image_width=1, image_height=1):
     cosine = float(np.clip(np.dot(ba, bc) / denom, -1.0, 1.0))
     return round(float(np.degrees(np.arccos(cosine))), 1)
 
+def image_motion_per_width_per_second(a, b, dt, image_width, image_height):
+    """Aspect-ratio-corrected 2D image displacement, expressed in frame-widths/second."""
+    width, height, elapsed = float(image_width or 0), float(image_height or 0), float(dt or 0)
+    if width <= 0 or height <= 0 or elapsed <= 0 or a is None or b is None:
+        return None
+    dx = (float(a[0]) - float(b[0])) * width
+    dy = (float(a[1]) - float(b[1])) * height
+    return round(float(np.hypot(dx, dy) / width / elapsed), 4)
+
+
 def lm_point(landmarks, name):
     idx = mp_pose.PoseLandmark[name.upper()].value
     p = landmarks[idx]
@@ -476,7 +486,7 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
             dt = current.get("time_seconds", 0) - prev.get("time_seconds", 0) if prev else 0
             unique_person = current.get("detected_people_in_frame") == 1 and prev and prev.get("detected_people_in_frame") == 1
             if unique_person and a and b and dt > 0 and a[2] >= 0.5 and b[2] >= 0.5:
-                current[side + "_foot_image_motion_per_sec"] = round(float(np.linalg.norm(np.array(a[:2]) - np.array(b[:2])) / dt), 4)
+                current[side + "_foot_image_motion_per_sec"] = image_motion_per_width_per_second(a, b, dt, frame.shape[1], frame.shape[0])
             else:
                 current[side + "_foot_image_motion_per_sec"] = None
     track_summary = associate_person_tracks(frames, max_gap_seconds=max(9.0, actual_interval * 2.1))
@@ -636,8 +646,8 @@ def process_video(path: str, mode: str, camera_angle: str = "未選択", progres
     knees = [x[k] for x in frames for k in ("left_knee_angle_deg", "right_knee_angle_deg") if x.get(k) is not None]
     trunks = [x["trunk_lean_image_angle_deg"] for x in frames if x.get("trunk_lean_image_angle_deg") is not None]
     hips = [x[k] for x in frames for k in ("left_hip_angle_deg", "right_hip_angle_deg") if x.get(k) is not None]
-    # Estimate ankle/foot landmark movement between sampled frames in normalized image coordinates.
-    # Values are image-widths per second, not real-world speed; camera motion and perspective affect them.
+    # Estimate ankle/foot landmark movement after converting normalized x/y to pixel geometry.
+    # Values are frame-widths per second, not real-world speed; camera motion and perspective affect them.
     for i, current in enumerate(frames):
         for side in ("left", "right"):
             key = side + "_foot_index"
@@ -646,7 +656,7 @@ def process_video(path: str, mode: str, camera_angle: str = "未選択", progres
             b = prev.get("landmarks", {}).get(key) if prev else None
             dt = (current.get("time_seconds", 0) - prev.get("time_seconds", 0)) if prev else 0
             if a and b and dt > 0 and a[2] >= 0.5 and b[2] >= 0.5:
-                current[side + "_foot_image_motion_per_sec"] = round(float(np.linalg.norm(np.array(a[:2]) - np.array(b[:2])) / dt), 4)
+                current[side + "_foot_image_motion_per_sec"] = image_motion_per_width_per_second(a, b, dt, frame.shape[1], frame.shape[0])
             else:
                 current[side + "_foot_image_motion_per_sec"] = None
     kick_phase_candidates = build_kick_phase_candidates(frames, actual_interval) if mode == "form" else None
