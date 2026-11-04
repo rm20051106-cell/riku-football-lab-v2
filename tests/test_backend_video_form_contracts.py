@@ -39,6 +39,20 @@ class BackendVideoFormAnalysisContracts(unittest.TestCase):
         self.assertIn("インパクト", source)
         self.assertIn("軸足接地", source)
 
+
+    def test_pose_angles_use_pixel_aspect_ratio_not_normalized_xy(self):
+        angle_source = ast.get_source_segment(SOURCE, function_node("angle"))
+        self.assertIn("float(a[0]) * image_width", angle_source)
+        self.assertIn("float(a[1]) * image_height", angle_source)
+        self.assertIn("float(b[0]) * image_width", angle_source)
+        self.assertIn("float(c[1]) * image_height", angle_source)
+
+    def test_all_pose_angle_pipelines_receive_actual_frame_dimensions(self):
+        self.assertIn("def analyze_task_pose(lm, image_width=1, image_height=1):", SOURCE)
+        self.assertEqual(SOURCE.count("analyze_task_pose(pose_lm, frame.shape[1], frame.shape[0])"), 2)
+        self.assertIn("abs(trunk_dx) * image_width", SOURCE)
+        self.assertIn("abs(trunk_dy) * image_height", SOURCE)
+
     def test_invisible_joint_measurements_are_not_fabricated(self):
         self.assertIn('"insufficient_visibility"', SOURCE)
         self.assertIn('"left_knee_angle_deg": left_knee', SOURCE)
