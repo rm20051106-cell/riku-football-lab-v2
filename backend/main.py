@@ -146,51 +146,117 @@ def analyze_frame(frame, pose):
 
 
 def build_form_capture_quality(frames):
-    """Summarize framing and joint visibility without turning missing evidence into scores."""
-    ratios = [float(frame["person_height_ratio"]) for frame in frames
-              if isinstance(frame.get("person_height_ratio"), (int, float))]
+    """Summarize framing and metric evidence; missing or malformed samples never count as visible."""
+    frames = [frame for frame in frames if isinstance(frame, dict)]
+    ratios = []
+    for frame in frames:
+        value = frame.get("person_height_ratio")
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            try:
+                number = float(value)
+                if np.isfinite(number) and 0 < number <= 1:
+                    ratios.append(number)
+            except (TypeError, ValueError, OverflowError):
+                pass
+
     def median(values):
         ordered = sorted(values)
         if not ordered:
             return None
         middle = len(ordered) // 2
         return ordered[middle] if len(ordered) % 2 else (ordered[middle - 1] + ordered[middle]) / 2
+
     joint_names = ["left_shoulder", "right_shoulder", "left_hip", "right_hip",
                    "left_knee", "right_knee", "left_ankle", "right_ankle",
                    "left_heel", "right_heel", "left_foot_index", "right_foot_index"]
+    joint_labels = {
+        "left_shoulder": "左肩", "right_shoulder": "右肩",
+        "left_hip": "左股関節", "right_hip": "右股関節",
+        "left_knee": "左膝", "right_knee": "右膝",
+        "left_ankle": "左足首", "right_ankle": "右足首",
+        "left_heel": "左かかと", "right_heel": "右かかと",
+        "left_foot_index": "左足先", "right_foot_index": "右足先",
+    }
     visibility = {}
     for name in joint_names:
-        # Missing landmark entries count as unobserved samples. Excluding them
-        # would inflate visibility when a joint disappears from some frames.
+        # Missing, non-finite, out-of-range and low-confidence points are unobserved.
         visible_count = 0
         for frame in frames:
             point = frame.get("landmarks", {}).get(name)
-            if isinstance(point, (list, tuple)) and len(point) >= 3:
-                try:
-                    visible_count += int(float(point[2]) >= 0.5)
-                except (TypeError, ValueError):
-                    pass
+            if not isinstance(point, (list, tuple)) or len(point) < 3:
+                continue
+            try:
+                confidence = float(point[2])
+                x, y = float(point[0]), float(point[1])
+                if (np.isfinite(confidence) and np.isfinite(x) and np.isfinite(y)
+                        and 0 <= x <= 1 and 0 <= y <= 1 and confidence >= 0.5):
+                    visible_count += 1
+            except (TypeError, ValueError, OverflowError):
+                continue
         visibility[name] = round(visible_count / len(frames), 3) if frames else None
+
+    metric_fields = {
+        "left_knee": "left_knee_angle_deg",
+        "right_knee": "right_knee_angle_deg",
+        "left_hip": "left_hip_angle_deg",
+        "right_hip": "right_hip_angle_deg",
+        "trunk": "trunk_lean_image_angle_deg",
+        "left_foot_motion": "left_foot_image_motion_per_sec",
+        "right_foot_motion": "right_foot_image_motion_per_sec",
+    }
+    metric_coverage = {}
+    for metric, field in metric_fields.items():
+        count = 0
+        for frame in frames:
+            value = frame.get(field)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                try:
+                    count += int(np.isfinite(float(value)))
+                except (TypeError, ValueError, OverflowError):
+                    pass
+        metric_coverage[metric] = {
+            "measured_samples": count,
+            "coverage_rate": round(count / len(frames), 3) if frames else None,
+        }
+
     median_height = median(ratios)
+    low_visibility = [name for name in joint_names
+                      if visibility[name] is not None and visibility[name] < 0.5]
+    critical_joints = ["left_hip", "right_hip", "left_knee", "right_knee",
+                       "left_ankle", "right_ankle", "left_foot_index", "right_foot_index"]
+    critical_rates = [visibility[name] for name in critical_joints if visibility[name] is not None]
+    severe_count = sum(rate < 0.2 for rate in critical_rates)
+
     if len(ratios) < 3:
         status = "insufficient_samples"
         guidance = "人物サイズを安定して評価できません。全身が映る動画を撮り直してください。"
     elif median_height < 0.25:
         status = "retake_recommended_subject_too_small"
         guidance = "選手が小さく映っています。カメラを近づけ、頭から足先まで画面に入れて撮り直してください。"
+    elif len(critical_rates) >= 6 and severe_count >= 3:
+        status = "retake_recommended_joint_visibility"
+        guidance = "股関節・膝・足首・足先の複数箇所が十分に映っていません。カメラ位置と全身の画角を調整して撮り直してください。"
+    elif low_visibility:
+        status = "usable_with_caution_joint_visibility"
+        labels = "、".join(joint_labels[name] for name in low_visibility)
+        guidance = "一部の関節が動画内で十分に確認できません（" + labels + "）。該当する角度・移動量は未計測として慎重に扱ってください。"
     elif median_height < 0.40:
         status = "usable_with_caution_subject_small"
         guidance = "選手がやや小さく映っています。動作確認はできますが、関節角度の数値は慎重に扱ってください。"
     else:
         status = "usable_for_review"
-        guidance = "人物サイズは確認用の目安を満たしています。関節ごとの可視性と撮影角度を別途確認してください。"
+        guidance = "人物サイズと関節の可視性は確認用の目安を満たしています。撮影角度による奥行きの制限は残ります。"
+
     return {
         "status": status,
         "sampled_pose_frames": len(frames),
+        "valid_person_size_samples": len(ratios),
         "median_person_height_ratio": round(median_height, 3) if median_height is not None else None,
         "joint_visibility_rate": visibility,
+        "low_visibility_joints": low_visibility,
+        "metric_sample_coverage": metric_coverage,
         "guidance": guidance,
-        "note": "人物サイズは画面内の姿勢ランドマーク範囲からの目安です。画質・遮蔽・撮影角度を保証せず、フォームの良否や測定精度の証明ではありません。",
+        "note": "可視率は全サンプルを分母にし、欠測・画面外・不正値を未観測として扱います。これは撮影・計測証拠の品質目安であり、フォームの良否や測定精度の証明ではありません。",
     }
 
 
