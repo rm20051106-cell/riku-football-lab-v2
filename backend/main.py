@@ -148,13 +148,20 @@ def analyze_frame(frame, pose):
 def build_form_capture_quality(frames):
     """Summarize framing and metric evidence; missing or malformed samples never count as visible."""
     frames = [frame for frame in frames if isinstance(frame, dict)]
+
+    def is_finite_number(value):
+        try:
+            number = float(value)
+            return number == number and number not in (float("inf"), float("-inf"))
+        except (TypeError, ValueError, OverflowError):
+            return False
     ratios = []
     for frame in frames:
         value = frame.get("person_height_ratio")
         if isinstance(value, (int, float)) and not isinstance(value, bool):
             try:
                 number = float(value)
-                if np.isfinite(number) and 0 < number <= 1:
+                if is_finite_number(number) and 0 < number <= 1:
                     ratios.append(number)
             except (TypeError, ValueError, OverflowError):
                 pass
@@ -188,7 +195,7 @@ def build_form_capture_quality(frames):
             try:
                 confidence = float(point[2])
                 x, y = float(point[0]), float(point[1])
-                if (np.isfinite(confidence) and np.isfinite(x) and np.isfinite(y)
+                if (is_finite_number(confidence) and is_finite_number(x) and is_finite_number(y)
                         and 0 <= x <= 1 and 0 <= y <= 1 and confidence >= 0.5):
                     visible_count += 1
             except (TypeError, ValueError, OverflowError):
@@ -211,7 +218,7 @@ def build_form_capture_quality(frames):
             value = frame.get(field)
             if isinstance(value, (int, float)) and not isinstance(value, bool):
                 try:
-                    count += int(np.isfinite(float(value)))
+                    count += int(is_finite_number(value))
                 except (TypeError, ValueError, OverflowError):
                     pass
         metric_coverage[metric] = {
