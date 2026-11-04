@@ -43,7 +43,7 @@ class Stage61TemporalMovementSupportTests(unittest.TestCase):
 
     def test_missing_sample_gap_cannot_support_a_peak(self):
         frames = [
-            self.frame(0, 0.10),
+            self.frame(0, 0.01),
             self.frame(1, 0.30),
             self.frame(3, 0.12),
             self.frame(4, 0.02),
