@@ -872,7 +872,7 @@ def analyze_candidate_clip_dense(clip_path, jersey_numbers=None, sample_rate=1.5
                 detected = landmarker.detect_for_video(mp_image, timestamp_ms)
                 people = []
                 for person_index, pose_lm in enumerate(detected.pose_landmarks or []):
-                    metrics = analyze_task_pose(pose_lm)
+                    metrics = analyze_task_pose(pose_lm, frame.shape[1], frame.shape[0])
                     ocr = read_jersey_number(frame, metrics["landmarks"], targets)
                     for item in ocr:
                         jersey_counts[item["number"]] = jersey_counts.get(item["number"], 0) + 1
