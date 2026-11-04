@@ -53,15 +53,18 @@
   async function run(files, retryOnly){
     if(active || !files?.length) return true;
     active=true;paused=false;selectedFiles=[...files];panel();
-    const byKey=new Map(files.map(file=>[file.name+"|"+file.size+"|"+file.lastModified,file]));
+    // iOS/Safari may assign a different lastModified when the same backup is selected again.
+    // Locate checkpoints by filename + size, then use SHA-256 to prove the bytes are identical.
+    const stableKey=value=>value.name+"|"+value.size;
+    const byKey=new Map(files.map(file=>[stableKey(file),file]));
     const old=readJob();
     let job=old&&old.items?.some(item=>item.status!=="done")?old:{id:"restore-"+Date.now(),action:"復元",at:new Date().toISOString(),items:[]};
     if(!job.items.length) job.items=files.map(file=>({name:file.name,size:file.size,lastModified:file.lastModified,status:"pending",hash:null,savedHash:null,error:null}));
     for(const file of files){
-      const key=file.name+"|"+file.size+"|"+file.lastModified;
-      if(!job.items.some(item=>item.name+"|"+item.size+"|"+item.lastModified===key)) job.items.push({name:file.name,size:file.size,lastModified:file.lastModified,status:"pending",hash:null,savedHash:null,error:null});
+      const key=stableKey(file);
+      if(!job.items.some(item=>stableKey(item)===key)) job.items.push({name:file.name,size:file.size,lastModified:file.lastModified,status:"pending",hash:null,savedHash:null,error:null});
     }
-    const work=job.items.filter(item=>byKey.has(item.name+"|"+item.size+"|"+item.lastModified)&&(retryOnly?item.status==="failed":item.status!=="done"));
+    const work=job.items.filter(item=>byKey.has(stableKey(item))&&(retryOnly?item.status==="failed":item.status!=="done"));
     if(!work.length){status("再開対象がありません。中断した動画ファイルを選び直してください。");active=false;return true;}
     saveJob(job);
     try{
@@ -69,12 +72,14 @@
       // remains responsible for atomic writes/rollback across this batch.
       const ready=[];
       for(let i=0;i<work.length;i++){
-        const item=work[i],file=byKey.get(item.name+"|"+item.size+"|"+item.lastModified);
+        const item=work[i],file=byKey.get(stableKey(item));
         if(paused) break;
         try{
           status("元動画SHA-256計算中："+file.name+"（"+(i+1)+"/"+work.length+"）");
-          item.hash=await hashBlob(file,p=>status("元動画SHA-256計算中："+file.name+" "+Math.round(p*100)+"%"));
-          item.status="verifying";item.error=null;saveJob(job);ready.push(file);
+          const expectedHash=item.hash;
+          const actualHash=await hashBlob(file,p=>status("元動画SHA-256計算中："+file.name+" "+Math.round(p*100)+"%"));
+          if(expectedHash && expectedHash!==actualHash) throw new Error("同じファイル名・サイズですがSHA-256が異なります。別の動画を誤って選択していないか確認してください");
+          item.hash=actualHash;item.lastModified=file.lastModified;item.status="verifying";item.error=null;saveJob(job);ready.push(file);
         }catch(error){
           if(paused || String(error?.message||error).includes("一時停止しました")){item.status="pending";item.error=null;}else{item.status="failed";item.error=String(error?.message||error).slice(0,240);}saveJob(job);
           if(paused) break;
@@ -87,11 +92,11 @@
         window.__stage48BatchMode=true;
         window.alert=()=>{};
         try{const outcome=await window.runStage47VideoRestore(ready);const preview=document.getElementById("videoRestorePreview")?.textContent||"";if(outcome?.ok===false||outcome===false||/^(復元中止|復元失敗|復元をキャンセル)/.test(preview))throw new Error(outcome?.error||preview.split("\n")[0]||"Stage 47の事前検査・保存に失敗しました");}
-        catch(error){for(const file of ready){const key=file.name+"|"+file.size+"|"+file.lastModified;const item=job.items.find(row=>row.name+"|"+row.size+"|"+row.lastModified===key);if(item&&item.status!=="done"){item.status="failed";item.error=String(error?.message||error).slice(0,240);}}saveJob(job);report(job,"復元失敗レポート");status("復元に失敗しました。失敗動画だけ再試行できます。");}
+        catch(error){for(const file of ready){const key=stableKey(file);const item=job.items.find(row=>stableKey(row)===key);if(item&&item.status!=="done"){item.status="failed";item.error=String(error?.message||error).slice(0,240);}}saveJob(job);report(job,"復元失敗レポート");status("復元に失敗しました。失敗動画だけ再試行できます。");}
         finally{window.alert=priorAlert;if(priorBatchMode===undefined)delete window.__stage48BatchMode;else window.__stage48BatchMode=priorBatchMode;}
         for(const file of ready){
-          const key=file.name+"|"+file.size+"|"+file.lastModified;
-          const item=job.items.find(row=>row.name+"|"+row.size+"|"+row.lastModified===key);
+          const key=stableKey(file);
+          const item=job.items.find(row=>stableKey(row)===key);
           try{
             const match=file.name.match(/^riku-video__(.+?)__(.+)$/);
             if(!match) throw new Error("動画バックアップのファイル名形式が不正です");
