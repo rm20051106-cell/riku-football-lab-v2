@@ -122,6 +122,20 @@ class Stage49VisibilityQualityTests(unittest.TestCase):
                 self.assertTrue(result["captureBlocked"])
                 self.assertIn("検出率", result["note"])
 
+    def test_large_natural_angle_variation_does_not_reduce_measurement_score(self):
+        steady_frames = [
+            {"right_knee_angle_deg": value, "metric_quality": {"right_knee": "measured"}}
+            for value in (160, 161, 159, 160)
+        ]
+        dynamic_frames = [
+            {"right_knee_angle_deg": value, "metric_quality": {"right_knee": "measured"}}
+            for value in (120, 180, 140, 200)
+        ]
+        steady = self.evaluate({"frames": steady_frames})
+        dynamic = self.evaluate({"frames": dynamic_frames})
+        self.assertEqual(steady["score"], dynamic["score"])
+        self.assertGreater(steady["stability"], dynamic["stability"])
+
     def test_legacy_frames_without_metric_quality_remain_compatible(self):
         frames = [{"right_knee_angle_deg": 160} for _ in range(3)]
         result = self.evaluate({"frames": frames})
