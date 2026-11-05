@@ -912,7 +912,11 @@ function buildAiFormAutoScore(sm,cameraAngle){
  }).filter(Number.isFinite);
  const stability=stabilityValues.length?stabilityValues.reduce((a,b)=>a+b,0)/stabilityValues.length:null;
  const baseScore=measured?coverage*70+(stability===null?0:stability/100)*30:null;
- const detectionRate=Number.isFinite(videoScanQuality.pose_detection_rate)&&videoScanQuality.pose_detection_rate>=0&&videoScanQuality.pose_detection_rate<=1?videoScanQuality.pose_detection_rate:1;
+ const hasVideoScanQuality=!!(sm.video_scan_quality&&typeof sm.video_scan_quality==='object');
+ const rawDetectionRate=videoScanQuality.pose_detection_rate;
+ const validDetectionRate=Number.isFinite(rawDetectionRate)&&rawDetectionRate>=0&&rawDetectionRate<=1;
+ if(hasVideoScanQuality&&!validDetectionRate)return {score:null,coverage:0,stability:null,measured:0,total:metrics.length,angle,grade:'採点対象外',missing:metrics.map(m=>m.label),captureBlocked:true,note:'動画全体の姿勢検出率が欠落または不正なため、計測品質スコアを表示しません。動画解析を再実行してください。'};
+ const detectionRate=hasVideoScanQuality?rawDetectionRate:1;
  const score=baseScore===null?null:Math.round(baseScore*detectionRate);
  const grade=score===null?'採点対象外':score>=85?'計測良好':score>=65?'参考計測': '計測不足';
  const missing=metrics.filter(m=>!valid.some(v=>v.key===m.key)).map(m=>m.label);
