@@ -1,6 +1,8 @@
 name: Validate RIKU FOOTBALL LAB
 
 on:
+  push:
+    branches: [feature/riku-match-ai-analysis]
   pull_request:
     branches: [main]
 
