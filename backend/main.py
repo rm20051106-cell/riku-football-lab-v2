@@ -18,6 +18,7 @@ from fastapi import BackgroundTasks, Body, FastAPI, File, Form, HTTPException, R
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from job_store import init_state_store, load_match_jobs, load_match_uploads, save_match_job, save_match_upload, delete_match_upload
+from video_sampling import read_sampled_frame
 
 APP_NAME = "RIKU FOOTBALL LAB Free AI Analysis API"
 MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "120"))
@@ -363,8 +364,11 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
     try:
         with mp_vision.PoseLandmarker.create_from_options(options) as landmarker:
             while sample_index < MATCH_MAX_SAMPLES:
-                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-                ok, frame = cap.read()
+                # Read only sampled frames into full BGR arrays. Sequential grabs avoid
+                # repeated random seeks and reduce per-frame allocation on CPU instances.
+                ok, frame = read_sampled_frame(
+                    cap, interval, first_sample=(sample_index == 0)
+                )
                 if not ok:
                     break
                 current_frame_idx = frame_idx
@@ -776,12 +780,13 @@ def run_match_job(job_id: str, source_path: str, jersey_numbers: str):
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as converted:
             converted_path = converted.name
         command = [
-            "ffmpeg", "-y", "-i", source_path, "-map", "0:v:0", "-an",
+            "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+            "-i", source_path, "-map", "0:v:0", "-an",
             "-vf", "scale='min(960,iw)':-2", "-c:v", "libx264",
-            "-preset", "ultrafast", "-crf", "30", "-pix_fmt", "yuv420p",
-            "-movflags", "+faststart", converted_path,
+            "-preset", "ultrafast", "-crf", "30", "-threads", "2",
+            "-pix_fmt", "yuv420p", "-movflags", "+faststart", converted_path,
         ]
-        converted_result = subprocess.run(command, capture_output=True, text=True, timeout=900)
+        converted_result = subprocess.run(command, capture_output=True, text=True, timeout=1800)
         if converted_result.returncode != 0:
             raise RuntimeError("動画を解析用MP4に変換できませんでした。")
         _set_match_job(job_id, progress=15, stage="動画全体をスキャン中")
