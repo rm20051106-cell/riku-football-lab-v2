@@ -66,6 +66,7 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn("attempt<=3", HTML)
         self.assertIn("AbortController", HTML)
         self.assertIn("/analyze/match/jobs", SOURCE)
+        self.assertIn('"PUT", "DELETE"', SOURCE)
 
 
 if __name__ == "__main__":
