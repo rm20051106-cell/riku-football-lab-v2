@@ -104,6 +104,24 @@ class Stage49VisibilityQualityTests(unittest.TestCase):
         self.assertEqual(partial["detectionRate"], 0.5)
         self.assertEqual(partial["score"], round(full["score"] * 0.5))
 
+    def test_present_but_invalid_video_detection_rate_blocks_score(self):
+        frames = [
+            {"right_knee_angle_deg": value, "metric_quality": {"right_knee": "measured"}}
+            for value in (160, 161, 159, 160)
+        ]
+        for invalid_rate in (None, True, -0.1, 1.01, "0.9"):
+            with self.subTest(rate=invalid_rate):
+                result = self.evaluate({
+                    "frames": frames,
+                    "video_scan_quality": {
+                        "status": "usable_for_review",
+                        "pose_detection_rate": invalid_rate,
+                    },
+                })
+                self.assertIsNone(result["score"])
+                self.assertTrue(result["captureBlocked"])
+                self.assertIn("検出率", result["note"])
+
     def test_legacy_frames_without_metric_quality_remain_compatible(self):
         frames = [{"right_knee_angle_deg": 160} for _ in range(3)]
         result = self.evaluate({"frames": frames})
