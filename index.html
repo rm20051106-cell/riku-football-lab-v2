@@ -911,7 +911,7 @@ function buildAiFormAutoScore(sm,cameraAngle){
   return Math.max(0,Math.min(100,100-(sd/45)*100));
  }).filter(Number.isFinite);
  const stability=stabilityValues.length?stabilityValues.reduce((a,b)=>a+b,0)/stabilityValues.length:null;
- const baseScore=measured?coverage*70+(stability===null?0:stability/100)*30:null;
+ const baseScore=measured?coverage*100:null;
  const hasVideoScanQuality=!!(sm.video_scan_quality&&typeof sm.video_scan_quality==='object');
  const rawDetectionRate=videoScanQuality.pose_detection_rate;
  const validDetectionRate=Number.isFinite(rawDetectionRate)&&rawDetectionRate>=0&&rawDetectionRate<=1;
@@ -920,7 +920,7 @@ function buildAiFormAutoScore(sm,cameraAngle){
  const score=baseScore===null?null:Math.round(baseScore*detectionRate);
  const grade=score===null?'採点対象外':score>=85?'計測良好':score>=65?'参考計測': '計測不足';
  const missing=metrics.filter(m=>!valid.some(v=>v.key===m.key)).map(m=>m.label);
- return {score,coverage:Math.round(coverage*100),stability:stability===null?null:Math.round(stability),detectionRate,measured,total:metrics.length,angle,grade,missing,minimumSamples,note:'これはフォームの上手さ・キック技術の点数ではなく、複数フレームで取得できた姿勢データの取得率・時間的な変動・動画全体の姿勢検出率を組み合わせた計測品質の参考スコアです。撮影品質が不足する動画は採点対象外にし、角度変化が大きいこと自体を悪い動作とは判定しません。'};
+ return {score,coverage:Math.round(coverage*100),stability:stability===null?null:Math.round(stability),detectionRate,measured,total:metrics.length,angle,grade,missing,minimumSamples,note:'これはフォームの上手さ・キック技術の点数ではなく、複数フレームで取得できた姿勢データの取得率と動画全体の姿勢検出率を組み合わせた計測品質の参考スコアです。姿勢変動参考値は別表示で、スコアには含めません。撮影品質が不足する動画は採点対象外にし、角度変化が大きいこと自体を悪い動作とは判定しません。'};
 }
 function renderAiFormAutoScore(score){
  if(!score)return '';
