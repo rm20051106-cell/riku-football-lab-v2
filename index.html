@@ -568,7 +568,7 @@ async function postMatchJobToAI(file,resultElement){
    const initRaw=await init.text();let initData;try{initData=JSON.parse(initRaw)}catch(e){initData=null}
    if(!init.ok||!initData||!initData.upload_id)throw Error('アップロード準備 HTTP '+init.status+'：'+(initData?.detail||initRaw.slice(0,180)));
    uploadId=initData.upload_id;session=initData;
-   localStorage.setItem(storageKey,JSON.stringify({fingerprint,uploadId}));
+   try{localStorage.setItem(storageKey,JSON.stringify({fingerprint,uploadId}))}catch(e){}
   }
   const received=new Set(session.received_chunks||[]);
   for(let part=0;part<chunkCount;part++){
@@ -592,7 +592,7 @@ async function postMatchJobToAI(file,resultElement){
   const complete=await fetch(u+'/analyze/match/uploads/'+encodeURIComponent(uploadId)+'/complete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jersey_numbers:String(state.settings.jersey1)+','+String(state.settings.jersey2)}),credentials:'omit',cache:'no-store'});
   const completeRaw=await complete.text();let created;try{created=JSON.parse(completeRaw)}catch(e){created=null}
   if(!complete.ok||!created||!created.job_id)throw Error('動画の組み立て HTTP '+complete.status+'：'+(created?.detail||completeRaw.slice(0,180)));
-  localStorage.removeItem(storageKey);
+  try{localStorage.removeItem(storageKey)}catch(e){}
   jobId=created.job_id;
   resultElement.textContent='動画を受け付けました。解析ジョブを開始します…';
   while(true){
