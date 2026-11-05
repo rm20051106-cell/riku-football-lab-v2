@@ -3,7 +3,7 @@ name: Stage 56 video and form evidence quality validation
 on:
   push:
     branches:
-      - feature/stage56-video-form-quality-20261105
+      - feature/stage56-resumable-long-video-upload-20261105
 
 concurrency:
   group: stage56-video-form-quality-v2-${{ github.ref }}
