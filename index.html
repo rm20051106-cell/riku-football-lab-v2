@@ -1132,6 +1132,41 @@ async function postVideoToAI(file, endpoint, extra, resultElement){
   resultElement.textContent='解析に失敗：'+msg+'。設定画面の「接続テスト」も確認してください。';
  }
 }
+async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
+ const chunkSize=6*1024*1024;
+ const duration=Number(matchVideo.duration||0);
+ const init=await fetch(getApiUrl()+'/analyze/match/uploads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:file.name||'match-video.mp4',size_bytes:file.size,duration_seconds:Number.isFinite(duration)&&duration>0?duration:null,jersey_numbers:jerseyNumbers}),credentials:'omit',cache:'no-store'});
+ const initRaw=await init.text();let session;try{session=JSON.parse(initRaw)}catch(e){session=null}
+ if(!init.ok||!session?.upload_id)throw Error('分割アップロード開始 HTTP '+init.status+'：'+(session?.detail||initRaw.slice(0,180)));
+ const total=session.total_chunks||Math.ceil(file.size/(session.chunk_size||chunkSize));
+ try{
+  for(let i=0;i<total;i++){
+   const start=i*(session.chunk_size||chunkSize),part=file.slice(start,Math.min(file.size,start+(session.chunk_size||chunkSize)));
+   let succeeded=false,lastError=null;
+   for(let attempt=1;attempt<=3&&!succeeded;attempt++){
+    const fd=new FormData();fd.append('file',part,'chunk-'+i+'.bin');
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),120000);
+    try{
+     const response=await fetch(getApiUrl()+'/analyze/match/uploads/'+encodeURIComponent(session.upload_id)+'/'+i,{method:'PUT',body:fd,signal:controller.signal,credentials:'omit',cache:'no-store'});
+     const raw=await response.text();let body;try{body=JSON.parse(raw)}catch(e){body=null}
+     if(!response.ok)throw Error('分割 '+(i+1)+'/'+total+' HTTP '+response.status+'：'+(body?.detail||raw.slice(0,160)));
+     succeeded=true;
+    }catch(e){lastError=e;if(attempt<3){resultElement.textContent='通信を再試行しています… '+(i+1)+'/'+total+'（'+attempt+'/3）';await new Promise(resolve=>setTimeout(resolve,1200*attempt));}}
+    finally{clearTimeout(timer)}
+   }
+   if(!succeeded)throw lastError||Error('動画の分割送信に失敗しました');
+   resultElement.textContent='動画を分割送信中：'+Math.round(((i+1)/total)*100)+'%（'+(i+1)+'/'+total+'）｜画面を閉じずにお待ちください。';
+  }
+  resultElement.textContent='全データの送信が完了。サーバー側で受信内容を確認しています…';
+  const completed=await fetch(getApiUrl()+'/analyze/match/uploads/'+encodeURIComponent(session.upload_id)+'/complete',{method:'POST',credentials:'omit',cache:'no-store'});
+  const raw=await completed.text();let body;try{body=JSON.parse(raw)}catch(e){body=null}
+  if(!completed.ok||!body?.job_id)throw Error('動画受信の確定 HTTP '+completed.status+'：'+(body?.detail||raw.slice(0,180)));
+  return body;
+ }catch(error){
+  resultElement.textContent='分割送信が中断されました。元動画は端末に残っています。再試行できます。';
+  throw error;
+ }
+}
 async function postMatchJobToAI(file,resultElement){
  const u=getApiUrl();
  if(!u){resultElement.textContent='AIサーバーURLが未設定です。設定画面でURLを保存してください。';return}
@@ -1144,14 +1179,8 @@ async function postMatchJobToAI(file,resultElement){
   if(!health.ok)throw Error('health HTTP '+health.status);
   const hj=await health.json();
   if(hj.ok!==true && !(hj.status==='ready' && hj.service==='RIKU FOOTBALL LAB Free AI Analysis API'))throw Error('サーバーの応答が想定外です');
-  resultElement.textContent='元動画を送信しています。15〜20分の動画は送信に時間がかかる場合があります…';
-  const fd=new FormData();
-  fd.append('file',file,file.name||'match-video.mp4');
-  fd.append('jersey_numbers',String(state.settings.jersey1)+','+String(state.settings.jersey2));
-  const response=await fetch(u+'/analyze/match/jobs',{method:'POST',body:fd,credentials:'omit',cache:'no-store'});
-  const raw=await response.text();
-  let created;try{created=JSON.parse(raw)}catch(e){created=null}
-  if(!response.ok||!created||!created.job_id)throw Error('動画送信 HTTP '+response.status+'：'+(created&&created.detail?created.detail:raw.slice(0,220)));
+  resultElement.textContent='15分動画を小分けにして送信します。元動画は変更しません…';
+  const created=await uploadMatchVideoInChunks(file,String(state.settings.jersey1)+','+String(state.settings.jersey2),resultElement);
   jobId=created.job_id;
   resultElement.textContent='動画を受け付けました。解析ジョブを開始します…';
   while(true){
