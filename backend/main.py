@@ -198,8 +198,11 @@ def build_form_capture_quality(frames):
             if not isinstance(point, (list, tuple)) or len(point) < 3:
                 continue
             try:
-                confidence = float(point[2])
-                x, y = float(point[0]), float(point[1])
+                raw_x, raw_y, raw_confidence = point[0], point[1], point[2]
+                if any(isinstance(value, bool) for value in (raw_x, raw_y, raw_confidence)):
+                    continue
+                confidence = float(raw_confidence)
+                x, y = float(raw_x), float(raw_y)
                 if (is_finite_number(confidence) and is_finite_number(x) and is_finite_number(y)
                         and 0 <= x <= 1 and 0 <= y <= 1 and confidence >= 0.5):
                     visible_count += 1
