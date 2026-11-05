@@ -1,5 +1,6 @@
 import os
 import re
+import hashlib
 import subprocess
 import tempfile
 import uuid
@@ -25,6 +26,8 @@ MATCH_SAMPLE_RATE = float(os.getenv("MATCH_SAMPLE_RATE", "0.25"))
 MATCH_MAX_SAMPLES = int(os.getenv("MATCH_MAX_SAMPLES", "360"))
 POSE_LANDMARKER_MODEL = os.getenv("POSE_LANDMARKER_MODEL", "/app/models/pose_landmarker_lite.task")
 match_jobs = {}
+match_uploads = {}
+MATCH_UPLOAD_CHUNK_BYTES = 6 * 1024 * 1024
 highlight_collections = {}
 
 app = FastAPI(title=APP_NAME, version="0.1.0")
@@ -1294,6 +1297,117 @@ def run_match_job(job_id: str, source_path: str, jersey_numbers: str):
                 except OSError:
                     pass
 
+
+
+def append_match_upload_chunk(upload_state, chunk_index, data):
+    """Append one ordered, retry-safe chunk to a temporary match-video upload."""
+    if not isinstance(data, (bytes, bytearray)) or not data:
+        raise ValueError("動画の分割データが空です。")
+    index = int(chunk_index)
+    digest = hashlib.sha256(data).hexdigest()
+    received = upload_state.setdefault("chunk_hashes", {})
+    next_index = int(upload_state.get("next_chunk", 0))
+    if index < next_index:
+        if received.get(index) == digest:
+            return False
+        raise ValueError("同じ分割番号に異なる動画データが届きました。")
+    if index != next_index:
+        raise ValueError("動画データの順番が一致しません。")
+    chunk_size = int(upload_state["chunk_size"])
+    total_size = int(upload_state["total_size"])
+    written = int(upload_state.get("received_bytes", 0))
+    expected = min(chunk_size, total_size - written)
+    if expected <= 0 or len(data) != expected:
+        raise ValueError("動画データのサイズが一致しません。")
+    with open(upload_state["path"], "ab") as target:
+        target.write(data)
+    received[index] = digest
+    upload_state["next_chunk"] = next_index + 1
+    upload_state["received_bytes"] = written + len(data)
+    return True
+
+
+@app.post("/analyze/match/uploads", status_code=201)
+async def create_match_upload(payload: dict = Body(...)):
+    filename = Path(str(payload.get("filename") or "match-video.mp4")).name
+    total_size = payload.get("size_bytes")
+    duration = payload.get("duration_seconds")
+    if isinstance(total_size, bool) or not isinstance(total_size, int) or total_size <= 0:
+        raise HTTPException(status_code=400, detail="動画ファイルのサイズを確認できません。")
+    if total_size > MAX_MATCH_UPLOAD_MB * 1024 * 1024:
+        raise HTTPException(status_code=413, detail=f"試合動画は{MAX_MATCH_UPLOAD_MB}MB以内にしてください。")
+    try:
+        duration_value = float(duration) if duration is not None else None
+    except (TypeError, ValueError, OverflowError):
+        duration_value = None
+    if duration_value is not None and duration_value > MAX_MATCH_SECONDS:
+        raise HTTPException(status_code=413, detail=f"試合動画は{MAX_MATCH_SECONDS // 60}分以内にしてください。")
+    upload_id = uuid.uuid4().hex
+    with tempfile.NamedTemporaryFile(delete=False, suffix=Path(filename).suffix or ".mp4") as tmp:
+        temp_path = tmp.name
+    chunks = (total_size + MATCH_UPLOAD_CHUNK_BYTES - 1) // MATCH_UPLOAD_CHUNK_BYTES
+    match_uploads[upload_id] = {
+        "path": temp_path, "filename": filename, "total_size": total_size,
+        "duration_seconds": duration_value, "chunk_size": MATCH_UPLOAD_CHUNK_BYTES,
+        "total_chunks": chunks, "next_chunk": 0, "received_bytes": 0,
+        "chunk_hashes": {}, "jersey_numbers": str(payload.get("jersey_numbers") or "10,74"),
+    }
+    return {"ok": True, "upload_id": upload_id, "chunk_size": MATCH_UPLOAD_CHUNK_BYTES,
+            "total_chunks": chunks, "max_upload_mb": MAX_MATCH_UPLOAD_MB,
+            "max_duration_seconds": MAX_MATCH_SECONDS}
+
+
+@app.put("/analyze/match/uploads/{upload_id}/{chunk_index}")
+async def upload_match_chunk(upload_id: str, chunk_index: int, file: UploadFile = File(...)):
+    upload_state = match_uploads.get(upload_id)
+    if upload_state is None:
+        raise HTTPException(status_code=404, detail="動画アップロードが見つかりません。最初から再試行してください。")
+    if chunk_index < 0 or chunk_index >= upload_state["total_chunks"]:
+        raise HTTPException(status_code=400, detail="動画データの分割番号が不正です。")
+    data = await file.read(MATCH_UPLOAD_CHUNK_BYTES + 1)
+    if len(data) > MATCH_UPLOAD_CHUNK_BYTES:
+        raise HTTPException(status_code=413, detail="分割データが上限を超えています。")
+    try:
+        added = append_match_upload_chunk(upload_state, chunk_index, data)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    return {"ok": True, "chunk_index": chunk_index, "received_bytes": upload_state["received_bytes"],
+            "total_bytes": upload_state["total_size"], "duplicate_retry": not added}
+
+
+@app.post("/analyze/match/uploads/{upload_id}/complete", status_code=202)
+async def complete_match_upload(upload_id: str, background_tasks: BackgroundTasks):
+    upload_state = match_uploads.get(upload_id)
+    if upload_state is None:
+        raise HTTPException(status_code=404, detail="動画アップロードが見つかりません。最初から再試行してください。")
+    if (upload_state["next_chunk"] != upload_state["total_chunks"]
+            or upload_state["received_bytes"] != upload_state["total_size"]):
+        raise HTTPException(status_code=409, detail="動画の受信が完了していません。未送信の分割データがあります。")
+    job_id = uuid.uuid4().hex
+    temp_path = upload_state["path"]
+    match_jobs[job_id] = {
+        "job_id": job_id, "status": "queued", "progress": 0,
+        "stage": "解析待ち", "filename": upload_state["filename"],
+        "size_bytes": upload_state["total_size"], "result": None, "error": None,
+    }
+    jersey_numbers = upload_state["jersey_numbers"]
+    del match_uploads[upload_id]
+    background_tasks.add_task(run_match_job, job_id, temp_path, jersey_numbers)
+    return {"ok": True, "job_id": job_id, "status": "queued",
+            "status_url": f"/analyze/jobs/{job_id}"}
+
+
+@app.delete("/analyze/match/uploads/{upload_id}")
+def cancel_match_upload(upload_id: str):
+    upload_state = match_uploads.pop(upload_id, None)
+    if upload_state is None:
+        return {"ok": True, "already_closed": True}
+    try:
+        if os.path.exists(upload_state["path"]):
+            os.remove(upload_state["path"])
+    except OSError:
+        pass
+    return {"ok": True, "cancelled": True}
 
 @app.post("/analyze/match/jobs", status_code=202)
 async def create_match_job(background_tasks: BackgroundTasks, file: UploadFile = File(...),
