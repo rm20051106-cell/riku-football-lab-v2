@@ -595,15 +595,25 @@ async function postMatchJobToAI(file,resultElement){
   try{localStorage.removeItem(storageKey)}catch(e){}
   jobId=created.job_id;
   resultElement.textContent='動画を受け付けました。解析ジョブを開始します…';
+  try{localStorage.setItem('riku_active_match_job_v1',jobId)}catch(e){}
+  return await pollMatchJobToAI(jobId,resultElement);
+ }catch(e){
+  resultElement.textContent='試合動画の解析に失敗：'+e.message+(jobId?'（ジョブID：'+jobId+'）':'');
+ }
+}
+async function pollMatchJobToAI(jobId,resultElement){
+ const u=getApiUrl();
+ try{
   while(true){
    await new Promise(resolve=>setTimeout(resolve,3000));
    const statusResponse=await fetch(u+'/analyze/jobs/'+encodeURIComponent(jobId),{cache:'no-store'});
    const statusRaw=await statusResponse.text();
    let status;try{status=JSON.parse(statusRaw)}catch(e){status=null}
-   if(!statusResponse.ok||!status)throw Error('進捗の取得に失敗しました。サーバーが再起動した場合は再送信が必要です。');
+   if(!statusResponse.ok||!status){if(statusResponse.status===404){try{localStorage.removeItem('riku_active_match_job_v1')}catch(e){}}throw Error('進捗の取得に失敗しました。サーバーの状態を確認して再送信してください。')}
    resultElement.textContent='試合動画を解析中：'+(status.progress??0)+'%｜'+(status.stage||'処理中')+'。この画面を閉じずにお待ちください。';
-   if(status.status==='failed')throw Error(status.error||'解析に失敗しました');
+   if(status.status==='failed'||status.status==='interrupted'){try{localStorage.removeItem('riku_active_match_job_v1')}catch(e){}throw Error(status.error||'解析を再開できませんでした')}
    if(status.status==='completed'){
+    try{localStorage.removeItem('riku_active_match_job_v1')}catch(e){}
     const j=status.result||{},sm=j.summary||{};
     const notes=(sm.feedback||[]).map(x=>esc(x)).join('<br>');
     const jerseyCounts=sm.jersey_ocr_summary?.candidate_detection_counts||sm.jersey_ocr_summary?.candidate_frame_counts||{};
@@ -620,9 +630,10 @@ async function postMatchJobToAI(file,resultElement){
    }
   }
  }catch(e){
-  resultElement.textContent='試合動画の解析に失敗：'+e.message+(jobId?'（ジョブID：'+jobId+'）':'');
+  resultElement.textContent='試合動画の解析に失敗：'+e.message+'（ジョブID：'+jobId+'）';
  }
 }
+
 async function createRikuHighlight(){
  const raw=matchAiResult.dataset.result;if(!raw){alert('先に試合動画を解析してください');return}
  let result;try{result=JSON.parse(raw)}catch(e){alert('解析結果を読み取れません');return}
@@ -1670,7 +1681,15 @@ function deleteMeasure(d,t,v){if(!confirm('この測定記録を削除します�
 let pendingMatchSave=Promise.resolve(null);videoFile.addEventListener('change',()=>{let f=videoFile.files[0];if(!f)return;matchVideo.src=URL.createObjectURL(f);videoMeta.textContent=`読み込み：${f.name}（${(f.size/1024/1024).toFixed(1)} MB）・端末保存準備中`;matchVideo.onloadedmetadata=()=>{clipTime.value='0.0';videoMeta.textContent=`読み込み：${f.name}（${(f.size/1024/1024).toFixed(1)} MB）・長さ ${matchVideo.duration.toFixed(1)} 秒`};pendingMatchSave=storeClipVideo('__pending_match_video__',f).then(()=>{videoMeta.textContent+= '・動画保存準備OK';return f}).catch(e=>{console.error('動画の仮保存に失敗',e);videoMeta.textContent+='・動画の保存準備に失敗';return null})})
 let pendingFormSave=Promise.resolve(null);formFile.addEventListener('change',()=>{let f=formFile.files[0];if(!f)return;formVideo.src=URL.createObjectURL(f);pendingFormSave=storeClipVideo('__pending_form_video__',f).then(()=>f).catch(e=>{console.error('フォーム動画の仮保存失敗',e);return null})})
 formKind.addEventListener('change',renderChecks);
-load();renderChecks();renderAll();if(typeof apiBaseUrl!=='undefined'){apiBaseUrl.value=state.settings.apiBaseUrl||'';apiStatus.textContent=state.settings.apiBaseUrl?'保存済み：'+state.settings.apiBaseUrl:'未設定'}
+load();renderChecks();renderAll();
+try{
+ const pendingJobId=localStorage.getItem('riku_active_match_job_v1');
+ if(pendingJobId&&matchAiResult){
+  matchAiResult.textContent='保存済みの試合解析ジョブに再接続しています…';
+  pollMatchJobToAI(pendingJobId,matchAiResult);
+ }
+}catch(e){}
+if(typeof apiBaseUrl!=='undefined'){apiBaseUrl.value=state.settings.apiBaseUrl||'';apiStatus.textContent=state.settings.apiBaseUrl?'保存済み：'+state.settings.apiBaseUrl:'未設定'}
 </script>
 <script src="./tactical-analysis.js"></script>
 <script src="./shooting-specialist.js"></script>
