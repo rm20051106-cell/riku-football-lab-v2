@@ -1,5 +1,6 @@
 import os
 import re
+import hashlib
 import subprocess
 import tempfile
 import uuid
@@ -12,7 +13,7 @@ import numpy as np
 import pytesseract
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision as mp_vision
-from fastapi import BackgroundTasks, Body, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Body, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -25,6 +26,7 @@ MATCH_SAMPLE_RATE = float(os.getenv("MATCH_SAMPLE_RATE", "0.25"))
 MATCH_MAX_SAMPLES = int(os.getenv("MATCH_MAX_SAMPLES", "360"))
 POSE_LANDMARKER_MODEL = os.getenv("POSE_LANDMARKER_MODEL", "/app/models/pose_landmarker_lite.task")
 match_jobs = {}
+match_uploads = {}
 highlight_collections = {}
 
 app = FastAPI(title=APP_NAME, version="0.1.0")
@@ -852,6 +854,110 @@ async def create_match_job(background_tasks: BackgroundTasks, file: UploadFile =
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
         raise
+
+
+
+
+@app.post("/analyze/match/uploads", status_code=201)
+async def start_match_chunk_upload(payload: dict = Body(...)):
+    """Create a resumable upload session for a match video."""
+    filename = Path(str(payload.get("filename") or "match-video.mp4")).name
+    try:
+        total_size = int(payload.get("size_bytes", 0))
+        chunk_size = int(payload.get("chunk_size_bytes", 4 * 1024 * 1024))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="動画サイズまたは分割サイズが正しくありません。")
+    if total_size <= 0 or total_size > MAX_MATCH_UPLOAD_MB * 1024 * 1024:
+        raise HTTPException(status_code=413, detail=f"試合動画は1MB以上、{MAX_MATCH_UPLOAD_MB}MB以内にしてください。")
+    if chunk_size < 256 * 1024 or chunk_size > 8 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="分割サイズは256KB〜8MBにしてください。")
+    suffix = Path(filename).suffix.lower()
+    if suffix not in {".mp4", ".mov", ".m4v", ".avi", ".webm", ".mkv"}:
+        suffix = ".mp4"
+    upload_id = uuid.uuid4().hex
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            temp_path = tmp.name
+        match_uploads[upload_id] = {
+            "upload_id": upload_id, "filename": filename, "size_bytes": total_size,
+            "chunk_size_bytes": chunk_size, "path": temp_path, "chunks": {},
+        }
+        return {"ok": True, "upload_id": upload_id, "chunk_size_bytes": chunk_size,
+                "received_chunks": []}
+    except Exception:
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
+        raise
+
+
+@app.get("/analyze/match/uploads/{upload_id}")
+def get_match_chunk_upload(upload_id: str):
+    upload = match_uploads.get(upload_id)
+    if upload is None:
+        raise HTTPException(status_code=404, detail="アップロード情報が見つかりません。最初から再送信してください。")
+    return {
+        "upload_id": upload_id,
+        "size_bytes": upload["size_bytes"],
+        "chunk_size_bytes": upload["chunk_size_bytes"],
+        "received_chunks": sorted(int(x) for x in upload["chunks"].keys()),
+    }
+
+
+@app.put("/analyze/match/uploads/{upload_id}/chunks/{chunk_index}")
+async def put_match_upload_chunk(upload_id: str, chunk_index: int, request: Request):
+    upload = match_uploads.get(upload_id)
+    if upload is None:
+        raise HTTPException(status_code=404, detail="アップロード情報が見つかりません。最初から再送信してください。")
+    chunk_size = upload["chunk_size_bytes"]
+    total_size = upload["size_bytes"]
+    total_chunks = (total_size + chunk_size - 1) // chunk_size
+    if chunk_index < 0 or chunk_index >= total_chunks:
+        raise HTTPException(status_code=416, detail="分割番号が範囲外です。")
+    offset = chunk_index * chunk_size
+    expected_size = min(chunk_size, total_size - offset)
+    data = await request.body()
+    if len(data) != expected_size:
+        raise HTTPException(status_code=400, detail=f"分割データのサイズが一致しません。必要={expected_size} bytes")
+    digest = hashlib.sha256(data).hexdigest()
+    existing = upload["chunks"].get(str(chunk_index))
+    if existing:
+        if existing["sha256"] != digest:
+            raise HTTPException(status_code=409, detail="同じ分割番号に異なるデータが届きました。")
+        return {"ok": True, "chunk_index": chunk_index, "received_bytes": len(data), "duplicate": True}
+    with open(upload["path"], "r+b") as target:
+        target.seek(offset)
+        target.write(data)
+        target.flush()
+    upload["chunks"][str(chunk_index)] = {"sha256": digest, "size_bytes": len(data)}
+    return {"ok": True, "chunk_index": chunk_index, "received_bytes": len(data), "duplicate": False}
+
+
+@app.post("/analyze/match/uploads/{upload_id}/complete", status_code=202)
+def complete_match_chunk_upload(upload_id: str, background_tasks: BackgroundTasks,
+                                payload: dict = Body(...)):
+    upload = match_uploads.get(upload_id)
+    if upload is None:
+        raise HTTPException(status_code=404, detail="アップロード情報が見つかりません。最初から再送信してください。")
+    expected_count = (upload["size_bytes"] + upload["chunk_size_bytes"] - 1) // upload["chunk_size_bytes"]
+    received = set(int(x) for x in upload["chunks"].keys())
+    missing = [i for i in range(expected_count) if i not in received]
+    if missing:
+        raise HTTPException(status_code=409, detail="未受信の分割があります：" + ",".join(str(x) for x in missing[:20]))
+    if os.path.getsize(upload["path"]) != upload["size_bytes"]:
+        raise HTTPException(status_code=409, detail="受信した動画サイズが一致しません。")
+    jersey_numbers = str(payload.get("jersey_numbers") or "10,74")
+    job_id = uuid.uuid4().hex
+    source_path = upload["path"]
+    match_jobs[job_id] = {
+        "job_id": job_id, "status": "queued", "progress": 0,
+        "stage": "解析待ち", "filename": upload["filename"],
+        "size_bytes": upload["size_bytes"], "result": None, "error": None,
+    }
+    background_tasks.add_task(run_match_job, job_id, source_path, jersey_numbers)
+    del match_uploads[upload_id]
+    return {"ok": True, "job_id": job_id, "status": "queued",
+            "status_url": f"/analyze/jobs/{job_id}"}
 
 
 @app.get("/analyze/jobs/{job_id}")
