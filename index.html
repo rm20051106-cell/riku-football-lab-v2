@@ -1133,11 +1133,13 @@ async function postVideoToAI(file, endpoint, extra, resultElement){
  }
 }
 async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
+ let activeUploadId=null;
  const chunkSize=6*1024*1024;
  const duration=Number(matchVideo.duration||0);
  const init=await fetch(getApiUrl()+'/analyze/match/uploads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:file.name||'match-video.mp4',size_bytes:file.size,duration_seconds:Number.isFinite(duration)&&duration>0?duration:null,jersey_numbers:jerseyNumbers}),credentials:'omit',cache:'no-store'});
  const initRaw=await init.text();let session;try{session=JSON.parse(initRaw)}catch(e){session=null}
  if(!init.ok||!session?.upload_id)throw Error('分割アップロード開始 HTTP '+init.status+'：'+(session?.detail||initRaw.slice(0,180)));
+ activeUploadId=session.upload_id;
  const total=session.total_chunks||Math.ceil(file.size/(session.chunk_size||chunkSize));
  try{
   for(let i=0;i<total;i++){
@@ -1163,6 +1165,7 @@ async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
   if(!completed.ok||!body?.job_id)throw Error('動画受信の確定 HTTP '+completed.status+'：'+(body?.detail||raw.slice(0,180)));
   return body;
  }catch(error){
+  if(activeUploadId){try{await fetch(getApiUrl()+'/analyze/match/uploads/'+encodeURIComponent(activeUploadId),{method:'DELETE',credentials:'omit',cache:'no-store'})}catch(cleanupError){console.warn('中断した動画アップロードの一時データ削除に失敗',cleanupError)}}
   resultElement.textContent='分割送信が中断されました。元動画は端末に残っています。再試行できます。';
   throw error;
  }
