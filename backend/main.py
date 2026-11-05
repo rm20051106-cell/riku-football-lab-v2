@@ -36,7 +36,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed,
     allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -915,6 +915,12 @@ async def put_match_upload_chunk(upload_id: str, chunk_index: int, request: Requ
     if chunk_index < 0 or chunk_index >= total_chunks:
         raise HTTPException(status_code=416, detail="分割番号が範囲外です。")
     offset = chunk_index * chunk_size
+    try:
+        requested_offset = int(request.headers.get("x-chunk-offset", "-1"))
+    except (TypeError, ValueError):
+        requested_offset = -1
+    if requested_offset != offset:
+        raise HTTPException(status_code=409, detail="分割データの開始位置が一致しません。")
     expected_size = min(chunk_size, total_size - offset)
     data = await request.body()
     if len(data) != expected_size:
