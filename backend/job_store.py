@@ -6,6 +6,7 @@ Set RIKU_STATE_DB to a path on a persistent mounted volume when one is available
 import json
 import os
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -13,16 +14,24 @@ DEFAULT_DB_PATH = "/tmp/riku-football-lab-state.sqlite3"
 
 
 def _db_path() -> str:
-    path = os.getenv("RIKU_STATE_DB", DEFAULT_DB_PATH)
-    Path(path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
-    return path
+    path = Path(os.getenv("RIKU_STATE_DB", DEFAULT_DB_PATH)).expanduser().resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return str(path)
 
 
+@contextmanager
 def _connect():
     connection = sqlite3.connect(_db_path(), timeout=15)
-    connection.execute("PRAGMA journal_mode=WAL")
-    connection.execute("PRAGMA busy_timeout=15000")
-    return connection
+    try:
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("PRAGMA busy_timeout=15000")
+        yield connection
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
 
 
 def init_state_store() -> None:
