@@ -25,6 +25,9 @@ jobs:
       - name: Check Python syntax
         run: python -m compileall -q backend
 
+      - name: Test persistent match state store
+        run: python -m unittest discover -s tests -v
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
