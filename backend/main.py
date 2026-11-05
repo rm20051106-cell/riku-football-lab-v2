@@ -1,6 +1,7 @@
 import os
 import re
 import hashlib
+import asyncio
 import subprocess
 import tempfile
 import uuid
@@ -16,6 +17,7 @@ from mediapipe.tasks.python import vision as mp_vision
 from fastapi import BackgroundTasks, Body, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from job_store import init_state_store, load_match_jobs, load_match_uploads, save_match_job, save_match_upload, delete_match_upload
 
 APP_NAME = "RIKU FOOTBALL LAB Free AI Analysis API"
 MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "120"))
@@ -25,8 +27,9 @@ MAX_MATCH_UPLOAD_MB = int(os.getenv("MAX_MATCH_UPLOAD_MB", "500"))
 MATCH_SAMPLE_RATE = float(os.getenv("MATCH_SAMPLE_RATE", "0.25"))
 MATCH_MAX_SAMPLES = int(os.getenv("MATCH_MAX_SAMPLES", "360"))
 POSE_LANDMARKER_MODEL = os.getenv("POSE_LANDMARKER_MODEL", "/app/models/pose_landmarker_lite.task")
-match_jobs = {}
-match_uploads = {}
+init_state_store()
+match_jobs = load_match_jobs()
+match_uploads = load_match_uploads()
 highlight_collections = {}
 
 app = FastAPI(title=APP_NAME, version="0.1.0")
@@ -763,6 +766,7 @@ def _set_match_job(job_id: str, **updates):
     job = match_jobs.get(job_id)
     if job is not None:
         job.update(updates)
+        save_match_job(job_id, job)
 
 
 def run_match_job(job_id: str, source_path: str, jersey_numbers: str):
@@ -818,6 +822,31 @@ def run_match_job(job_id: str, source_path: str, jersey_numbers: str):
                     pass
 
 
+@app.on_event("startup")
+async def resume_match_jobs_after_process_restart():
+    """Restore queued work when the same writable data volume is still present."""
+    for job_id, job in list(match_jobs.items()):
+        if job.get("status") not in {"queued", "processing"}:
+            continue
+        source_path = job.get("source_path")
+        jersey_numbers = str(job.get("jersey_numbers") or "10,74")
+        if source_path and os.path.isfile(source_path):
+            job.update({
+                "status": "queued", "progress": 0,
+                "stage": "保存済み動画から解析を再開中",
+                "error": None,
+            })
+            save_match_job(job_id, job)
+            asyncio.create_task(asyncio.to_thread(run_match_job, job_id, source_path, jersey_numbers))
+        else:
+            job.update({
+                "status": "interrupted",
+                "stage": "動画ファイルが見つからず再開できません",
+                "error": "サーバー再起動後に元動画ファイルが残っていません。同じ動画を再アップロードしてください。",
+            })
+            save_match_job(job_id, job)
+
+
 @app.post("/analyze/match/jobs", status_code=202)
 async def create_match_job(background_tasks: BackgroundTasks, file: UploadFile = File(...),
                            jersey_numbers: str = Form("10,74")):
@@ -846,7 +875,9 @@ async def create_match_job(background_tasks: BackgroundTasks, file: UploadFile =
             "job_id": job_id, "status": "queued", "progress": 0,
             "stage": "解析待ち", "filename": file.filename,
             "size_bytes": size, "result": None, "error": None,
+            "source_path": temp_path, "jersey_numbers": jersey_numbers,
         }
+        save_match_job(job_id, match_jobs[job_id])
         background_tasks.add_task(run_match_job, job_id, temp_path, jersey_numbers)
         return {"ok": True, "job_id": job_id, "status": "queued",
                 "status_url": f"/analyze/jobs/{job_id}"}
@@ -883,6 +914,7 @@ async def start_match_chunk_upload(payload: dict = Body(...)):
             "upload_id": upload_id, "filename": filename, "size_bytes": total_size,
             "chunk_size_bytes": chunk_size, "path": temp_path, "chunks": {},
         }
+        save_match_upload(upload_id, match_uploads[upload_id])
         return {"ok": True, "upload_id": upload_id, "chunk_size_bytes": chunk_size,
                 "received_chunks": []}
     except Exception:
@@ -936,6 +968,7 @@ async def put_match_upload_chunk(upload_id: str, chunk_index: int, request: Requ
         target.write(data)
         target.flush()
     upload["chunks"][str(chunk_index)] = {"sha256": digest, "size_bytes": len(data)}
+    save_match_upload(upload_id, upload)
     return {"ok": True, "chunk_index": chunk_index, "received_bytes": len(data), "duplicate": False}
 
 
@@ -959,9 +992,12 @@ def complete_match_chunk_upload(upload_id: str, background_tasks: BackgroundTask
         "job_id": job_id, "status": "queued", "progress": 0,
         "stage": "解析待ち", "filename": upload["filename"],
         "size_bytes": upload["size_bytes"], "result": None, "error": None,
+        "source_path": source_path, "jersey_numbers": jersey_numbers,
     }
+    save_match_job(job_id, match_jobs[job_id])
     background_tasks.add_task(run_match_job, job_id, source_path, jersey_numbers)
     del match_uploads[upload_id]
+    delete_match_upload(upload_id)
     return {"ok": True, "job_id": job_id, "status": "queued",
             "status_url": f"/analyze/jobs/{job_id}"}
 
@@ -971,7 +1007,8 @@ def get_match_job(job_id: str):
     job = match_jobs.get(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="解析ジョブが見つかりません。サーバー再起動後は再送信が必要です。")
-    payload = {key: value for key, value in job.items() if key not in {"result", "clips"}}
+    payload = {key: value for key, value in job.items()
+               if key not in {"result", "clips", "source_path", "jersey_numbers"}}
     if job.get("status") == "completed":
         payload["result"] = job["result"]
         payload["clips"] = [{key: value for key, value in clip.items() if key != "path"} for clip in job.get("clips", [])]
