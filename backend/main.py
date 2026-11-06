@@ -22,8 +22,8 @@ MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "120"))
 MAX_SECONDS = int(os.getenv("MAX_VIDEO_SECONDS", "60"))
 MAX_MATCH_SECONDS = int(os.getenv("MAX_MATCH_VIDEO_SECONDS", "1200"))
 MAX_MATCH_UPLOAD_MB = int(os.getenv("MAX_MATCH_UPLOAD_MB", "500"))
-MATCH_SAMPLE_RATE = float(os.getenv("MATCH_SAMPLE_RATE", "1.0"))
-MATCH_MAX_SAMPLES = int(os.getenv("MATCH_MAX_SAMPLES", "1200"))
+MATCH_SAMPLE_RATE = float(os.getenv("MATCH_SAMPLE_RATE", "2.0"))
+MATCH_MAX_SAMPLES = int(os.getenv("MATCH_MAX_SAMPLES", "2400"))
 POSE_LANDMARKER_MODEL = os.getenv("POSE_LANDMARKER_MODEL", "/app/models/pose_landmarker_lite.task")
 match_jobs = {}
 match_uploads = {}
@@ -574,23 +574,23 @@ def build_match_sampling_plan(fps, total_frames, target_rate=None, max_samples=N
     if rate is None or rate <= 0:
         rate = finite_number(MATCH_SAMPLE_RATE)
     if rate is None or rate <= 0:
-        rate = 0.5
-    rate = min(1.0, max(0.1, rate))
+        rate = 1.0
+    rate = min(2.0, max(0.1, rate))
 
     limit_value = finite_number(max_samples)
     if limit_value is None or limit_value <= 0:
         limit_value = finite_number(MATCH_MAX_SAMPLES)
     if limit_value is None or limit_value <= 0:
-        limit_value = 600
-    limit = max(1, min(1200, int(limit_value)))
+        limit_value = 2400
+    limit = max(1, min(2400, int(limit_value)))
 
     frame_rate = finite_number(fps)
     if frame_rate is not None and frame_rate > 0:
         interval = max(1, int(round(frame_rate / rate)))
         actual_interval = interval / frame_rate
     else:
-        interval = max(1, int(round(1 / rate)))
-        actual_interval = 1 / rate
+        interval = 1
+        actual_interval = 1.0
 
     frame_count = finite_number(total_frames)
     estimated_samples = (
@@ -626,7 +626,7 @@ def iter_sampled_video_frames(capture, frame_interval, max_samples):
                 return
 
 
-def should_run_match_jersey_ocr(sample_index, every=5):
+def should_run_match_jersey_ocr(sample_index, every=10):
     """Throttle expensive shirt OCR while retaining repeated identity candidates."""
     try:
         index = int(sample_index)
