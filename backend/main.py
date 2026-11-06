@@ -17,7 +17,7 @@ from mediapipe.tasks.python import vision as mp_vision
 from fastapi import BackgroundTasks, Body, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from job_store import init_state_store, load_match_jobs, load_match_uploads, save_match_job, save_match_upload, delete_match_upload
+from job_store import init_state_store, load_match_jobs, load_match_uploads, save_match_job, save_match_upload, delete_match_upload, cleanup_expired_match_uploads
 from video_sampling import read_sampled_frame
 
 APP_NAME = "RIKU FOOTBALL LAB Free AI Analysis API"
@@ -29,6 +29,13 @@ MATCH_SAMPLE_RATE = float(os.getenv("MATCH_SAMPLE_RATE", "0.25"))
 MATCH_MAX_SAMPLES = int(os.getenv("MATCH_MAX_SAMPLES", "360"))
 POSE_LANDMARKER_MODEL = os.getenv("POSE_LANDMARKER_MODEL", "/app/models/pose_landmarker_lite.task")
 init_state_store()
+# Remove abandoned, incomplete temporary uploads after 24 hours; completed analysis records are untouched.
+for expired_upload_path in cleanup_expired_match_uploads(24):
+    try:
+        if os.path.isfile(expired_upload_path):
+            os.remove(expired_upload_path)
+    except OSError:
+        pass
 match_jobs = load_match_jobs()
 match_uploads = load_match_uploads()
 highlight_collections = {}
