@@ -122,6 +122,14 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         self.assertIn("端末内動画の復元に失敗しました", helper)
         self.assertIn("元の動画を選び直してください", helper)
 
+    def test_pending_video_restore_rejects_empty_or_non_blob_payload(self):
+        start = self.html.index("async function restorePendingMatchVideo()")
+        end = self.html.index("async function sendMatchToAI()", start)
+        helper = self.html[start:end]
+        self.assertIn("saved.blob instanceof Blob", helper)
+        self.assertIn("saved.blob.size<=0", helper)
+        self.assertIn("端末内の動画データが空か読み取れません", helper)
+
     def test_upload_resume_falls_back_to_persisted_pipeline_fingerprint(self):
         start = self.html.index("async function postMatchJobToAI")
         end = self.html.index("async function pollMatchJobToAI", start)
