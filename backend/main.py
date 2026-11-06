@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from job_store import init_state_store, load_match_jobs, load_match_uploads, save_match_job, save_match_upload, delete_match_upload, cleanup_expired_match_uploads, create_match_job_for_upload, get_match_upload_completion
 from video_sampling import read_sampled_frame
-from upload_integrity import verify_uploaded_chunks, build_upload_resume_state
+from upload_integrity import verify_uploaded_chunks, build_upload_resume_state, reconcile_uploaded_chunks
 
 APP_NAME = "RIKU FOOTBALL LAB Free AI Analysis API"
 MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "120"))
@@ -953,15 +953,23 @@ def get_match_chunk_upload(upload_id: str):
             }
         raise HTTPException(status_code=404, detail="アップロード情報が見つかりません。最初から再送信してください。")
     try:
+        invalid_chunks = reconcile_uploaded_chunks(
+            upload["path"], upload["size_bytes"], upload["chunk_size_bytes"], upload["chunks"]
+        )
+        for invalid_index in invalid_chunks:
+            upload["chunks"].pop(str(invalid_index), None)
+        if invalid_chunks:
+            save_match_upload(upload_id, upload)
         resume_state = build_upload_resume_state(
             upload["size_bytes"], upload["chunk_size_bytes"], upload["chunks"]
         )
-    except (TypeError, ValueError) as exc:
+    except (OSError, TypeError, ValueError) as exc:
         raise HTTPException(status_code=409, detail=f"アップロード再開情報が不正です：{exc}")
     return {
         "upload_id": upload_id,
         "size_bytes": upload["size_bytes"],
         "chunk_size_bytes": upload["chunk_size_bytes"],
+        "rejected_chunks": invalid_chunks,
         **resume_state,
     }
 
