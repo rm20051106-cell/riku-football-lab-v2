@@ -98,6 +98,14 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         self.assertLess(handler.index("if(!f)return"), handler.index("videoFile.value=''"))
         self.assertIn("pendingMatchSave=storeClipVideo('__pending_match_video__',f)", handler)
 
+    def test_indexeddb_video_save_rejects_on_transaction_abort(self):
+        start = self.html.index("async function storeClipVideo")
+        end = self.html.index("async function getClipVideo", start)
+        helper = self.html[start:end]
+        self.assertIn("tx.onabort", helper)
+        self.assertIn("db.close()", helper)
+        self.assertIn("動画保存が中断されました", helper)
+
     def test_upload_resume_falls_back_to_persisted_pipeline_fingerprint(self):
         start = self.html.index("async function postMatchJobToAI")
         end = self.html.index("async function pollMatchJobToAI", start)
