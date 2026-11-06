@@ -783,7 +783,9 @@ async function postMatchJobToAI(file,resultElement){
    resultElement.textContent='受付済みの解析ジョブを確認しました。解析状況に再接続します…';
    return await pollMatchJobToAI(jobId,resultElement);
   }
-  if(Number(verified.total_chunks)!==chunkCount||Number(verified.received_bytes)!==file.size||(verified.missing_chunks||[]).length){
+  const verifiedBytes=Number(verified.received_bytes);
+  const verifiedChunks=Number(verified.total_chunks);
+  if(!Number.isSafeInteger(verifiedBytes)||verifiedBytes<0||verifiedBytes!==file.size||verifiedChunks!==chunkCount||(verified.missing_chunks||[]).length){
    throw Error('サーバー確認で未受信の分割が残っています。動画をもう一度選ぶと未受信分から再開できます。');
   }
   confirmedBytes=Number(verified.received_bytes);
