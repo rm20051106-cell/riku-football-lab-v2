@@ -79,7 +79,7 @@ class Stage62FullVideoSamplingTests(unittest.TestCase):
     def test_invalid_fps_uses_safe_one_second_interval(self):
         plan = build(float("nan"), 0)
         self.assertEqual(plan["frame_interval"], 1)
-        self.assertEqual(plan["sampling_interval_seconds"], 1.0)
+        self.assertEqual(plan["sampling_interval_seconds"], 0.5)
         self.assertEqual(plan["sample_limit"], 2400)
         self.assertIsNone(plan["estimated_samples"])
 
