@@ -728,7 +728,7 @@ async function postMatchJobToAI(file,resultElement){
     }else{
      const serverHashes=session.received_chunk_sha256&&typeof session.received_chunk_sha256==='object'&&!Array.isArray(session.received_chunk_sha256)?session.received_chunk_sha256:{};
      const receivedForCheck=(Array.isArray(session.received_chunks)?session.received_chunks:[]).map(Number);
-     const matches=receivedForCheck.every(part=>Number.isInteger(part)&&part>=0&&part<chunkCount&&serverHashes[String(part)]===chunkHashes[part]);
+     const matches=receivedForCheck.every(part=>Number.isInteger(part)&&part>=0&&part<chunkCount&&typeof serverHashes[String(part)]==='string'&&/^[a-f0-9]{64}$/i.test(serverHashes[String(part)]||'')&&serverHashes[String(part)].toLowerCase()===chunkHashes[part].toLowerCase());
      if(!matches){session=null;uploadId=null;}
     }
    }else uploadId=null;
