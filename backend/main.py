@@ -17,7 +17,7 @@ from mediapipe.tasks.python import vision as mp_vision
 from fastapi import BackgroundTasks, Body, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from job_store import init_state_store, load_match_jobs, load_match_uploads, save_match_job, save_match_upload, delete_match_upload, cleanup_expired_match_uploads
+from job_store import init_state_store, load_match_jobs, load_match_uploads, save_match_job, save_match_upload, delete_match_upload, cleanup_expired_match_uploads, create_match_job_for_upload, get_match_upload_completion
 from video_sampling import read_sampled_frame
 from upload_integrity import verify_uploaded_chunks
 
@@ -944,6 +944,13 @@ async def start_match_chunk_upload(payload: dict = Body(...)):
 def get_match_chunk_upload(upload_id: str):
     upload = match_uploads.get(upload_id)
     if upload is None:
+        completed_job_id = get_match_upload_completion(upload_id)
+        if completed_job_id and completed_job_id in match_jobs:
+            return {
+                "upload_id": upload_id, "completed": True,
+                "job_id": completed_job_id,
+                "status_url": f"/analyze/jobs/{completed_job_id}",
+            }
         raise HTTPException(status_code=404, detail="アップロード情報が見つかりません。最初から再送信してください。")
     return {
         "upload_id": upload_id,
@@ -992,6 +999,14 @@ async def put_match_upload_chunk(upload_id: str, chunk_index: int, request: Requ
 @app.post("/analyze/match/uploads/{upload_id}/complete", status_code=202)
 def complete_match_chunk_upload(upload_id: str, background_tasks: BackgroundTasks,
                                 payload: dict = Body(...)):
+    # If the previous response was lost after job creation, return the same job
+    # rather than requiring a full re-upload or creating a duplicate analysis.
+    completed_job_id = get_match_upload_completion(upload_id)
+    if completed_job_id and completed_job_id in match_jobs:
+        return {"ok": True, "job_id": completed_job_id,
+                "status": match_jobs[completed_job_id].get("status", "queued"),
+                "status_url": f"/analyze/jobs/{completed_job_id}",
+                "duplicate_completion": True}
     upload = match_uploads.get(upload_id)
     if upload is None:
         raise HTTPException(status_code=404, detail="アップロード情報が見つかりません。最初から再送信してください。")
@@ -1010,18 +1025,29 @@ def complete_match_chunk_upload(upload_id: str, background_tasks: BackgroundTask
     jersey_numbers = str(payload.get("jersey_numbers") or "10,74")
     job_id = uuid.uuid4().hex
     source_path = upload["path"]
-    match_jobs[job_id] = {
+    job = {
         "job_id": job_id, "status": "queued", "progress": 0,
         "stage": "解析待ち", "filename": upload["filename"],
         "size_bytes": upload["size_bytes"], "result": None, "error": None,
         "source_path": source_path, "jersey_numbers": jersey_numbers,
     }
-    save_match_job(job_id, match_jobs[job_id])
-    background_tasks.add_task(run_match_job, job_id, source_path, jersey_numbers)
+    canonical_job_id, created = create_match_job_for_upload(upload_id, job)
+    if not created:
+        job = match_jobs.get(canonical_job_id) or load_match_jobs().get(canonical_job_id)
+        if job is None:
+            raise HTTPException(status_code=503, detail="解析ジョブの受付状態を復旧できません。時間をおいて再試行してください。")
+        match_jobs[canonical_job_id] = job
+        return {"ok": True, "job_id": canonical_job_id,
+                "status": job.get("status", "queued"),
+                "status_url": f"/analyze/jobs/{canonical_job_id}",
+                "duplicate_completion": True}
+    match_jobs[canonical_job_id] = job
+    background_tasks.add_task(run_match_job, canonical_job_id, source_path, jersey_numbers)
     del match_uploads[upload_id]
     delete_match_upload(upload_id)
-    return {"ok": True, "job_id": job_id, "status": "queued",
-            "status_url": f"/analyze/jobs/{job_id}"}
+    return {"ok": True, "job_id": canonical_job_id, "status": "queued",
+            "status_url": f"/analyze/jobs/{canonical_job_id}",
+            "duplicate_completion": False}
 
 
 @app.get("/analyze/jobs/{job_id}")
