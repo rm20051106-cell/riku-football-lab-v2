@@ -51,6 +51,13 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         self.assertIn("pendingMatchRestore=restorePendingMatchVideo()", self.html)
         self.assertIn("pollMatchJobToAI(activeJob,matchAiResult)", self.html)
 
+    def test_visibility_and_focus_return_restore_workspace_without_duplicate_bursts(self):
+        self.assertIn("let lastMatchWorkspaceRestoreAt=0", self.html)
+        self.assertIn("if(now-lastMatchWorkspaceRestoreAt<2500)return true", self.html)
+        self.assertIn("document.addEventListener('visibilitychange'", self.html)
+        self.assertIn("if(document.visibilityState==='visible')restoreMatchWorkspaceOnReturn()", self.html)
+        self.assertIn("window.addEventListener('focus',()=>restoreMatchWorkspaceOnReturn())", self.html)
+
     def test_upload_resume_falls_back_to_persisted_pipeline_fingerprint(self):
         start = self.html.index("async function postMatchJobToAI")
         end = self.html.index("async function pollMatchJobToAI", start)
