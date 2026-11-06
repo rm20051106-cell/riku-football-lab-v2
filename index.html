@@ -725,7 +725,7 @@ async function postMatchJobToAI(file,resultElement){
     if(Number(session.size_bytes)!==file.size||Number(session.chunk_size_bytes)!==chunkSize){
      session=null;uploadId=null;
     }else{
-     const serverHashes=session.received_chunk_sha256||{};
+     const serverHashes=session.received_chunk_sha256&&typeof session.received_chunk_sha256==='object'&&!Array.isArray(session.received_chunk_sha256)?session.received_chunk_sha256:{};
      const receivedForCheck=(session.received_chunks||[]).map(Number);
      const matches=receivedForCheck.every(part=>Number.isInteger(part)&&part>=0&&part<chunkCount&&serverHashes[String(part)]===chunkHashes[part]);
      if(!matches){session=null;uploadId=null;}
