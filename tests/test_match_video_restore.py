@@ -264,7 +264,7 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         end = self.html.index("async function pollMatchJobToAI", start)
         handler = self.html[start:end]
         catch = handler[handler.rfind("}catch(e){"):]
-        self.assertIn("uploadId:uploadId||readMatchPipelineState().uploadId||null", catch)
+        self.assertIn("uploadId:uploadId||readMatchPipelineState().uploadId||previousPipeline.uploadId||null", catch)
         self.assertIn("uploadFingerprint:readMatchPipelineState().uploadFingerprint||null", catch)
     def test_completed_upload_resume_requires_valid_job_id(self):
         start = self.html.index("async function postMatchJobToAI")
