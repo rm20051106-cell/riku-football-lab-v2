@@ -6,7 +6,7 @@ on:
       - feature/stage56-resumable-long-video-upload-20261105
 
 concurrency:
-  group: stage56-video-form-quality-v4-${{ github.ref }}
+  group: stage56-video-form-quality-v5-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -21,15 +21,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Verify or install ffmpeg
+      - name: Install portable ffmpeg
         timeout-minutes: 5
         run: |
-          if command -v ffmpeg >/dev/null 2>&1; then
-            ffmpeg -version
-          else
-            sudo apt-get install -y ffmpeg
-            ffmpeg -version
-          fi
+          python -m pip install --disable-pip-version-check imageio-ffmpeg
+          python - <<'PY' >> "$GITHUB_PATH"
+          import os
+          import imageio_ffmpeg
+          print(os.path.dirname(imageio_ffmpeg.get_ffmpeg_exe()))
+          PY
+          ffmpeg -version
       - name: Install Playwright Python package
         run: python -m pip install --disable-pip-version-check playwright
       - name: Install Chromium and WebKit system dependencies
