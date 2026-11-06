@@ -148,7 +148,7 @@ function seekForm(s){if(formVideo.src)formVideo.currentTime=Math.max(0,formVideo
 function toggleGuide(){overlayGuide.classList.toggle('show')}
 function toggleFormGuide(){formOverlay.classList.toggle('show')}
 async function openVideoDB(){return new Promise((resolve,reject)=>{const req=indexedDB.open('rikuFootballLabVideos',1);req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains('videos'))req.result.createObjectStore('videos')};req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}
-async function storeClipVideo(id,file){const db=await openVideoDB();return new Promise((resolve,reject)=>{const tx=db.transaction('videos','readwrite');tx.objectStore('videos').put({blob:file,name:file.name,type:file.type,size:file.size},String(id));tx.oncomplete=()=>{db.close();resolve(true)};tx.onerror=()=>{db.close();reject(tx.error)}})}
+async function storeClipVideo(id,file){const db=await openVideoDB();return new Promise((resolve,reject)=>{const tx=db.transaction('videos','readwrite');tx.objectStore('videos').put({blob:file,name:file.name,type:file.type,size:file.size,lastModified:file.lastModified||Date.now()},String(id));tx.oncomplete=()=>{db.close();resolve(true)};tx.onerror=()=>{db.close();reject(tx.error)}})}
 async function getClipVideo(id){const db=await openVideoDB();return new Promise((resolve,reject)=>{const tx=db.transaction('videos','readonly');const req=tx.objectStore('videos').get(String(id));req.onsuccess=()=>{db.close();resolve(req.result||null)};req.onerror=()=>{db.close();reject(req.error)}})}
 async function removeClipVideo(id){try{const db=await openVideoDB();await new Promise((resolve,reject)=>{const tx=db.transaction('videos','readwrite');tx.objectStore('videos').delete(String(id));tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});db.close()}catch(e){console.warn('動画データ削除失敗',e)}}
 async function playSavedClip(id,time){try{const saved=await getClipVideo(id);if(!saved){alert('この記録には動画が保存されていません。新しい記録から動画を一緒に保存できます。');return}if(matchVideo.dataset.objectUrl)URL.revokeObjectURL(matchVideo.dataset.objectUrl);const url=URL.createObjectURL(saved.blob);matchVideo.dataset.objectUrl=url;matchVideo.src=url;matchVideo.load();showView('video');matchVideo.onloadedmetadata=()=>{matchVideo.currentTime=Math.min(Number(time)||0,matchVideo.duration||0);matchVideo.play().catch(()=>{})};videoMeta.textContent='保存動画：'+saved.name+'（端末内に保存）';videoWrap.scrollIntoView({behavior:'smooth',block:'center'})}catch(e){alert('保存動画を開けませんでした。端末の空き容量を確認してください。')}}
@@ -863,7 +863,48 @@ async function createRikuHighlight(){
   if(out)out.innerHTML='<b>陸玖ハイライト完成（'+data.clip_count+'場面）</b><video controls playsinline preload="metadata" style="width:100%;max-width:520px;border-radius:12px;margin-top:8px" src="'+url+'"></video><div><a href="'+url+'" target="_blank" rel="noopener">ハイライト動画を開く</a></div><div class="tiny muted">選択した「陸玖確認済み・良かった」場面のみを連結しました。動画はサーバーの一時保存です。iPhoneでは動画を開き、共有ボタンから「ファイルに保存」を選んでください。サーバー再起動後は再作成が必要です。'+(savedId?'履歴にも紐づけました。':'解析履歴を保存すると、この動画を履歴にも紐づけられます。')+'</div>';
  }catch(e){if(out)out.textContent='ハイライト作成に失敗：'+e.message}
 }
-function sendMatchToAI(){postMatchJobToAI(videoFile.files[0],matchAiResult)}
+async async function restorePendingMatchVideo(){
+ try{
+  const saved=await getClipVideo('__pending_match_video__');
+  if(!saved||!saved.blob)return false;
+  if(matchVideo.dataset.objectUrl)URL.revokeObjectURL(matchVideo.dataset.objectUrl);
+  const url=URL.createObjectURL(saved.blob);
+  matchVideo.dataset.objectUrl=url;
+  matchVideo.src=url;
+  matchVideo.load();
+  if(!videoTitle.value.trim())videoTitle.value=saved.name||'';
+  const size=Number(saved.size||saved.blob.size||0);
+  videoMeta.textContent='端末内保存動画を復元：'+(saved.name||'試合動画')+'（'+(size/1024/1024).toFixed(1)+' MB）・AI解析ボタンから再送信できます';
+  matchVideo.onloadedmetadata=()=>{clipTime.value='0.0';videoMeta.textContent='端末内保存動画を復元：'+(saved.name||'試合動画')+'（'+(size/1024/1024).toFixed(1)+' MB）・長さ '+matchVideo.duration.toFixed(1)+' 秒'};
+  return true;
+ }catch(e){console.warn('端末内保存動画の復元に失敗',e);return false}
+}
+async function sendMatchToAI(){
+ let file=videoFile.files[0]||await pendingMatchSave;
+ if(!file){
+  try{
+   const saved=await getClipVideo('__pending_match_video__');
+   if(saved&&saved.blob){
+    file=new File([saved.blob],saved.name||'match-video.mp4',{type:saved.type||saved.blob.type||'video/mp4',lastModified:Number(saved.lastModified)||Date.now()});
+   }
+  }catch(e){console.warn('端末保存動画の再取得に失敗',e)}
+ }
+ if(!file){matchAiResult.textContent='動画ファイルを確認できません。元の動画を選び直してください。';return}
+ await postMatchJobToAI(file,matchAiResult);
+}
+
+ let file=videoFile.files[0]||await pendingMatchSave;
+ if(!file){
+  try{
+   const saved=await getClipVideo('__pending_match_video__');
+   if(saved&&saved.blob){
+    file=new File([saved.blob],saved.name||'match-video.mp4',{type:saved.type||saved.blob.type||'video/mp4',lastModified:Number(saved.lastModified)||Date.now()});
+   }
+  }catch(e){console.warn('端末保存動画の再取得に失敗',e)}
+ }
+ if(!file){matchAiResult.textContent='動画ファイルを確認できません。元の動画を選び直してください。';return}
+ await postMatchJobToAI(file,matchAiResult);
+}
 function sendFormToAI(){postVideoToAI(formFile.files[0],'/analyze/form',{kick_type:formKind.value,dominant_foot:formFoot.value,camera_angle:formCameraAngle.value},formAiResult)}
 async function getVideoBackupManifest(){try{const db=await openVideoDB();return await new Promise((resolve,reject)=>{const tx=db.transaction('videos','readonly'),store=tx.objectStore('videos'),req=store.getAll(),keys=store.getAllKeys();let values=null,ids=null;const done=()=>{if(!values||!ids)return;const rows=values.map((v,i)=>({key:String(ids[i]),name:v.name||'動画',type:v.type||'',size:Number(v.size||v.blob?.size||0)}));db.close();resolve({count:rows.length,totalBytes:rows.reduce((n,x)=>n+x.size,0),files:rows})};req.onsuccess=()=>{values=req.result||[];done()};keys.onsuccess=()=>{ids=keys.result||[];done()};req.onerror=()=>{db.close();reject(req.error)};keys.onerror=()=>{db.close();reject(keys.error)}})}catch(e){return {count:null,totalBytes:null,files:[],note:'動画一覧を取得できませんでした'}}}
 async function exportData(){try{const manifest=await getVideoBackupManifest();const backup={format:'RIKU_FOOTBALL_LAB_BACKUP',version:2,createdAt:new Date().toISOString(),appData:state,videoManifest:manifest,videoPolicy:'動画ファイル本体はJSONに含まれません。端末内IndexedDBに保存された動画はこの書き出し・復元で削除も上書きもされません。別端末への動画移行は動画ファイルを個別に保存してください。'};const blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'});downloadBackupBlob(blob,'riku-football-lab-backup-'+today()+'.json')}catch(e){alert('バックアップを書き出せませんでした。端末の空き容量を確認してください。')}}
@@ -1882,10 +1923,11 @@ function renderAiFormCompare(){
 }
 function deleteAiFormAnalysis(id){if(!confirm('このAI解析履歴を削除しますか？'))return;state.aiFormAnalyses=(state.aiFormAnalyses||[]).filter(x=>x.id!==id);persist()}
 function deleteMeasure(d,t,v){if(!confirm('この測定記録を削除しますか？'))return;let idx=state.measures.findIndex(x=>x.date===d&&x.type===t&&x.value===v);if(idx>=0)state.measures.splice(idx,1);persist()}
-let pendingMatchSave=Promise.resolve(null);videoFile.addEventListener('change',()=>{let f=videoFile.files[0];if(!f)return;showView('video');updateMatchPipelineState({stageLabel:'動画を選択・端末保存中',progress:0,fileName:f.name,fileSize:f.size,detail:'動画分析画面で選択した動画を端末内へ一時保存しています。'});matchVideo.src=URL.createObjectURL(f);videoMeta.textContent=`読み込み：${f.name}（${(f.size/1024/1024).toFixed(1)} MB）・端末保存準備中`;matchVideo.onloadedmetadata=()=>{clipTime.value='0.0';videoMeta.textContent=`読み込み：${f.name}（${(f.size/1024/1024).toFixed(1)} MB）・長さ ${matchVideo.duration.toFixed(1)} 秒`};pendingMatchSave=storeClipVideo('__pending_match_video__',f).then(()=>{videoMeta.textContent+= '・動画保存準備OK';updateMatchPipelineState({stageLabel:'動画選択完了・アップロード待ち',progress:0,fileName:f.name,fileSize:f.size,detail:'動画はこのiPhone内に一時保存済みです。AI解析を開始できます。'});return f}).catch(e=>{console.error('動画の仮保存に失敗',e);videoMeta.textContent+='・動画の保存準備に失敗';updateMatchPipelineState({stageLabel:'端末内動画保存エラー',detail:e.message});return null})})
+let pendingMatchSave=Promise.resolve(null);videoFile.addEventListener('change',()=>{let f=videoFile.files[0];if(!f)return;showView('video');updateMatchPipelineState({stageLabel:'動画を選択・端末保存中',progress:0,fileName:f.name,fileSize:f.size,detail:'動画分析画面で選択した動画を端末内へ一時保存しています。'});if(matchVideo.dataset.objectUrl)URL.revokeObjectURL(matchVideo.dataset.objectUrl);const previewUrl=URL.createObjectURL(f);matchVideo.dataset.objectUrl=previewUrl;matchVideo.src=previewUrl;videoMeta.textContent=`読み込み：${f.name}（${(f.size/1024/1024).toFixed(1)} MB）・端末保存準備中`;matchVideo.onloadedmetadata=()=>{clipTime.value='0.0';videoMeta.textContent=`読み込み：${f.name}（${(f.size/1024/1024).toFixed(1)} MB）・長さ ${matchVideo.duration.toFixed(1)} 秒`};pendingMatchSave=storeClipVideo('__pending_match_video__',f).then(()=>{videoMeta.textContent+='・動画保存準備OK';updateMatchPipelineState({stageLabel:'動画選択完了・アップロード待ち',progress:0,fileName:f.name,fileSize:f.size,detail:'動画はこのiPhone内に一時保存済みです。AI解析を開始できます。'});return f}).catch(e=>{console.error('動画の仮保存に失敗',e);videoMeta.textContent+='・動画の保存準備に失敗';updateMatchPipelineState({stageLabel:'端末内動画保存エラー',detail:e.message});return null})})
 let pendingFormSave=Promise.resolve(null);formFile.addEventListener('change',()=>{let f=formFile.files[0];if(!f)return;formVideo.src=URL.createObjectURL(f);pendingFormSave=storeClipVideo('__pending_form_video__',f).then(()=>f).catch(e=>{console.error('フォーム動画の仮保存失敗',e);return null})})
 formKind.addEventListener('change',renderChecks);
 load();renderChecks();renderAll();renderMatchPipelineState();
+restorePendingMatchVideo();
 try{
  const pendingJobId=safeMatchStorageGet(MATCH_ACTIVE_JOB_KEY);
  const savedPipeline=readMatchPipelineState();
