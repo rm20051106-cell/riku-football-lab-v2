@@ -22,8 +22,8 @@ MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "120"))
 MAX_SECONDS = int(os.getenv("MAX_VIDEO_SECONDS", "60"))
 MAX_MATCH_SECONDS = int(os.getenv("MAX_MATCH_VIDEO_SECONDS", "1200"))
 MAX_MATCH_UPLOAD_MB = int(os.getenv("MAX_MATCH_UPLOAD_MB", "500"))
-MATCH_SAMPLE_RATE = float(os.getenv("MATCH_SAMPLE_RATE", "0.25"))
-MATCH_MAX_SAMPLES = int(os.getenv("MATCH_MAX_SAMPLES", "360"))
+MATCH_SAMPLE_RATE = float(os.getenv("MATCH_SAMPLE_RATE", "0.5"))
+MATCH_MAX_SAMPLES = int(os.getenv("MATCH_MAX_SAMPLES", "600"))
 POSE_LANDMARKER_MODEL = os.getenv("POSE_LANDMARKER_MODEL", "/app/models/pose_landmarker_lite.task")
 match_jobs = {}
 match_uploads = {}
@@ -557,6 +557,56 @@ def has_adjacent_sample_timing(current_time, previous_time, sampling_interval):
     return gap <= max(interval * 1.75, interval + 0.1)
 
 
+def build_match_sampling_plan(fps, total_frames, target_rate=None, max_samples=None):
+    """Return a bounded, duration-aware sampling plan for a complete match video."""
+    def finite_number(value):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        try:
+            number = float(value)
+            if number != number or number in (float("inf"), float("-inf")):
+                return None
+            return number
+        except (TypeError, ValueError, OverflowError):
+            return None
+
+    rate = finite_number(target_rate)
+    if rate is None or rate <= 0:
+        rate = finite_number(MATCH_SAMPLE_RATE)
+    if rate is None or rate <= 0:
+        rate = 0.5
+    rate = min(1.0, max(0.1, rate))
+
+    limit_value = finite_number(max_samples)
+    if limit_value is None or limit_value <= 0:
+        limit_value = finite_number(MATCH_MAX_SAMPLES)
+    if limit_value is None or limit_value <= 0:
+        limit_value = 600
+    limit = max(1, min(1200, int(limit_value)))
+
+    frame_rate = finite_number(fps)
+    if frame_rate is not None and frame_rate > 0:
+        interval = max(1, int(round(frame_rate / rate)))
+        actual_interval = interval / frame_rate
+    else:
+        interval = max(1, int(round(1 / rate)))
+        actual_interval = 1 / rate
+
+    frame_count = finite_number(total_frames)
+    if frame_count is not None and frame_count > 0:
+        estimated_samples = int((int(frame_count) + interval - 1) // interval)
+        sample_limit = min(limit, estimated_samples)
+    else:
+        sample_limit = limit
+
+    return {
+        "frame_interval": interval,
+        "sampling_interval_seconds": round(actual_interval, 3),
+        "sampling_rate_fps": round(1 / actual_interval, 3) if actual_interval > 0 else None,
+        "sample_limit": sample_limit,
+    }
+
+
 def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
     cap = cv2.VideoCapture(path)
     if not cap.isOpened():
@@ -570,12 +620,13 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
     if not os.path.exists(POSE_LANDMARKER_MODEL):
         cap.release()
         raise HTTPException(status_code=503, detail="複数選手検出モデルが見つかりません。サーバーの再デプロイが必要です。")
-    target_rate = max(0.1, MATCH_SAMPLE_RATE)
-    interval = max(1, int(round(fps / target_rate))) if fps > 0 else max(1, int(round(1 / target_rate)))
-    actual_interval = interval / fps if fps > 0 else 1 / target_rate
+    sampling_plan = build_match_sampling_plan(fps, total_frames)
+    interval = sampling_plan["frame_interval"]
+    actual_interval = sampling_plan["sampling_interval_seconds"]
+    sample_limit = sampling_plan["sample_limit"]
     targets = [x.strip() for x in (jersey_numbers or "10,74").replace("；", ",").split(",") if x.strip()]
     frames, people_per_frame, jersey_counts = [], [], {}
-    frame_idx, sample_index = 0, 0
+    sample_index = 0
     options = mp_vision.PoseLandmarkerOptions(
         base_options=mp_python.BaseOptions(model_asset_path=POSE_LANDMARKER_MODEL),
         running_mode=mp_vision.RunningMode.VIDEO,
@@ -586,13 +637,12 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
     )
     try:
         with mp_vision.PoseLandmarker.create_from_options(options) as landmarker:
-            while sample_index < MATCH_MAX_SAMPLES:
-                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+            exhausted = False
+            while sample_index < sample_limit:
                 ok, frame = cap.read()
                 if not ok:
                     break
-                current_frame_idx = frame_idx
-                frame_idx += interval
+                current_frame_idx = sample_index * interval
                 sample_index += 1
                 h, w = frame.shape[:2]
                 if w > 960:
@@ -637,7 +687,14 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
                     primary["detected_people"] = people
                     frames.append(primary)
                 if progress_callback and duration > 0:
-                    progress_callback(min(90, 15 + int(75 * min(1.0, (current_frame_idx / fps if fps > 0 else 0) / duration))))
+                    progress_callback(min(90, 15 + int(75 * min(1.0, (current_frame_idx / fps if fps > 0 else sample_index * actual_interval) / duration))))
+                # Sequential grabs avoid repeatedly seeking/decompressing from a new keyframe.
+                for _ in range(max(0, interval - 1)):
+                    if not cap.grab():
+                        exhausted = True
+                        break
+                if exhausted:
+                    break
     finally:
         cap.release()
     if not frames:
