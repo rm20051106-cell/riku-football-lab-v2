@@ -63,6 +63,22 @@ class MatchStateStoreTests(unittest.TestCase):
         job_store.delete_match_upload("upload-delete")
         self.assertNotIn("upload-delete", job_store.load_match_uploads())
 
+    def test_expired_incomplete_upload_is_removed_but_recent_upload_is_kept(self):
+        expired_path = str(Path(self.temp_dir.name) / "expired.mp4")
+        recent_path = str(Path(self.temp_dir.name) / "recent.mp4")
+        Path(expired_path).write_bytes(b"old")
+        Path(recent_path).write_bytes(b"new")
+        job_store.save_match_upload("upload-expired", {"upload_id": "upload-expired", "path": expired_path, "chunks": {}})
+        job_store.save_match_upload("upload-recent", {"upload_id": "upload-recent", "path": recent_path, "chunks": {}})
+        with job_store._connect() as connection:
+            connection.execute("UPDATE match_uploads SET updated_at = datetime('now', '-48 hours') WHERE upload_id = ?", ("upload-expired",))
+        paths = job_store.cleanup_expired_match_uploads(24)
+        self.assertEqual(paths, [expired_path])
+        restored = job_store.load_match_uploads()
+        self.assertNotIn("upload-expired", restored)
+        self.assertIn("upload-recent", restored)
+        self.assertTrue(Path(expired_path).exists())
+
 
 if __name__ == "__main__":
     unittest.main()
