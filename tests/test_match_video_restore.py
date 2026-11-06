@@ -90,6 +90,14 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         self.assertIn("finally", handler)
         self.assertIn("await postMatchJobToAI(file,matchAiResult)", handler)
 
+    def test_video_picker_resets_input_to_allow_same_file_reselection(self):
+        start = self.html.index("videoFile.addEventListener('change'")
+        end = self.html.index("let pendingFormSave", start)
+        handler = self.html[start:end]
+        self.assertIn("let f=videoFile.files[0]", handler)
+        self.assertLess(handler.index("if(!f)return"), handler.index("videoFile.value=''"))
+        self.assertIn("pendingMatchSave=storeClipVideo('__pending_match_video__',f)", handler)
+
     def test_upload_resume_falls_back_to_persisted_pipeline_fingerprint(self):
         start = self.html.index("async function postMatchJobToAI")
         end = self.html.index("async function pollMatchJobToAI", start)
