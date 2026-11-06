@@ -702,6 +702,9 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
                     frames.append(primary)
                 if progress_callback and duration > 0:
                     progress_callback(min(90, 15 + int(75 * min(1.0, (current_frame_idx / fps if fps > 0 else sample_index * actual_interval) / duration))))
+            # If metadata understated the duration, never silently call a capped partial scan complete.
+            if sample_index >= sample_limit and cap.grab():
+                raise HTTPException(status_code=413, detail=f"試合動画は{MAX_MATCH_SECONDS}秒以内にしてください。")
 
     finally:
         cap.release()
