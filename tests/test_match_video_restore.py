@@ -248,3 +248,12 @@ if __name__ == "__main__":
         self.assertIn("Array.isArray(session.received_chunks)", handler)
         self.assertIn("Number.isInteger(part)&&part>=0&&part<chunkCount", handler)
 
+    def test_resumed_upload_id_is_saved_before_chunk_transfer(self):
+        start = self.html.index("async function postMatchJobToAI")
+        end = self.html.index("async function pollMatchJobToAI", start)
+        handler = self.html[start:end]
+        persist = handler.index("stageLabel:'アップロード再開準備完了'")
+        transfer = handler.index("for(let part=0;part<chunkCount;part++)")
+        self.assertLess(persist, transfer)
+        self.assertIn("uploadFingerprint:fingerprint", handler[persist:transfer])
+
