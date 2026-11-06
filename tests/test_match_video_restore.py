@@ -342,7 +342,7 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         end = self.html.index("async function pollMatchJobToAI", start)
         handler = self.html[start:end]
         self.assertIn("typeof initData.upload_id!=='string'", handler)
-        self.assertIn("session&&typeof session==='object'&&!Array.isArray(session)", handler)
+        self.assertIn("!session||typeof session!=='object'||Array.isArray(session)", handler)
         self.assertIn("/^[a-f0-9]{64}$/i.test(serverHashes[String(part)]||'')", handler)
         self.assertIn("Array.isArray(verified.missing_chunks)", handler)
         self.assertIn("Number.isSafeInteger(verified.total_chunks)", handler)
