@@ -793,7 +793,7 @@ async function postMatchJobToAI(file,resultElement){
   updateMatchPipelineState({stageLabel:'アップロード完了・整合性検証中',progress:100,uploadId,detail:'全分割の受信確認が完了しました。解析ジョブを作成しています。'});
   const complete=await fetch(u+'/analyze/match/uploads/'+encodeURIComponent(uploadId)+'/complete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jersey_numbers:String(state.settings.jersey1)+','+String(state.settings.jersey2)}),credentials:'omit',cache:'no-store'});
   const completeRaw=await complete.text();let created;try{created=JSON.parse(completeRaw)}catch(e){created=null}
-  if(!complete.ok||!created||!created.job_id)throw Error('動画の組み立て HTTP '+complete.status+'：'+(created?.detail||completeRaw.slice(0,180)));
+  if(!complete.ok||!created||typeof created.job_id!=='string'||!created.job_id.trim())throw Error('動画の組み立て HTTP '+complete.status+'：'+(created?.detail||completeRaw.slice(0,180)));
   jobId=created.job_id;
   updateMatchPipelineState({stageLabel:'解析ジョブ受付完了',progress:0,jobId,uploadId:null,detail:'動画のアップロードは完了。解析サーバーの進捗を確認しています。'});
   // Persist the job first. If the tab closes now, startup can reconnect without re-uploading.
