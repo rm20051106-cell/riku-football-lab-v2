@@ -280,3 +280,9 @@ if __name__ == "__main__":
         handler = self.html[start:end]
         self.assertIn("typeof session.received_chunk_sha256==='object'", handler)
         self.assertIn("!Array.isArray(session.received_chunk_sha256)", handler)
+    def test_upload_error_refreshes_recovery_panel_immediately(self):
+        start = self.html.index("async function postMatchJobToAI")
+        end = self.html.index("async function pollMatchJobToAI", start)
+        handler = self.html[start:end]
+        catch = handler[handler.rfind("}catch(e){"):]
+        self.assertIn("renderMatchPipelineState();", catch)
