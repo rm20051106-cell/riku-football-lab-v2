@@ -634,7 +634,21 @@ async function postMatchJobToAI(file,resultElement){
    received.add(part);
    showUploadProgress(0,part);
   }
-  resultElement.textContent='全分割の受信を確認中…';
+  resultElement.textContent='サーバー側の受信状況を最終確認中…';
+  const verifyResponse=await fetch(u+'/analyze/match/uploads/'+encodeURIComponent(uploadId),{cache:'no-store'});
+  const verifyRaw=await verifyResponse.text();let verified;try{verified=JSON.parse(verifyRaw)}catch(e){verified=null}
+  if(!verifyResponse.ok||!verified)throw Error('受信状況の確認 HTTP '+verifyResponse.status+'：'+(verified?.detail||verifyRaw.slice(0,140)));
+  if(verified.completed&&verified.job_id){
+   jobId=verified.job_id;
+   try{localStorage.setItem('riku_active_match_job_v1',jobId);localStorage.removeItem(storageKey)}catch(e){}
+   resultElement.textContent='受付済みの解析ジョブを確認しました。解析状況に再接続します…';
+   return await pollMatchJobToAI(jobId,resultElement);
+  }
+  if(Number(verified.total_chunks)!==chunkCount||Number(verified.received_bytes)!==file.size||(verified.missing_chunks||[]).length){
+   throw Error('サーバー確認で未受信の分割が残っています。動画をもう一度選ぶと未受信分から再開できます。');
+  }
+  confirmedBytes=Number(verified.received_bytes);
+  resultElement.textContent='サーバー受信確認：100%。動画の整合性を検証して解析ジョブを作成しています…';
   const complete=await fetch(u+'/analyze/match/uploads/'+encodeURIComponent(uploadId)+'/complete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jersey_numbers:String(state.settings.jersey1)+','+String(state.settings.jersey2)}),credentials:'omit',cache:'no-store'});
   const completeRaw=await complete.text();let created;try{created=JSON.parse(completeRaw)}catch(e){created=null}
   if(!complete.ok||!created||!created.job_id)throw Error('動画の組み立て HTTP '+complete.status+'：'+(created?.detail||completeRaw.slice(0,180)));
