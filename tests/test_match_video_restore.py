@@ -224,9 +224,6 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         self.assertIn("jobId:result.job_id||null", save)
         self.assertIn("String(x.jobId||'')===stableJobId", save)
 
-
-if __name__ == "__main__":
-    unittest.main()
     def test_upload_rejects_empty_video_before_network_requests(self):
         start = self.html.index("async function postMatchJobToAI")
         end = self.html.index("async function pollMatchJobToAI", start)
@@ -286,3 +283,6 @@ if __name__ == "__main__":
         handler = self.html[start:end]
         catch = handler[handler.rfind("}catch(e){"):]
         self.assertIn("renderMatchPipelineState();", catch)
+
+if __name__ == "__main__":
+    unittest.main()
