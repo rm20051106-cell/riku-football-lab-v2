@@ -114,3 +114,26 @@ def delete_match_upload(upload_id: str) -> None:
 def delete_match_job(job_id: str) -> None:
     with _connect() as connection:
         connection.execute("DELETE FROM match_jobs WHERE job_id = ?", (job_id,))
+
+
+
+def cleanup_expired_match_uploads(max_age_hours: int = 24) -> list[str]:
+    """Delete abandoned temporary upload sessions and return their file paths."""
+    hours = max(1, int(max_age_hours))
+    with _connect() as connection:
+        rows = connection.execute(
+            "SELECT upload_id, payload FROM match_uploads "
+            "WHERE updated_at < datetime('now', ?)",
+            (f"-{hours} hours",),
+        ).fetchall()
+        paths = []
+        for upload_id, payload in rows:
+            try:
+                item = json.loads(payload)
+                path = item.get("path") if isinstance(item, dict) else None
+                if path:
+                    paths.append(str(path))
+            except (TypeError, ValueError):
+                pass
+            connection.execute("DELETE FROM match_uploads WHERE upload_id = ?", (upload_id,))
+    return paths
