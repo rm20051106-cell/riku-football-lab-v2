@@ -329,5 +329,13 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         handler = self.html[start:end]
         self.assertIn("Number.isSafeInteger(verified.total_chunks)", handler)
 
+    def test_chunk_retry_backoff_is_bounded_and_visible(self):
+        start = self.html.index("async function postMatchJobToAI")
+        end = self.html.index("async function pollMatchJobToAI", start)
+        handler = self.html[start:end]
+        self.assertIn("for(let attempt=1;attempt<=3&&!ok;attempt++)", handler)
+        self.assertIn("900*attempt", handler)
+        self.assertIn("再送信準備中", handler)
+
 if __name__ == "__main__":
     unittest.main()
