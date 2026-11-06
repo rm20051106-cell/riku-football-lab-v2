@@ -2,6 +2,7 @@
 import hashlib
 import os
 import re
+import tempfile
 
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -42,6 +43,31 @@ def verify_uploaded_chunks(path: str, total_size: int, chunk_size: int, chunks: 
             if digest.hexdigest() != expected_digest:
                 raise ValueError(f"chunk SHA-256 mismatch: {index}")
 
+
+
+def ensure_upload_file(path: str, total_size: int) -> bool:
+    """Create a missing sparse upload file inside the system temp directory.
+
+    Returns True when a new file was created. Existing files are never truncated.
+    """
+    if not isinstance(total_size, int) or total_size <= 0:
+        raise ValueError("invalid upload size")
+    temp_root = os.path.realpath(tempfile.gettempdir())
+    candidate = os.path.realpath(path)
+    try:
+        inside_temp = os.path.commonpath((temp_root, candidate)) == temp_root
+    except ValueError:
+        inside_temp = False
+    if candidate == temp_root or not inside_temp:
+        raise ValueError("upload path is outside the temporary directory")
+    try:
+        with open(candidate, "xb") as target:
+            target.truncate(total_size)
+        return True
+    except FileExistsError:
+        if not os.path.isfile(candidate):
+            raise ValueError("upload path is not a regular file")
+        return False
 
 def reconcile_uploaded_chunks(path: str, total_size: int, chunk_size: int, chunks: dict) -> list:
     """Return acknowledged chunk indexes whose on-disk bytes no longer match metadata."""
