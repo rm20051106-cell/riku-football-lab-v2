@@ -295,7 +295,7 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         start = self.html.index("async function postMatchJobToAI")
         end = self.html.index("async function pollMatchJobToAI", start)
         handler = self.html[start:end]
-        self.assertIn("session&&typeof session==='object'&&!Array.isArray(session)", handler)
+        self.assertIn("!session||typeof session!=='object'||Array.isArray(session)", handler)
 
     def test_resume_chunk_list_is_validated_before_mapping(self):
         start = self.html.index("async function postMatchJobToAI")
