@@ -173,6 +173,16 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         self.assertIn("uploadFingerprint:fingerprint", handler)
         self.assertIn("pipelineResume?.uploadId", handler)
 
+    def test_upload_failure_keeps_upload_session_for_retry(self):
+        start = self.html.index("async function postMatchJobToAI")
+        end = self.html.index("async function pollMatchJobToAI", start)
+        handler = self.html[start:end]
+        catch = handler[handler.rfind("}catch(e){"):]
+        self.assertIn("stageLabel:'通信・処理エラー／再接続待ち'", catch)
+        self.assertIn("uploadId", catch)
+        self.assertIn("同じ動画を選ぶと受信済み分割から再開できます", handler)
+        self.assertNotIn("uploadId:null", catch)
+
     def test_startup_video_restore_is_awaitable_before_analysis(self):
         self.assertIn("pendingMatchRestore=Promise.resolve(false)", self.html)
         self.assertIn("pendingMatchRestore=restorePendingMatchVideo();", self.html)
