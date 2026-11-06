@@ -51,8 +51,9 @@ class Stage62FullVideoSamplingTests(unittest.TestCase):
         self.assertIn("sample_limit", names)
         self.assertIn("interval", names)
         self.assertIn("exhausted", names)
-        self.assertIn("grab", names)
-        self.assertNotIn("set", names)
+        attributes = {n.attr for n in ast.walk(node) if isinstance(n, ast.Attribute)}
+        self.assertIn("grab", attributes)
+        self.assertNotIn("set", attributes)
 
 
 if __name__ == "__main__":
