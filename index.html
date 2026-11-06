@@ -691,6 +691,8 @@ async function postMatchJobToAI(file,resultElement){
  if(!Number.isFinite(file.size)||file.size<=0){resultElement.textContent='動画ファイルの容量が0、または取得できません。元の動画を選び直してください。';updateMatchPipelineState({stageLabel:'動画ファイル確認エラー',detail:'動画ファイルのサイズを確認できません。'});return}
  if(file.size>500*1024*1024){resultElement.textContent='試合動画は500MB以内にしてください。';return}
  let jobId=null;
+ let uploadId=null;
+ let uploadFingerprint=null;
  try{
   resultElement.textContent='AIサーバーの起動を確認しています…';
   const health=await fetch(u+'/health',{cache:'no-store'});
@@ -706,11 +708,12 @@ async function postMatchJobToAI(file,resultElement){
    resultElement.textContent='動画データを照合中：'+Math.floor(done/total*100)+'%';
   });
   const fingerprint=[file.name,file.size,file.lastModified,...chunkHashes].join('|');
+  uploadFingerprint=fingerprint;
   const storageKey='riku_match_upload_v1';
   let saved=null;
   try{saved=JSON.parse(localStorage.getItem(storageKey)||'null')}catch(e){}
   const pipelineResume=previousPipeline.uploadFingerprint===fingerprint?previousPipeline:null;
-  let uploadId=(saved&&saved.fingerprint===fingerprint?saved.uploadId:null)||(pipelineResume?.uploadId||null);
+  uploadId=(saved&&saved.fingerprint===fingerprint?saved.uploadId:null)||(pipelineResume?.uploadId||null);
   let session=null;
   if(uploadId){
    const resume=await fetch(u+'/analyze/match/uploads/'+encodeURIComponent(uploadId),{cache:'no-store'});
@@ -803,7 +806,7 @@ async function postMatchJobToAI(file,resultElement){
   return await pollMatchJobToAI(jobId,resultElement);
  }catch(e){
   resultElement.textContent='試合動画の解析に失敗：'+e.message+(jobId?'（ジョブID：'+jobId+'）':'');
-  updateMatchPipelineState({stageLabel:'通信・処理エラー／再接続待ち',jobId:jobId||safeMatchStorageGet(MATCH_ACTIVE_JOB_KEY)||null,uploadId:uploadId||readMatchPipelineState().uploadId||null,uploadFingerprint:readMatchPipelineState().uploadFingerprint||null,detail:e.message});
+  updateMatchPipelineState({stageLabel:'通信・処理エラー／再接続待ち',jobId:jobId||safeMatchStorageGet(MATCH_ACTIVE_JOB_KEY)||null,uploadId:uploadId||readMatchPipelineState().uploadId||previousPipeline.uploadId||null,uploadFingerprint:uploadFingerprint||readMatchPipelineState().uploadFingerprint||previousPipeline.uploadFingerprint||null,detail:e?.message||String(e)});
   renderMatchPipelineState();
  }
 }
