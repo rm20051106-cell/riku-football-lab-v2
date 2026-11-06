@@ -42,6 +42,15 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         self.assertIn("showView('video')", self.html)
 
 
+    def test_safari_bfcache_return_restores_video_workspace_and_job(self):
+        self.assertIn("function restoreMatchWorkspaceOnReturn()", self.html)
+        self.assertIn("window.addEventListener('pagehide'", self.html)
+        self.assertIn("safeMatchStorageSet('riku_last_view_v1','video')", self.html)
+        self.assertIn("window.addEventListener('pageshow',event=>", self.html)
+        self.assertIn("if(event.persisted)restoreMatchWorkspaceOnReturn()", self.html)
+        self.assertIn("pendingMatchRestore=restorePendingMatchVideo()", self.html)
+        self.assertIn("pollMatchJobToAI(activeJob,matchAiResult)", self.html)
+
     def test_upload_resume_falls_back_to_persisted_pipeline_fingerprint(self):
         start = self.html.index("async function postMatchJobToAI")
         end = self.html.index("async function pollMatchJobToAI", start)
