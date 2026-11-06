@@ -50,6 +50,13 @@ def init_state_store() -> None:
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS match_upload_completions (
+                upload_id TEXT PRIMARY KEY,
+                job_id TEXT NOT NULL,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
 
 
 def _encode(value: Any) -> str:
@@ -65,6 +72,37 @@ def save_match_job(job_id: str, job: dict) -> None:
                  payload=excluded.payload, updated_at=CURRENT_TIMESTAMP""",
             (job_id, _encode(job)),
         )
+
+
+
+def create_match_job_for_upload(upload_id: str, job: dict) -> tuple[str, bool]:
+    """Atomically persist one job per upload session; repeated completion is idempotent."""
+    with _connect() as connection:
+        row = connection.execute(
+            "SELECT job_id FROM match_upload_completions WHERE upload_id = ?",
+            (upload_id,),
+        ).fetchone()
+        if row:
+            return str(row[0]), False
+        job_id = str(job["job_id"])
+        connection.execute(
+            "INSERT INTO match_jobs(job_id, payload, updated_at) VALUES(?, ?, CURRENT_TIMESTAMP)",
+            (job_id, _encode(job)),
+        )
+        connection.execute(
+            "INSERT INTO match_upload_completions(upload_id, job_id, updated_at) VALUES(?, ?, CURRENT_TIMESTAMP)",
+            (upload_id, job_id),
+        )
+        return job_id, True
+
+
+def get_match_upload_completion(upload_id: str) -> str | None:
+    with _connect() as connection:
+        row = connection.execute(
+            "SELECT job_id FROM match_upload_completions WHERE upload_id = ?",
+            (upload_id,),
+        ).fetchone()
+    return str(row[0]) if row else None
 
 
 def load_match_jobs() -> dict:
