@@ -310,5 +310,11 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         handler = self.html[start:end]
         self.assertIn("/^[a-f0-9]{64}$/i.test(serverHashes[String(part)]||'')", handler)
 
+    def test_verified_completed_response_requires_nonempty_string_job_id(self):
+        start = self.html.index("async function postMatchJobToAI")
+        end = self.html.index("async function pollMatchJobToAI", start)
+        handler = self.html[start:end]
+        self.assertIn("verified.completed&&typeof verified.job_id==='string'&&verified.job_id.trim()", handler)
+
 if __name__ == "__main__":
     unittest.main()
