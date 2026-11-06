@@ -577,32 +577,50 @@ async function buildMatchChunkHashes(file,chunkSize,onProgress){
 }
 const MATCH_PIPELINE_STORAGE_KEY='riku_match_pipeline_status_v1';
 const MATCH_ACTIVE_JOB_KEY='riku_active_match_job_v1';
+let MATCH_PIPELINE_STORAGE_AVAILABLE=true;
+function safeMatchStorageGet(key){
+ try{return localStorage.getItem(key);}catch(e){MATCH_PIPELINE_STORAGE_AVAILABLE=false;return null;}
+}
+function safeMatchStorageSet(key,value){
+ try{localStorage.setItem(key,value);return true;}catch(e){MATCH_PIPELINE_STORAGE_AVAILABLE=false;return false;}
+}
+function safeMatchStorageRemove(key){
+ try{localStorage.removeItem(key);return true;}catch(e){MATCH_PIPELINE_STORAGE_AVAILABLE=false;return false;}
+}
 function readMatchPipelineState(){
- try{return JSON.parse(localStorage.getItem(MATCH_PIPELINE_STORAGE_KEY)||'{}')||{};}catch(e){return {};}
+ const raw=safeMatchStorageGet(MATCH_PIPELINE_STORAGE_KEY);
+ if(!raw)return {};
+ try{
+  const parsed=JSON.parse(raw);
+  return parsed&&typeof parsed==='object'&&!Array.isArray(parsed)?parsed:{};
+ }catch(e){return {};}
 }
 function updateMatchPipelineState(patch){
  const next={...readMatchPipelineState(),...patch,updatedAt:new Date().toISOString()};
- try{localStorage.setItem(MATCH_PIPELINE_STORAGE_KEY,JSON.stringify(next));}catch(e){}
+ safeMatchStorageSet(MATCH_PIPELINE_STORAGE_KEY,JSON.stringify(next));
  renderMatchPipelineState();
  return next;
 }
 function renderMatchPipelineState(){
  const panel=document.getElementById('matchPipelineStatus');if(!panel)return;
  const saved=readMatchPipelineState();
- const activeJob=localStorage.getItem(MATCH_ACTIVE_JOB_KEY)||saved.jobId||'';
+ const activeJob=safeMatchStorageGet(MATCH_ACTIVE_JOB_KEY)||saved.jobId||'';
  const stage=saved.stageLabel||'まだアップロードしていません';
- const progress=Number.isFinite(Number(saved.progress))?Math.max(0,Math.min(100,Number(saved.progress))):0;
- const updated=saved.updatedAt?new Date(saved.updatedAt).toLocaleString('ja-JP'):'—';
+ const rawProgress=Number(saved.progress);
+ const progress=Number.isFinite(rawProgress)?Math.max(0,Math.min(100,rawProgress)):0;
+ const parsedUpdated=saved.updatedAt?new Date(saved.updatedAt):null;
+ const updated=parsedUpdated&&!Number.isNaN(parsedUpdated.getTime())?parsedUpdated.toLocaleString('ja-JP'):'—';
  panel.innerHTML='<b>動画処理状況</b><div style="margin-top:5px">'+esc(stage)+'</div>'+
   (saved.fileName?'<div class="tiny muted">'+esc(saved.fileName)+(saved.fileSize?' ・ '+(Number(saved.fileSize)/1024/1024).toFixed(1)+'MB':'')+'</div>':'')+
   '<div class="progress"><span style="width:'+progress+'%"></span></div>'+
   '<div class="tiny muted">進捗 '+progress+'% ・ 最終更新 '+esc(updated)+'</div>'+
   (saved.detail?'<div class="tiny">'+esc(saved.detail)+'</div>':'')+
   (activeJob?'<div class="tiny muted">解析ジョブID：'+esc(activeJob)+'</div><div class="btnrow"><button class="secondary small" onclick="reconnectSavedMatchJob()">解析状況を再接続</button></div>':
-   (saved.uploadId?'<div class="tiny muted">同じ動画を選ぶと、サーバー確認済みの分割から再開できます。</div>':''));
+   (saved.uploadId?'<div class="tiny muted">同じ動画を選ぶと、サーバー確認済みの分割から再開できます。</div>':''))+
+  (!MATCH_PIPELINE_STORAGE_AVAILABLE?'<div class="note">iPhoneの保存領域にアクセスできません。画面を閉じると解析ジョブの再接続情報が残らない可能性があります。Safariのサイトデータ設定を確認し、通信中はこの画面を開いたままにしてください。</div>':'');
 }
 async function reconnectSavedMatchJob(){
- const jobId=localStorage.getItem(MATCH_ACTIVE_JOB_KEY)||readMatchPipelineState().jobId;
+ const jobId=safeMatchStorageGet(MATCH_ACTIVE_JOB_KEY)||readMatchPipelineState().jobId;
  if(!jobId){renderMatchPipelineState();return;}
  updateMatchPipelineState({jobId,stageLabel:'保存済みの解析ジョブへ再接続中',detail:'サーバーから最新の状態を取得しています。'});
  await pollMatchJobToAI(jobId,matchAiResult);
