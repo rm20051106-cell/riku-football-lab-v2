@@ -323,5 +323,11 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         self.assertIn("Array.isArray(verified.missing_chunks)", handler)
         self.assertIn("verified.missing_chunks.length!==0", handler)
 
+    def test_server_chunk_total_must_be_a_safe_integer(self):
+        start = self.html.index("async function postMatchJobToAI")
+        end = self.html.index("async function pollMatchJobToAI", start)
+        handler = self.html[start:end]
+        self.assertIn("Number.isSafeInteger(verified.total_chunks)", handler)
+
 if __name__ == "__main__":
     unittest.main()
