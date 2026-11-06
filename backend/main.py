@@ -586,7 +586,10 @@ def build_match_sampling_plan(fps, total_frames, target_rate=None, max_samples=N
 
     frame_rate = finite_number(fps)
     if frame_rate is not None and frame_rate > 0:
-        interval = max(1, int(round(frame_rate / rate)))
+        # Round upward so sampling never exceeds the requested maximum rate.
+        interval = max(1, int(frame_rate / rate))
+        if interval * rate < frame_rate:
+            interval += 1
         actual_interval = interval / frame_rate
     else:
         interval = 1
