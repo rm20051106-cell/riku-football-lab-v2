@@ -130,6 +130,16 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         self.assertIn("saved.blob.size<=0", helper)
         self.assertIn("端末内の動画データが空か読み取れません", helper)
 
+    def test_pending_restore_does_not_overwrite_a_newer_video_selection(self):
+        self.assertIn("let matchVideoSelectionVersion=0", self.html)
+        start = self.html.index("async function restorePendingMatchVideo()")
+        end = self.html.index("async function sendMatchToAI()", start)
+        restore = self.html[start:end]
+        self.assertIn("const selectionVersion=matchVideoSelectionVersion", restore)
+        self.assertIn("if(selectionVersion!==matchVideoSelectionVersion)return false", restore)
+        start = self.html.index("videoFile.addEventListener('change'")
+        self.assertIn("matchVideoSelectionVersion++", self.html[start:start+180])
+
     def test_upload_resume_falls_back_to_persisted_pipeline_fingerprint(self):
         start = self.html.index("async function postMatchJobToAI")
         end = self.html.index("async function pollMatchJobToAI", start)
