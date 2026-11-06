@@ -58,6 +58,14 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         self.assertIn("if(document.visibilityState==='visible')restoreMatchWorkspaceOnReturn()", self.html)
         self.assertIn("window.addEventListener('focus',()=>restoreMatchWorkspaceOnReturn())", self.html)
 
+    def test_home_shows_recovery_entry_for_pending_video_work(self):
+        self.assertIn('id="homeMatchRecovery"', self.html)
+        self.assertIn('onclick="returnToMatchWorkspace()"', self.html)
+        self.assertIn("function renderHomeMatchRecovery()", self.html)
+        self.assertIn("card.hidden=!pending", self.html)
+        self.assertIn("function returnToMatchWorkspace()", self.html)
+        self.assertIn("renderHomeMatchRecovery();", self.html)
+
     def test_upload_resume_falls_back_to_persisted_pipeline_fingerprint(self):
         start = self.html.index("async function postMatchJobToAI")
         end = self.html.index("async function pollMatchJobToAI", start)
