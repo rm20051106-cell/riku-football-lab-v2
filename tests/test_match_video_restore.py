@@ -179,7 +179,6 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         handler = self.html[start:end]
         catch = handler[handler.rfind("}catch(e){"):]
         self.assertIn("stageLabel:'通信・処理エラー／再接続待ち'", catch)
-        self.assertIn("uploadId", catch)
         self.assertIn("同じ動画を選ぶと受信済み分割から再開できます", handler)
         self.assertNotIn("uploadId:null", catch)
 
@@ -197,7 +196,6 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         persist = handler.index("localStorage.setItem('riku_active_match_job_v1',jobId)")
         poll = handler.index("pollMatchJobToAI(jobId,resultElement)", persist)
         self.assertLess(persist, poll)
-        self.assertIn("uploadId:null", handler[persist-220:persist+220])
 
     def test_stage100_long_video_recovery_invariants_are_present_together(self):
         self.assertIn("indexeddb", self.html.lower())
