@@ -593,17 +593,19 @@ def build_match_sampling_plan(fps, total_frames, target_rate=None, max_samples=N
         actual_interval = 1 / rate
 
     frame_count = finite_number(total_frames)
-    if frame_count is not None and frame_count > 0:
-        estimated_samples = int((int(frame_count) + interval - 1) // interval)
-        sample_limit = min(limit, estimated_samples)
-    else:
-        sample_limit = limit
+    estimated_samples = (
+        int((int(frame_count) + interval - 1) // interval)
+        if frame_count is not None and frame_count > 0 else None
+    )
 
+    # Do not trust container frame-count metadata as an EOF signal. Keep the
+    # configured safety ceiling and let VideoCapture.read() detect the real end.
     return {
         "frame_interval": interval,
         "sampling_interval_seconds": round(actual_interval, 3),
         "sampling_rate_fps": round(1 / actual_interval, 3) if actual_interval > 0 else None,
-        "sample_limit": sample_limit,
+        "sample_limit": limit,
+        "estimated_samples": estimated_samples,
     }
 
 
