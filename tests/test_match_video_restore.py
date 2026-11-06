@@ -35,7 +35,7 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
 
     def test_last_selected_view_is_persisted_and_restored(self):
         start = self.html.index("function showView(id)")
-        end = self.html.index("\\nfunction ", start)
+        end = self.html.index("function inferTrainingFocus", start)
         show_view = self.html[start:end]
         self.assertIn("localStorage.setItem('riku_last_view_v1',String(id))", show_view)
         self.assertIn("safeMatchStorageGet('riku_last_view_v1')==='video'", self.html)
