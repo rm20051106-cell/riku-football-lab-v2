@@ -80,6 +80,16 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         self.assertIn("await pendingMatchRestore", handler)
         self.assertLess(handler.index("await pendingMatchRestore"), handler.index("pollMatchJobToAI"))
 
+    def test_send_match_to_ai_prevents_duplicate_upload_start(self):
+        start = self.html.index("async function sendMatchToAI()")
+        end = self.html.index("function sendFormToAI()", start)
+        handler = self.html[start:end]
+        self.assertIn("window.__rikuMatchUploadStarting", handler)
+        self.assertIn("window.__rikuMatchUploadStarting=true", handler)
+        self.assertIn("window.__rikuMatchUploadStarting=false", handler)
+        self.assertIn("finally", handler)
+        self.assertIn("await postMatchJobToAI(file,matchAiResult)", handler)
+
     def test_upload_resume_falls_back_to_persisted_pipeline_fingerprint(self):
         start = self.html.index("async function postMatchJobToAI")
         end = self.html.index("async function pollMatchJobToAI", start)
