@@ -562,6 +562,19 @@ function putMatchUploadChunkWithProgress(url,blob,offset,onProgress){
   xhr.send(blob);
  });
 }
+async function buildMatchChunkHashes(file,chunkSize,onProgress){
+ if(!window.crypto?.subtle)throw Error('この接続では動画の安全な照合機能を利用できません。HTTPS接続で開き直してください。');
+ const hashes=[];
+ const count=Math.ceil(file.size/chunkSize);
+ for(let part=0;part<count;part++){
+  const start=part*chunkSize,end=Math.min(file.size,start+chunkSize);
+  const bytes=await file.slice(start,end).arrayBuffer();
+  const digest=await crypto.subtle.digest('SHA-256',bytes);
+  hashes.push(Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join(''));
+  if(typeof onProgress==='function')onProgress(part+1,count);
+ }
+ return hashes;
+}
 async function postMatchJobToAI(file,resultElement){
  const u=getApiUrl();
  if(!u){resultElement.textContent='AIサーバーURLが未設定です。設定画面でURLを保存してください。';return}
@@ -576,7 +589,11 @@ async function postMatchJobToAI(file,resultElement){
   if(hj.ok!==true && !(hj.status==='ready' && hj.service==='RIKU FOOTBALL LAB Free AI Analysis API'))throw Error('サーバーの応答が想定外です');
   const chunkSize=4*1024*1024;
   const chunkCount=Math.ceil(file.size/chunkSize);
-  const fingerprint=[file.name,file.size,file.lastModified].join('|');
+  resultElement.textContent='動画データを分割して照合中…';
+  const chunkHashes=await buildMatchChunkHashes(file,chunkSize,(done,total)=>{
+   resultElement.textContent='動画データを照合中：'+Math.floor(done/total*100)+'%';
+  });
+  const fingerprint=[file.name,file.size,file.lastModified,...chunkHashes].join('|');
   const storageKey='riku_match_upload_v1';
   let saved=null;
   try{saved=JSON.parse(localStorage.getItem(storageKey)||'null')}catch(e){}
@@ -594,6 +611,11 @@ async function postMatchJobToAI(file,resultElement){
     }
     if(Number(session.size_bytes)!==file.size||Number(session.chunk_size_bytes)!==chunkSize){
      session=null;uploadId=null;
+    }else{
+     const serverHashes=session.received_chunk_sha256||{};
+     const receivedForCheck=(session.received_chunks||[]).map(Number);
+     const matches=receivedForCheck.every(part=>Number.isInteger(part)&&part>=0&&part<chunkCount&&serverHashes[String(part)]===chunkHashes[part]);
+     if(!matches){session=null;uploadId=null;}
     }
    }else uploadId=null;
   }
