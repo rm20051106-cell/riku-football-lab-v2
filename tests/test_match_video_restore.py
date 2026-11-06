@@ -190,6 +190,15 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         self.assertNotIn("removeClipVideo('__pending_match_video__')", handler)
         self.assertIn("updateMatchPipelineState({stageLabel:'解析ジョブ受付完了'", handler)
 
+    def test_analysis_job_id_is_persisted_before_polling_starts(self):
+        start = self.html.index("async function postMatchJobToAI")
+        end = self.html.index("async function pollMatchJobToAI", start)
+        handler = self.html[start:end]
+        persist = handler.index("localStorage.setItem('riku_active_match_job_v1',jobId)")
+        poll = handler.index("pollMatchJobToAI(jobId,resultElement)", persist)
+        self.assertLess(persist, poll)
+        self.assertIn("uploadId:null", handler[persist-220:persist+220])
+
     def test_startup_video_restore_is_awaitable_before_analysis(self):
         self.assertIn("pendingMatchRestore=Promise.resolve(false)", self.html)
         self.assertIn("pendingMatchRestore=restorePendingMatchVideo();", self.html)
