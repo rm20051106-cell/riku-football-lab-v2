@@ -609,12 +609,21 @@ function renderMatchPipelineState(){
  const rawProgress=Number(saved.progress);
  const progress=Number.isFinite(rawProgress)?Math.max(0,Math.min(100,rawProgress)):0;
  const parsedUpdated=saved.updatedAt?new Date(saved.updatedAt):null;
- const updated=parsedUpdated&&!Number.isNaN(parsedUpdated.getTime())?parsedUpdated.toLocaleString('ja-JP'):'—';
+ const validUpdated=parsedUpdated&&!Number.isNaN(parsedUpdated.getTime());
+ const updated=validUpdated?parsedUpdated.toLocaleString('ja-JP'):'—';
+ const ageMs=validUpdated?Math.max(0,Date.now()-parsedUpdated.getTime()):0;
+ const terminalStages=['解析完了','解析失敗','解析中断・動画の再送信が必要'];
+ const hasRecoverableWork=!!(activeJob||saved.uploadId);
+ const possiblyStale=hasRecoverableWork&&!terminalStages.includes(stage)&&ageMs>120000;
+ const ageMinutes=Math.floor(ageMs/60000);
+ const fileBytes=Number(saved.fileSize);
+ const fileSizeLabel=Number.isFinite(fileBytes)&&fileBytes>0?' ・ '+(fileBytes/1024/1024).toFixed(1)+'MB':'';
  panel.innerHTML='<b>動画処理状況</b><div style="margin-top:5px">'+esc(stage)+'</div>'+
-  (saved.fileName?'<div class="tiny muted">'+esc(saved.fileName)+(saved.fileSize?' ・ '+(Number(saved.fileSize)/1024/1024).toFixed(1)+'MB':'')+'</div>':'')+
+  (saved.fileName?'<div class="tiny muted">'+esc(saved.fileName)+fileSizeLabel+'</div>':'')+
   '<div class="progress"><span style="width:'+progress+'%"></span></div>'+
   '<div class="tiny muted">進捗 '+progress+'% ・ 最終更新 '+esc(updated)+'</div>'+
   (saved.detail?'<div class="tiny">'+esc(saved.detail)+'</div>':'')+
+  (possiblyStale?'<div class="note">前回の更新から'+ageMinutes+'分経過しています。処理が止まっている可能性があります。'+(activeJob?'「解析状況を再接続」でサーバーの最新状態を確認してください。':'同じ動画を選び直すと、サーバー確認済みの分割から再開できます。')+'</div>':'')+
   (activeJob?'<div class="tiny muted">解析ジョブID：'+esc(activeJob)+'</div><div class="btnrow"><button class="secondary small" onclick="reconnectSavedMatchJob()">解析状況を再接続</button></div>':
    (saved.uploadId?'<div class="tiny muted">同じ動画を選ぶと、サーバー確認済みの分割から再開できます。</div>':''))+
   (!MATCH_PIPELINE_STORAGE_AVAILABLE?'<div class="note">iPhoneの保存領域にアクセスできません。画面を閉じると解析ジョブの再接続情報が残らない可能性があります。Safariのサイトデータ設定を確認し、通信中はこの画面を開いたままにしてください。</div>':'');
