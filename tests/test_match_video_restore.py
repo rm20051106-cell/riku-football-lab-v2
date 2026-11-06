@@ -316,5 +316,12 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         handler = self.html[start:end]
         self.assertIn("verified.completed&&typeof verified.job_id==='string'&&verified.job_id.trim()", handler)
 
+    def test_missing_chunk_list_must_be_an_empty_array_before_completion(self):
+        start = self.html.index("async function postMatchJobToAI")
+        end = self.html.index("async function pollMatchJobToAI", start)
+        handler = self.html[start:end]
+        self.assertIn("Array.isArray(verified.missing_chunks)", handler)
+        self.assertIn("verified.missing_chunks.length!==0", handler)
+
 if __name__ == "__main__":
     unittest.main()
