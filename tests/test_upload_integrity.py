@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from upload_integrity import verify_uploaded_chunks, build_upload_resume_state, reconcile_uploaded_chunks
+from upload_integrity import verify_uploaded_chunks, build_upload_resume_state, reconcile_uploaded_chunks, ensure_upload_file
 
 
 class UploadIntegrityTests(unittest.TestCase):
