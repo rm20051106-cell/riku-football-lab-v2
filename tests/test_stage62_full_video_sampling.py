@@ -134,6 +134,12 @@ class Stage62FullVideoSamplingTests(unittest.TestCase):
         ]
         self.assertTrue(calls)
 
+    def test_ci_keeps_webkit_for_explicit_safari_regression_tests(self):
+        workflow = (ROOT / ".github" / "workflows" / "stage56-validation.yml").read_text(encoding="utf-8")
+        browser_tests = (ROOT / "tests" / "test_browser_e2e.py").read_text(encoding="utf-8")
+        self.assertIn("python -m playwright install --with-deps chromium webkit", workflow)
+        self.assertIn("self.playwright.webkit.launch", browser_tests)
+
 
 if __name__ == "__main__":
     unittest.main()
