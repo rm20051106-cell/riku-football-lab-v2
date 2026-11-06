@@ -688,6 +688,7 @@ async function postMatchJobToAI(file,resultElement){
  updateMatchPipelineState({stageLabel:'サーバー接続確認中',progress:0,fileName:file?.name||'試合動画',fileSize:file?.size||0,detail:'接続と動画ファイルを確認しています。',jobId:null,uploadId:null,uploadFingerprint:null});
  if(!u){resultElement.textContent='AIサーバーURLが未設定です。設定画面でURLを保存してください。';return}
  if(!file){resultElement.textContent='先に試合動画を選択してください。';return}
+ if(!Number.isFinite(file.size)||file.size<=0){resultElement.textContent='動画ファイルの容量が0、または取得できません。元の動画を選び直してください。';updateMatchPipelineState({stageLabel:'動画ファイル確認エラー',detail:'動画ファイルのサイズを確認できません。'});return}
  if(file.size>500*1024*1024){resultElement.textContent='試合動画は500MB以内にしてください。';return}
  let jobId=null;
  try{
