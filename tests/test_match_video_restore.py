@@ -80,6 +80,14 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         self.assertIn("await pendingMatchRestore", handler)
         self.assertLess(handler.index("await pendingMatchRestore"), handler.index("pollMatchJobToAI"))
 
+    def test_recovery_navigation_preserves_pending_video_blob(self):
+        start = self.html.index("async function returnToMatchWorkspace()")
+        end = self.html.index("function reselectPendingMatchVideo()", start)
+        handler = self.html[start:end]
+        self.assertNotIn("removeClipVideo", handler)
+        self.assertIn("restorePendingMatchVideo()", handler)
+        self.assertIn("renderMatchPipelineState()", handler)
+
     def test_send_match_to_ai_prevents_duplicate_upload_start(self):
         start = self.html.index("async function sendMatchToAI()")
         end = self.html.index("function sendFormToAI()", start)
