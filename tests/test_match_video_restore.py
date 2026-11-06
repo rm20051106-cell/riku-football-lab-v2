@@ -200,7 +200,7 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         self.assertIn("uploadId:null", handler[persist-220:persist+220])
 
     def test_stage100_long_video_recovery_invariants_are_present_together(self):
-        self.assertIn("idb", self.html.lower())
+        self.assertIn("indexeddb", self.html.lower())
         self.assertIn("function reselectPendingMatchVideo()", self.html)
         self.assertIn("window.__rikuMatchUploadStarting", self.html)
         self.assertIn("matchVideoSelectionVersion", self.html)
