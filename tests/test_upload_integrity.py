@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from upload_integrity import verify_uploaded_chunks, build_upload_resume_state, reconcile_uploaded_chunks, ensure_upload_file
+from upload_integrity import verify_uploaded_chunks, build_upload_resume_state, reconcile_uploaded_chunks, ensure_upload_file, check_upload_disk_capacity
 
 
 class UploadIntegrityTests(unittest.TestCase):
@@ -106,6 +106,18 @@ class UploadIntegrityTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "metadata"):
             verify_uploaded_chunks(str(self.path), 10, 4, {"0": self.chunks["0"]})
 
+
+    def test_disk_capacity_requires_full_video_and_safety_reserve(self):
+        from unittest.mock import patch
+        usage = type("Usage", (), {"free": 1500})()
+        with patch("upload_integrity.shutil.disk_usage", return_value=usage):
+            self.assertEqual(check_upload_disk_capacity(1000, reserve_bytes=400), 1500)
+            with self.assertRaisesRegex(OSError, "required=1401"):
+                check_upload_disk_capacity(1001, reserve_bytes=400)
+
+    def test_disk_capacity_rejects_invalid_size(self):
+        with self.assertRaisesRegex(ValueError, "invalid upload size"):
+            check_upload_disk_capacity(0)
 
 if __name__ == "__main__":
     unittest.main()
