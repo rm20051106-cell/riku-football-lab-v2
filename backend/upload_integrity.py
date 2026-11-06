@@ -2,6 +2,7 @@
 import hashlib
 import os
 import re
+import shutil
 import tempfile
 
 
@@ -43,6 +44,20 @@ def verify_uploaded_chunks(path: str, total_size: int, chunk_size: int, chunks: 
             if digest.hexdigest() != expected_digest:
                 raise ValueError(f"chunk SHA-256 mismatch: {index}")
 
+
+
+def check_upload_disk_capacity(total_size: int, directory: str | None = None,
+                               reserve_bytes: int = 64 * 1024 * 1024) -> int:
+    """Require room for the complete upload plus a safety reserve before accepting it."""
+    if not isinstance(total_size, int) or total_size <= 0:
+        raise ValueError("invalid upload size")
+    target = directory or tempfile.gettempdir()
+    free_bytes = shutil.disk_usage(target).free
+    if free_bytes < total_size + max(0, int(reserve_bytes)):
+        raise OSError(
+            f"required={total_size + max(0, int(reserve_bytes))} bytes, available={free_bytes} bytes"
+        )
+    return free_bytes
 
 
 def ensure_upload_file(path: str, total_size: int) -> bool:
