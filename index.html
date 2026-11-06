@@ -900,7 +900,7 @@ async function createRikuHighlight(){
 async function restorePendingMatchVideo(){
  try{
   const saved=await getClipVideo('__pending_match_video__');
-  if(!saved||!saved.blob)return false;
+  if(!saved||!(saved.blob instanceof Blob)||saved.blob.size<=0){if(saved&&videoMeta)videoMeta.textContent='端末内の動画データが空か読み取れません。同じ動画を選び直してください。';return false;}
   if(matchVideo.dataset.objectUrl)URL.revokeObjectURL(matchVideo.dataset.objectUrl);
   const url=URL.createObjectURL(saved.blob);
   matchVideo.dataset.objectUrl=url;
