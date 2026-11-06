@@ -716,6 +716,7 @@ async function postMatchJobToAI(file,resultElement){
    const resume=await fetch(u+'/analyze/match/uploads/'+encodeURIComponent(uploadId),{cache:'no-store'});
    if(resume.ok){
     session=await resume.json();
+    if(!session||typeof session!=='object'||Array.isArray(session))throw Error('再開セッションの応答形式が正しくありません。');
     if(session.completed&&typeof session.job_id==='string'&&session.job_id.trim()){
      jobId=session.job_id;
      try{localStorage.setItem('riku_active_match_job_v1',jobId);localStorage.removeItem(storageKey)}catch(e){}
