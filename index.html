@@ -802,7 +802,7 @@ async function postMatchJobToAI(file,resultElement){
   return await pollMatchJobToAI(jobId,resultElement);
  }catch(e){
   resultElement.textContent='試合動画の解析に失敗：'+e.message+(jobId?'（ジョブID：'+jobId+'）':'');
-  updateMatchPipelineState({stageLabel:'通信・処理エラー／再接続待ち',jobId:jobId||safeMatchStorageGet(MATCH_ACTIVE_JOB_KEY)||null,detail:e.message});
+  updateMatchPipelineState({stageLabel:'通信・処理エラー／再接続待ち',jobId:jobId||safeMatchStorageGet(MATCH_ACTIVE_JOB_KEY)||null,uploadId:uploadId||readMatchPipelineState().uploadId||null,uploadFingerprint:readMatchPipelineState().uploadFingerprint||null,detail:e.message});
  }
 }
 async function pollMatchJobToAI(jobId,resultElement){
