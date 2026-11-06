@@ -497,7 +497,6 @@ async function postVideoToAI(file, endpoint, extra, resultElement){
  if(!file){resultElement.textContent='先に動画ファイルを選択してください。';return}
  if(file.size>500*1024*1024){resultElement.textContent='元動画が500MBを超えています。写真アプリで短くしてから選択してください。';return}
  resultElement.textContent='AIサーバーの起動を確認しています…';
-  updateMatchPipelineState({stageLabel:'サーバー接続確認中',progress:0,fileName:file.name||'試合動画',fileSize:file.size,detail:'接続と動画ファイルを確認しています。',jobId:null,uploadId:null});
  let stage='サーバー接続';
  try{
   let health=await fetch(u+'/health',{method:'GET',cache:'no-store'});
@@ -610,6 +609,7 @@ async function reconnectSavedMatchJob(){
 }
 async function postMatchJobToAI(file,resultElement){
  const u=getApiUrl();
+ updateMatchPipelineState({stageLabel:'サーバー接続確認中',progress:0,fileName:file?.name||'試合動画',fileSize:file?.size||0,detail:'接続と動画ファイルを確認しています。',jobId:null,uploadId:null});
  if(!u){resultElement.textContent='AIサーバーURLが未設定です。設定画面でURLを保存してください。';return}
  if(!file){resultElement.textContent='先に試合動画を選択してください。';return}
  if(file.size>500*1024*1024){resultElement.textContent='試合動画は500MB以内にしてください。';return}
@@ -670,7 +670,6 @@ async function postMatchJobToAI(file,resultElement){
    const percent=Math.min(99,Math.floor(estimated/file.size*100));
    const confirmedPercent=Math.floor(confirmedBytes/file.size*100);
    resultElement.textContent='動画を分割送信中：'+percent+'%（サーバー確認 '+confirmedPercent+'%）｜分割 '+(part+1)+'/'+chunkCount;
-   updateMatchPipelineState({stageLabel:'動画を分割アップロード中',progress:confirmedPercent,uploadId,detail:'送信中の分割 '+(part+1)+'/'+chunkCount+'。表示進捗は推定値、確定進捗はサーバー受信確認済みです。'});
   };
   showUploadProgress(0,Math.max(0,received.size));
   for(let part=0;part<chunkCount;part++){
@@ -690,6 +689,7 @@ async function postMatchJobToAI(file,resultElement){
    if(!ok)throw Error('分割 '+(part+1)+'/'+chunkCount+' の送信に失敗しました。もう一度同じ動画を選ぶと受信済み分割から再開できます。'+(lastError?' '+lastError.message:''));
    confirmedBytes+=blob.size;
    received.add(part);
+   updateMatchPipelineState({stageLabel:'動画を分割アップロード中',progress:Math.floor(confirmedBytes/file.size*100),uploadId,detail:'サーバーが確認した分割 '+received.size+'/'+chunkCount+'。'});
    showUploadProgress(0,part);
   }
   resultElement.textContent='サーバー側の受信状況を最終確認中…';
