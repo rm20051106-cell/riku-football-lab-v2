@@ -284,5 +284,12 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         catch = handler[handler.rfind("}catch(e){"):]
         self.assertIn("renderMatchPipelineState();", catch)
 
+    def test_upload_init_requires_nonempty_string_upload_id(self):
+        start = self.html.index("async function postMatchJobToAI")
+        end = self.html.index("async function pollMatchJobToAI", start)
+        handler = self.html[start:end]
+        self.assertIn("typeof initData.upload_id!=='string'", handler)
+        self.assertIn("!initData.upload_id.trim()", handler)
+
 if __name__ == "__main__":
     unittest.main()
