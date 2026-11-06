@@ -256,4 +256,9 @@ if __name__ == "__main__":
         transfer = handler.index("for(let part=0;part<chunkCount;part++)")
         self.assertLess(persist, transfer)
         self.assertIn("uploadFingerprint:fingerprint", handler[persist:transfer])
-
+    def test_complete_response_requires_nonempty_string_job_id(self):
+        start = self.html.index("async function postMatchJobToAI")
+        end = self.html.index("async function pollMatchJobToAI", start)
+        handler = self.html[start:end]
+        self.assertIn("typeof created.job_id!=='string'", handler)
+        self.assertIn("!created.job_id.trim()", handler)
