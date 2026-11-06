@@ -66,6 +66,17 @@ class UploadIntegrityTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "invalid chunk SHA-256"):
             verify_uploaded_chunks(str(self.path), 10, 4, invalid)
 
+    def test_ensure_upload_file_recreates_missing_sparse_file(self):
+        missing_path = self.path.with_name("recreated.mp4")
+        self.assertTrue(ensure_upload_file(str(missing_path), 12345))
+        self.assertEqual(missing_path.stat().st_size, 12345)
+        self.assertFalse(ensure_upload_file(str(missing_path), 12345))
+        self.assertEqual(missing_path.stat().st_size, 12345)
+
+    def test_ensure_upload_file_rejects_path_outside_temp_directory(self):
+        with self.assertRaisesRegex(ValueError, "outside"):
+            ensure_upload_file("/etc/riku-upload.mp4", 100)
+
     def test_reconcile_detects_corrupted_chunk_as_resend_candidate(self):
         self.path.write_bytes(b"abcdEFghij")
         self.assertEqual(
