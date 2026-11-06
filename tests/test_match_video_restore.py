@@ -115,6 +115,13 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         self.assertIn("tx.onabort", helper)
         self.assertIn("動画の読み込みが中断されました", helper)
 
+    def test_pending_video_restore_surfaces_storage_failure_to_user(self):
+        start = self.html.index("async function restorePendingMatchVideo()")
+        end = self.html.index("async function sendMatchToAI()", start)
+        helper = self.html[start:end]
+        self.assertIn("端末内動画の復元に失敗しました", helper)
+        self.assertIn("元の動画を選び直してください", helper)
+
     def test_upload_resume_falls_back_to_persisted_pipeline_fingerprint(self):
         start = self.html.index("async function postMatchJobToAI")
         end = self.html.index("async function pollMatchJobToAI", start)
