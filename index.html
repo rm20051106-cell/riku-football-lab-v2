@@ -778,7 +778,7 @@ async function postMatchJobToAI(file,resultElement){
   const verifyResponse=await fetch(u+'/analyze/match/uploads/'+encodeURIComponent(uploadId),{cache:'no-store'});
   const verifyRaw=await verifyResponse.text();let verified;try{verified=JSON.parse(verifyRaw)}catch(e){verified=null}
   if(!verifyResponse.ok||!verified)throw Error('受信状況の確認 HTTP '+verifyResponse.status+'：'+(verified?.detail||verifyRaw.slice(0,140)));
-  if(verified.completed&&verified.job_id){
+  if(verified.completed&&typeof verified.job_id==='string'&&verified.job_id.trim()){
    jobId=verified.job_id;
    try{localStorage.setItem('riku_active_match_job_v1',jobId);localStorage.removeItem(storageKey)}catch(e){}
    resultElement.textContent='受付済みの解析ジョブを確認しました。解析状況に再接続します…';
