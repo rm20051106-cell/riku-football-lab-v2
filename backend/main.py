@@ -19,13 +19,13 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from job_store import init_state_store, load_match_jobs, load_match_uploads, save_match_job, save_match_upload, delete_match_upload, cleanup_expired_match_uploads, create_match_job_for_upload, get_match_upload_completion
 from video_sampling import read_sampled_frame
-from upload_integrity import verify_uploaded_chunks, build_upload_resume_state, reconcile_uploaded_chunks, ensure_upload_file
+from upload_integrity import verify_uploaded_chunks, build_upload_resume_state, reconcile_uploaded_chunks, ensure_upload_file, check_upload_disk_capacity
 
 APP_NAME = "RIKU FOOTBALL LAB Free AI Analysis API"
 MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "120"))
 MAX_SECONDS = int(os.getenv("MAX_VIDEO_SECONDS", "60"))
 MAX_MATCH_SECONDS = int(os.getenv("MAX_MATCH_VIDEO_SECONDS", "1200"))
-MAX_MATCH_UPLOAD_MB = int(os.getenv("MAX_MATCH_UPLOAD_MB", "500"))
+MAX_MATCH_UPLOAD_MB = int(os.getenv("MAX_MATCH_UPLOAD_MB", "1024"))
 MATCH_SAMPLE_RATE = float(os.getenv("MATCH_SAMPLE_RATE", "0.25"))
 MATCH_MAX_SAMPLES = int(os.getenv("MATCH_MAX_SAMPLES", "360"))
 POSE_LANDMARKER_MODEL = os.getenv("POSE_LANDMARKER_MODEL", "/app/models/pose_landmarker_lite.task")
@@ -919,6 +919,10 @@ async def start_match_chunk_upload(payload: dict = Body(...)):
         raise HTTPException(status_code=413, detail=f"試合動画は1MB以上、{MAX_MATCH_UPLOAD_MB}MB以内にしてください。")
     if chunk_size < 256 * 1024 or chunk_size > 8 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="分割サイズは256KB〜8MBにしてください。")
+    try:
+        check_upload_disk_capacity(total_size)
+    except OSError as exc:
+        raise HTTPException(status_code=507, detail=f"サーバーの一時保存容量が不足しています。無料環境の空き容量を確保してから再試行してください。({exc})")
     suffix = Path(filename).suffix.lower()
     if suffix not in {".mp4", ".mov", ".m4v", ".avi", ".webm", ".mkv"}:
         suffix = ".mp4"
