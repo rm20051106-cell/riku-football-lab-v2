@@ -304,5 +304,11 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         self.assertIn("Array.isArray(session.received_chunks)?session.received_chunks:[]", handler)
         self.assertNotIn("(session.received_chunks||[]).map(Number)", handler)
 
+    def test_resume_hashes_must_be_sha256_hex_values(self):
+        start = self.html.index("async function postMatchJobToAI")
+        end = self.html.index("async function pollMatchJobToAI", start)
+        handler = self.html[start:end]
+        self.assertIn("/^[a-f0-9]{64}$/i.test(serverHashes[String(part)]||'')", handler)
+
 if __name__ == "__main__":
     unittest.main()
