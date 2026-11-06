@@ -262,3 +262,10 @@ if __name__ == "__main__":
         handler = self.html[start:end]
         self.assertIn("typeof created.job_id!=='string'", handler)
         self.assertIn("!created.job_id.trim()", handler)
+    def test_retryable_error_keeps_resumable_upload_metadata(self):
+        start = self.html.index("async function postMatchJobToAI")
+        end = self.html.index("async function pollMatchJobToAI", start)
+        handler = self.html[start:end]
+        catch = handler[handler.rfind("}catch(e){"):]
+        self.assertIn("uploadId:uploadId||readMatchPipelineState().uploadId||null", catch)
+        self.assertIn("uploadFingerprint:readMatchPipelineState().uploadFingerprint||null", catch)
