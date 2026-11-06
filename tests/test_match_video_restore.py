@@ -234,3 +234,10 @@ if __name__ == "__main__":
         self.assertIn("!Number.isFinite(file.size)||file.size<=0", handler)
         self.assertLess(handler.index("file.size<=0"), handler.index("fetch(u+'/health'"))
 
+    def test_upload_chunk_geometry_must_be_positive_and_safe(self):
+        start = self.html.index("async function postMatchJobToAI")
+        end = self.html.index("async function pollMatchJobToAI", start)
+        handler = self.html[start:end]
+        self.assertIn("Number.isSafeInteger(chunkCount)", handler)
+        self.assertIn("chunkCount<1", handler)
+
