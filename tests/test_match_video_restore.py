@@ -291,5 +291,11 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         self.assertIn("typeof initData.upload_id!=='string'", handler)
         self.assertIn("!initData.upload_id.trim()", handler)
 
+    def test_resume_session_response_must_be_a_plain_object(self):
+        start = self.html.index("async function postMatchJobToAI")
+        end = self.html.index("async function pollMatchJobToAI", start)
+        handler = self.html[start:end]
+        self.assertIn("session&&typeof session==='object'&&!Array.isArray(session)", handler)
+
 if __name__ == "__main__":
     unittest.main()
