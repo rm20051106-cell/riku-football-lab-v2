@@ -43,6 +43,35 @@ def verify_uploaded_chunks(path: str, total_size: int, chunk_size: int, chunks: 
                 raise ValueError(f"chunk SHA-256 mismatch: {index}")
 
 
+def reconcile_uploaded_chunks(path: str, total_size: int, chunk_size: int, chunks: dict) -> list:
+    """Return acknowledged chunk indexes whose on-disk bytes no longer match metadata."""
+    if total_size <= 0 or chunk_size <= 0 or not isinstance(chunks, dict):
+        raise ValueError("invalid upload dimensions or metadata")
+    invalid = []
+    try:
+        source = open(path, "rb")
+    except OSError:
+        return sorted(int(index) for index in chunks if str(index).isdigit())
+    with source:
+        for raw_index, metadata in list(chunks.items()):
+            try:
+                index = int(raw_index)
+            except (TypeError, ValueError):
+                raise ValueError("invalid chunk index")
+            if index < 0 or str(index) != str(raw_index):
+                raise ValueError("invalid chunk index")
+            expected_size = min(chunk_size, total_size - index * chunk_size)
+            if (index * chunk_size >= total_size or not isinstance(metadata, dict)
+                    or metadata.get("size_bytes") != expected_size
+                    or not _valid_sha256(metadata.get("sha256"))):
+                raise ValueError(f"invalid chunk metadata: {index}")
+            source.seek(index * chunk_size)
+            data = source.read(expected_size)
+            if len(data) != expected_size or hashlib.sha256(data).hexdigest() != metadata["sha256"]:
+                invalid.append(index)
+    return invalid
+
+
 def build_upload_resume_state(total_size: int, chunk_size: int, chunks: dict) -> dict:
     """Return authoritative server-side chunk receipt and resume metadata."""
     try:
