@@ -9,6 +9,29 @@ NODE = next(n for n in TREE.body if isinstance(n, ast.FunctionDef) and n.name ==
 NS = {"MATCH_SAMPLE_RATE": 0.5, "MATCH_MAX_SAMPLES": 600}
 exec(compile(ast.Module(body=[NODE], type_ignores=[]), "<stage62-match-sampling>", "exec"), NS)
 build = NS["build_match_sampling_plan"]
+ITER_NODE = next(n for n in TREE.body if isinstance(n, ast.FunctionDef) and n.name == "iter_sampled_video_frames")
+ITER_NS = {}
+exec(compile(ast.Module(body=[ITER_NODE], type_ignores=[]), "<stage62-frame-iterator>", "exec"), ITER_NS)
+iterate_frames = ITER_NS["iter_sampled_video_frames"]
+
+
+class FakeCapture:
+    def __init__(self, frame_count):
+        self.frame_count = frame_count
+        self.position = 0
+
+    def read(self):
+        if self.position >= self.frame_count:
+            return False, None
+        frame = self.position
+        self.position += 1
+        return True, frame
+
+    def grab(self):
+        if self.position >= self.frame_count:
+            return False
+        self.position += 1
+        return True
 
 
 class Stage62FullVideoSamplingTests(unittest.TestCase):
@@ -49,16 +72,43 @@ class Stage62FullVideoSamplingTests(unittest.TestCase):
         self.assertEqual(plan["sample_limit"], 600)
         self.assertIsNone(plan["estimated_samples"])
 
-    def test_match_scanner_uses_plan_and_sequential_grabs_not_repeated_random_seeks(self):
+    def test_iterator_scans_fifteen_minutes_to_actual_eof(self):
+        capture = FakeCapture(30 * 60 * 15)
+        samples = list(iterate_frames(capture, 60, 600))
+        self.assertEqual(len(samples), 450)
+        self.assertEqual(samples[0], (0, 0))
+        self.assertEqual(samples[-1], (26940, 26940))
+        self.assertEqual(capture.position, 27000)
+
+    def test_iterator_scans_twenty_minutes_without_truncating_the_last_sample(self):
+        capture = FakeCapture(30 * 60 * 20)
+        samples = list(iterate_frames(capture, 60, 600))
+        self.assertEqual(len(samples), 600)
+        self.assertEqual(samples[-1], (35940, 35940))
+        self.assertEqual(capture.position, 36000)
+
+    def test_iterator_stops_at_real_eof_for_short_video(self):
+        capture = FakeCapture(125)
+        samples = list(iterate_frames(capture, 60, 600))
+        self.assertEqual([item[0] for item in samples], [0, 60, 120])
+        self.assertEqual(capture.position, 125)
+
+    def test_iterator_respects_hard_sample_ceiling(self):
+        capture = FakeCapture(30 * 60 * 30)
+        samples = list(iterate_frames(capture, 30, 600))
+        self.assertEqual(len(samples), 600)
+        self.assertEqual(samples[-1][0], 17970)
+
+    def test_match_scanner_uses_sampling_plan_and_sequential_iterator(self):
         node = next(n for n in TREE.body if isinstance(n, ast.FunctionDef) and n.name == "process_match_video")
         names = {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
         self.assertIn("build_match_sampling_plan", names)
+        self.assertIn("iter_sampled_video_frames", names)
         self.assertIn("sample_limit", names)
-        self.assertIn("interval", names)
-        self.assertIn("exhausted", names)
         attributes = {n.attr for n in ast.walk(node) if isinstance(n, ast.Attribute)}
-        self.assertIn("grab", attributes)
         self.assertNotIn("set", attributes)
+        iterator_attributes = {n.attr for n in ast.walk(ITER_NODE) if isinstance(n, ast.Attribute)}
+        self.assertIn("grab", iterator_attributes)
 
 
 if __name__ == "__main__":
