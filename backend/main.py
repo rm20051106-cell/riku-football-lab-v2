@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from job_store import init_state_store, load_match_jobs, load_match_uploads, save_match_job, save_match_upload, delete_match_upload, cleanup_expired_match_uploads, create_match_job_for_upload, get_match_upload_completion
 from video_sampling import read_sampled_frame
-from upload_integrity import verify_uploaded_chunks, build_upload_resume_state, reconcile_uploaded_chunks
+from upload_integrity import verify_uploaded_chunks, build_upload_resume_state, reconcile_uploaded_chunks, ensure_upload_file
 
 APP_NAME = "RIKU FOOTBALL LAB Free AI Analysis API"
 MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "120"))
@@ -953,6 +953,9 @@ def get_match_chunk_upload(upload_id: str):
             }
         raise HTTPException(status_code=404, detail="アップロード情報が見つかりません。最初から再送信してください。")
     try:
+        # A server restart or temporary-file loss must not leave the client unable
+        # to PUT resent chunks. Recreate only a missing file under the temp root.
+        ensure_upload_file(upload["path"], upload["size_bytes"])
         invalid_chunks = reconcile_uploaded_chunks(
             upload["path"], upload["size_bytes"], upload["chunk_size_bytes"], upload["chunks"]
         )
