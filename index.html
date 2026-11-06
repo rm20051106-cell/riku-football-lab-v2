@@ -691,16 +691,22 @@ async function pollMatchJobToAI(jobId,resultElement){
    let statusResponse=null,status=null,retryCount=0;
    while(true){
     try{
-     statusResponse=await fetch(u+'/analyze/jobs/'+encodeURIComponent(jobId),{cache:'no-store'});
-     if(statusResponse.status===404){
+     const controller=new AbortController();
+     const requestTimeout=setTimeout(()=>controller.abort(),20000);
+     try{
+      statusResponse=await fetch(u+'/analyze/jobs/'+encodeURIComponent(jobId),{cache:'no-store',signal:controller.signal});
+      if(statusResponse.status===404){
       try{localStorage.removeItem('riku_active_match_job_v1')}catch(e){}
       throw Object.assign(Error('解析ジョブがサーバーに見つかりません。動画を再送信してください。'),{permanent:true});
      }
      if(statusResponse.status===429||statusResponse.status>=500)throw Error('HTTP '+statusResponse.status);
      if(!statusResponse.ok)throw Object.assign(Error('進捗の取得に失敗しました（HTTP '+statusResponse.status+'）'),{permanent:true});
-     const statusRaw=await statusResponse.text();
-     try{status=JSON.parse(statusRaw)}catch(e){status=null}
-     if(!status)throw Error('サーバー応答を読み取れません');
+      const statusRaw=await statusResponse.text();
+      try{status=JSON.parse(statusRaw)}catch(e){status=null}
+      if(!status||typeof status!=='object'||Array.isArray(status)||!['queued','processing','completed','failed','interrupted'].includes(status.status)){
+       throw Error('サーバー応答の形式または解析状態が不正です');
+      }
+     }finally{clearTimeout(requestTimeout)}
      break;
     }catch(e){
      if(e.permanent)throw e;
