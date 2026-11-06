@@ -25,6 +25,7 @@ button,.button{border:0;border-radius:12px;padding:12px 14px;font-weight:800;fon
 <main>
 <section class="view active" id="home">
  <div class="hero"><div class="eyebrow">YOUR NEXT LEVEL STARTS HERE</div><h1>陸玖の成長を、<br>記録から武器に。</h1><p>練習・試合動画・シュートフォーム・測定記録をひとつに。毎回の振り返りを、次のプレーにつなげよう。</p><div class="btnrow"><button onclick="showView('video')">▶ 動画を分析する</button><button class="secondary" onclick="showView('form')">⚽ シュート・FKフォーム</button><button class="secondary" onclick="showView('training')">今日の練習を記録</button><button class="secondary" onclick="showView('training')">お手本・練習解説</button></div></div>
+ <div id="homeMatchRecovery" class="card" hidden style="border-color:#c8f169;margin-top:12px"><b>動画分析の続きがあります</b><div id="homeMatchRecoveryText" class="tiny muted" style="margin-top:5px"></div><div class="btnrow"><button class="small" onclick="returnToMatchWorkspace()">動画分析に戻る</button></div></div>
  <div class="grid">
   <div class="card"><div class="muted tiny">今月の練習日</div><div class="stat" id="homeDays">0 <small>日</small></div><div class="progress"><span id="monthProgress"></span></div><div class="tiny muted">記録した練習日数</div></div>
   <div class="card"><div class="muted tiny">動画・フォーム記録</div><div class="stat" id="homeVideos">0 <small>件</small></div><div class="tiny muted">振り返りを積み重ねる</div></div>
@@ -615,7 +616,27 @@ function updateMatchPipelineState(patch){
  renderMatchPipelineState();
  return next;
 }
+function renderHomeMatchRecovery(){
+ const card=document.getElementById('homeMatchRecovery');if(!card)return;
+ const pipeline=readMatchPipelineState();
+ const activeJob=safeMatchStorageGet(MATCH_ACTIVE_JOB_KEY)||pipeline.jobId||'';
+ const stage=String(pipeline.stageLabel||'');
+ const terminal=['解析完了','解析失敗','解析中断・動画の再送信が必要'];
+ const pending=!!(activeJob||pipeline.uploadId||(stage&&stage!=='まだアップロードしていません'&&!terminal.includes(stage)));
+ card.hidden=!pending;
+ if(!pending)return;
+ const label=document.getElementById('homeMatchRecoveryText');
+ if(label)label.textContent=(stage||'動画処理の再開待ち')+'。'+(activeJob?'解析ジョブの状態を再確認できます。':'同じ動画を選ぶと受信済みの分割から再開できます。');
+}
+function returnToMatchWorkspace(){
+ showView('video');
+ pendingMatchRestore=restorePendingMatchVideo();
+ const activeJob=safeMatchStorageGet(MATCH_ACTIVE_JOB_KEY)||readMatchPipelineState().jobId;
+ if(activeJob&&matchAiResult)pollMatchJobToAI(activeJob,matchAiResult);
+ renderMatchPipelineState();
+}
 function renderMatchPipelineState(){
+ renderHomeMatchRecovery();
  const panel=document.getElementById('matchPipelineStatus');if(!panel)return;
  const saved=readMatchPipelineState();
  const activeJob=safeMatchStorageGet(MATCH_ACTIVE_JOB_KEY)||saved.jobId||'';
