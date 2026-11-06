@@ -337,5 +337,15 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         self.assertIn("900*attempt", handler)
         self.assertIn("再送信準備中", handler)
 
+    def test_stage111_to120_upload_validation_regressions_are_present(self):
+        start = self.html.index("async function postMatchJobToAI")
+        end = self.html.index("async function pollMatchJobToAI", start)
+        handler = self.html[start:end]
+        self.assertIn("typeof initData.upload_id!=='string'", handler)
+        self.assertIn("session&&typeof session==='object'&&!Array.isArray(session)", handler)
+        self.assertIn("/^[a-f0-9]{64}$/i.test(serverHashes[String(part)]||'')", handler)
+        self.assertIn("Array.isArray(verified.missing_chunks)", handler)
+        self.assertIn("Number.isSafeInteger(verified.total_chunks)", handler)
+
 if __name__ == "__main__":
     unittest.main()
