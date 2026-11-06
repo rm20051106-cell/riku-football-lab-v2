@@ -30,6 +30,7 @@ class UploadIntegrityTests(unittest.TestCase):
         })
         self.assertEqual(state["total_chunks"], 3)
         self.assertEqual(state["received_chunks"], [0, 2])
+        self.assertEqual(state["received_chunk_sha256"], {"0": "", "2": ""})
         self.assertEqual(state["missing_chunks"], [1])
         self.assertEqual(state["received_bytes"], 6)
         self.assertEqual(state["confirmed_percent"], 60)
