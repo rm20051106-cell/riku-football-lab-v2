@@ -911,7 +911,7 @@ async function restorePendingMatchVideo(){
   videoMeta.textContent='端末内保存動画を復元：'+(saved.name||'試合動画')+'（'+(size/1024/1024).toFixed(1)+' MB）・AI解析ボタンから再送信できます';
   matchVideo.onloadedmetadata=()=>{clipTime.value='0.0';videoMeta.textContent='端末内保存動画を復元：'+(saved.name||'試合動画')+'（'+(size/1024/1024).toFixed(1)+' MB）・長さ '+matchVideo.duration.toFixed(1)+' 秒'};
   return true;
- }catch(e){console.warn('端末内保存動画の復元に失敗',e);return false}
+ }catch(e){console.warn('端末内保存動画の復元に失敗',e);if(videoMeta)videoMeta.textContent='端末内動画の復元に失敗しました。元の動画を選び直してください（'+(e?.message||'保存領域エラー')+'）。';return false}
 }
 async function sendMatchToAI(){
  if(window.__rikuMatchUploadStarting){matchAiResult.textContent='動画の送信準備はすでに進行中です。二重に開始せず、そのままお待ちください。';return;}
