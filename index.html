@@ -649,10 +649,13 @@ async function reconnectSavedMatchJob(){
  await pollMatchJobToAI(jobId,matchAiResult);
 }
 async function postMatchJobToAI(file,resultElement){
+ // Preserve a snapshot before resetting visible state; it can recover the upload session if the
+ // dedicated localStorage fingerprint entry was unavailable during a Safari reload.
+ const previousPipeline=readMatchPipelineState();
  // A new upload must never inherit the previous analysis record ID.
  if(resultElement){delete resultElement.dataset.savedId;delete resultElement.dataset.result;delete resultElement.dataset.highlight;}
  const u=getApiUrl();
- updateMatchPipelineState({stageLabel:'サーバー接続確認中',progress:0,fileName:file?.name||'試合動画',fileSize:file?.size||0,detail:'接続と動画ファイルを確認しています。',jobId:null,uploadId:null});
+ updateMatchPipelineState({stageLabel:'サーバー接続確認中',progress:0,fileName:file?.name||'試合動画',fileSize:file?.size||0,detail:'接続と動画ファイルを確認しています。',jobId:null,uploadId:null,uploadFingerprint:null});
  if(!u){resultElement.textContent='AIサーバーURLが未設定です。設定画面でURLを保存してください。';return}
  if(!file){resultElement.textContent='先に試合動画を選択してください。';return}
  if(file.size>500*1024*1024){resultElement.textContent='試合動画は500MB以内にしてください。';return}
@@ -674,7 +677,8 @@ async function postMatchJobToAI(file,resultElement){
   const storageKey='riku_match_upload_v1';
   let saved=null;
   try{saved=JSON.parse(localStorage.getItem(storageKey)||'null')}catch(e){}
-  let uploadId=saved&&saved.fingerprint===fingerprint?saved.uploadId:null;
+  const pipelineResume=previousPipeline.uploadFingerprint===fingerprint?previousPipeline:null;
+  let uploadId=(saved&&saved.fingerprint===fingerprint?saved.uploadId:null)||(pipelineResume?.uploadId||null);
   let session=null;
   if(uploadId){
    const resume=await fetch(u+'/analyze/match/uploads/'+encodeURIComponent(uploadId),{cache:'no-store'});
@@ -702,7 +706,7 @@ async function postMatchJobToAI(file,resultElement){
    const initRaw=await init.text();let initData;try{initData=JSON.parse(initRaw)}catch(e){initData=null}
    if(!init.ok||!initData||!initData.upload_id)throw Error('アップロード準備 HTTP '+init.status+'：'+(initData?.detail||initRaw.slice(0,180)));
    uploadId=initData.upload_id;session=initData;
-   updateMatchPipelineState({stageLabel:'アップロード準備完了',progress:0,uploadId,detail:'分割送信を開始します。同じ動画を選び直すと続きから再開できます。'});
+   updateMatchPipelineState({stageLabel:'アップロード準備完了',progress:0,uploadId,uploadFingerprint:fingerprint,detail:'分割送信を開始します。同じ動画を選び直すと続きから再開できます。'});
    try{localStorage.setItem(storageKey,JSON.stringify({fingerprint,uploadId}))}catch(e){}
   }
   const received=new Set((session.received_chunks||[]).map(Number));
