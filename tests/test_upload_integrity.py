@@ -112,8 +112,8 @@ class UploadIntegrityTests(unittest.TestCase):
         usage = type("Usage", (), {"free": 1500})()
         with patch("upload_integrity.shutil.disk_usage", return_value=usage):
             self.assertEqual(check_upload_disk_capacity(1000, reserve_bytes=400), 1500)
-            with self.assertRaisesRegex(OSError, "required=1401"):
-                check_upload_disk_capacity(1001, reserve_bytes=400)
+            with self.assertRaisesRegex(OSError, "required=1501"):
+                check_upload_disk_capacity(1101, reserve_bytes=400)
 
     def test_disk_capacity_rejects_invalid_size(self):
         with self.assertRaisesRegex(ValueError, "invalid upload size"):
