@@ -798,8 +798,9 @@ async function pollMatchJobToAI(jobId,resultElement){
    updateMatchPipelineState({jobId,stageLabel:status.status==='queued'?'解析待ち':status.status==='processing'?(status.stage||'解析中'):'解析状態：'+status.status,progress:Number(status.progress??0),detail:'サーバー確認時刻 '+new Date().toLocaleTimeString('ja-JP')+'。画面を閉じてもジョブIDは端末に保存されます。'});
    if(status.status==='failed'||status.status==='interrupted'){try{localStorage.removeItem(MATCH_ACTIVE_JOB_KEY)}catch(e){}updateMatchPipelineState({jobId:null,stageLabel:status.status==='interrupted'?'解析中断・動画の再送信が必要':'解析失敗',progress:Number(status.progress??0),detail:status.error||'解析を再開できませんでした'});throw Error(status.error||'解析を再開できませんでした')}
    if(status.status==='completed'){
-    try{localStorage.removeItem(MATCH_ACTIVE_JOB_KEY)}catch(e){}
-    updateMatchPipelineState({jobId:null,stageLabel:'解析完了',progress:100,detail:'解析結果を履歴へ自動保存して表示しました。'});
+    // Keep the job ID until the result is durably saved. If Safari reloads during
+    // rendering or persistence, startup can reconnect and fetch the completed result again.
+    updateMatchPipelineState({jobId,stageLabel:'解析完了・履歴保存中',progress:100,detail:'解析結果を取得しました。履歴への保存を確認しています。'});
     const j=status.result||{},sm=j.summary||{};
     const notes=(sm.feedback||[]).map(x=>esc(x)).join('<br>');
     const jerseyCounts=sm.jersey_ocr_summary?.candidate_detection_counts||sm.jersey_ocr_summary?.candidate_frame_counts||{};
@@ -812,6 +813,12 @@ async function pollMatchJobToAI(jobId,resultElement){
     resultElement.innerHTML='<div class="note success"><b>試合動画の全編スキャンが完了しました</b><br>動画の長さ：'+(sm.duration_seconds??'—')+'秒<br>姿勢検出フレーム：'+(sm.sampled_pose_frames??'—')+'<br>スキャン間隔：約'+(sm.sampling_interval_seconds??'—')+'秒ごと<br>複数選手検出：'+peopleText+'<br>選手の暫定関連付け：'+trackText+'<br>背番号OCR候補：'+jerseyText+'<br><span class="tiny muted">※暫定トラックは約4秒間隔の位置・大きさ・背番号候補による関連付けです。選手の継続追跡や陸玖本人の確定ではなく、選手同士が交差するとIDが入れ替わる可能性があります。背番号も読み取り候補です。</span><br>膝角度（左右平均・推定）：'+(sm.average_left_right_knee_angle_deg??'—')+'°<br>股関節角度（左右平均・推定）：'+(sm.average_left_right_hip_angle_deg??'—')+'°<br><br>'+candidateHtml+'<br><br><b>現在の段階について</b><br>'+notes+'<br><br>※複数選手の姿勢検出と背番号OCR候補の試験機能です。選手IDの継続追跡・陸玖本人の確定・プレー評価はまだできません。</div>';
     resultElement.dataset.result=JSON.stringify(j);
     const savedMatchId=saveMatchScanResult(true);
+    if(savedMatchId){
+     try{localStorage.removeItem(MATCH_ACTIVE_JOB_KEY)}catch(e){}
+     updateMatchPipelineState({jobId:null,stageLabel:'解析完了',progress:100,detail:'解析結果を履歴へ自動保存して表示しました。'});
+    }else{
+     updateMatchPipelineState({jobId,stageLabel:'解析完了・履歴保存待ち',progress:100,detail:'解析結果は取得済みです。履歴保存を再確認してください。'});
+    }
     resultElement.innerHTML+='<br><div class="tiny muted">'+(savedMatchId?'解析結果を履歴に自動保存しました。':'履歴への自動保存に失敗しました。下のボタンから保存してください。')+'</div><button class="secondary small" onclick="saveMatchScanResult()">'+(savedMatchId?'履歴への保存を確認':'このAI解析結果を履歴に保存')+'</button>';
     return;
    }
@@ -1875,7 +1882,7 @@ try{
  const savedPipeline=readMatchPipelineState();
  const hasPendingUpload=!!savedPipeline.uploadId;
  const savedStage=String(savedPipeline.stageLabel||'');
- const resumableStage=!!savedStage&&!['解析完了','解析失敗','解析中断・動画の再送信が必要'].includes(savedStage);
+ const resumableStage=!!savedStage&&savedStage!=='まだアップロードしていません';
  // iPhone Safari may reload or return to the PWA home view after a long upload.
  // Restore the video workspace before reconnecting so the job/result is not hidden on the home screen.
  if((pendingJobId||hasPendingUpload||resumableStage)&&document.getElementById('video')){
