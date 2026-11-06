@@ -227,3 +227,10 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+    def test_upload_rejects_empty_video_before_network_requests(self):
+        start = self.html.index("async function postMatchJobToAI")
+        end = self.html.index("async function pollMatchJobToAI", start)
+        handler = self.html[start:end]
+        self.assertIn("!Number.isFinite(file.size)||file.size<=0", handler)
+        self.assertLess(handler.index("file.size<=0"), handler.index("fetch(u+'/health'"))
+
