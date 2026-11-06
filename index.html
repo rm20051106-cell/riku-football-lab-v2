@@ -1863,12 +1863,26 @@ let pendingFormSave=Promise.resolve(null);formFile.addEventListener('change',()=
 formKind.addEventListener('change',renderChecks);
 load();renderChecks();renderAll();renderMatchPipelineState();
 try{
- const pendingJobId=localStorage.getItem('riku_active_match_job_v1');
+ const pendingJobId=safeMatchStorageGet(MATCH_ACTIVE_JOB_KEY);
+ const savedPipeline=readMatchPipelineState();
+ const hasPendingUpload=!!savedPipeline.uploadId;
+ const savedStage=String(savedPipeline.stageLabel||'');
+ const resumableStage=!!savedStage&&!['解析完了','解析失敗','解析中断・動画の再送信が必要'].includes(savedStage);
+ // iPhone Safari may reload or return to the PWA home view after a long upload.
+ // Restore the video workspace before reconnecting so the job/result is not hidden on the home screen.
+ if((pendingJobId||hasPendingUpload||resumableStage)&&document.getElementById('video')){
+  showView('video');
+  if(matchAiResult&&!pendingJobId){
+   matchAiResult.textContent=hasPendingUpload
+    ?'前回の動画アップロード情報を復元しました。同じ動画を選ぶと未送信分から再開できます。'
+    :'前回の動画処理状況を復元しました。';
+  }
+ }
  if(pendingJobId&&matchAiResult){
   matchAiResult.textContent='保存済みの試合解析ジョブに再接続しています…';
   pollMatchJobToAI(pendingJobId,matchAiResult);
  }
-}catch(e){}
+}catch(e){console.warn('動画処理状態の復元に失敗',e);}
 if(typeof apiBaseUrl!=='undefined'){apiBaseUrl.value=state.settings.apiBaseUrl||'';apiStatus.textContent=state.settings.apiBaseUrl?'保存済み：'+state.settings.apiBaseUrl:'未設定'}
 </script>
 <script src="./tactical-analysis.js"></script>
