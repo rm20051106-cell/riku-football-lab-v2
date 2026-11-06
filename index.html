@@ -208,6 +208,15 @@ function saveMatchScanResult(silent=false){
   if(!silent)alert('このAI解析結果はすでに履歴へ保存されています。');
   return existingId;
  }
+ // A completed job may be fetched again after Safari reload. Use its stable job ID
+ // to avoid creating duplicate history records when the DOM dataset was lost.
+ const stableJobId=String(result.job_id||'');
+ const existingJobRecord=stableJobId&&(state.matchAnalyses||[]).find(x=>String(x.jobId||'')===stableJobId);
+ if(existingJobRecord){
+  matchAiResult.dataset.savedId=String(existingJobRecord.id);
+  if(!silent)alert('このAI解析結果はすでに履歴へ保存されています。');
+  return existingJobRecord.id;
+ }
  const sm=result.summary||{},id=Date.now();
  const timeline=(sm.frames||[]).map(f=>({time:f.time_seconds??null,leftKnee:f.left_knee_angle_deg??null,rightKnee:f.right_knee_angle_deg??null,leftHip:f.left_hip_angle_deg??null,rightHip:f.right_hip_angle_deg??null,trunk:f.trunk_lean_image_angle_deg??null,leftFootMotion:f.left_foot_image_motion_per_sec??null,rightFootMotion:f.right_foot_image_motion_per_sec??null}));
  state.matchAnalyses=state.matchAnalyses||[];
@@ -1873,7 +1882,7 @@ function renderAiFormCompare(){
 }
 function deleteAiFormAnalysis(id){if(!confirm('このAI解析履歴を削除しますか？'))return;state.aiFormAnalyses=(state.aiFormAnalyses||[]).filter(x=>x.id!==id);persist()}
 function deleteMeasure(d,t,v){if(!confirm('この測定記録を削除しますか？'))return;let idx=state.measures.findIndex(x=>x.date===d&&x.type===t&&x.value===v);if(idx>=0)state.measures.splice(idx,1);persist()}
-let pendingMatchSave=Promise.resolve(null);videoFile.addEventListener('change',()=>{let f=videoFile.files[0];if(!f)return;matchVideo.src=URL.createObjectURL(f);videoMeta.textContent=`読み込み：${f.name}（${(f.size/1024/1024).toFixed(1)} MB）・端末保存準備中`;matchVideo.onloadedmetadata=()=>{clipTime.value='0.0';videoMeta.textContent=`読み込み：${f.name}（${(f.size/1024/1024).toFixed(1)} MB）・長さ ${matchVideo.duration.toFixed(1)} 秒`};pendingMatchSave=storeClipVideo('__pending_match_video__',f).then(()=>{videoMeta.textContent+= '・動画保存準備OK';return f}).catch(e=>{console.error('動画の仮保存に失敗',e);videoMeta.textContent+='・動画の保存準備に失敗';return null})})
+let pendingMatchSave=Promise.resolve(null);videoFile.addEventListener('change',()=>{let f=videoFile.files[0];if(!f)return;showView('video');updateMatchPipelineState({stageLabel:'動画を選択・端末保存中',progress:0,fileName:f.name,fileSize:f.size,detail:'動画分析画面で選択した動画を端末内へ一時保存しています。'});matchVideo.src=URL.createObjectURL(f);videoMeta.textContent=`読み込み：${f.name}（${(f.size/1024/1024).toFixed(1)} MB）・端末保存準備中`;matchVideo.onloadedmetadata=()=>{clipTime.value='0.0';videoMeta.textContent=`読み込み：${f.name}（${(f.size/1024/1024).toFixed(1)} MB）・長さ ${matchVideo.duration.toFixed(1)} 秒`};pendingMatchSave=storeClipVideo('__pending_match_video__',f).then(()=>{videoMeta.textContent+= '・動画保存準備OK';updateMatchPipelineState({stageLabel:'動画選択完了・アップロード待ち',progress:0,fileName:f.name,fileSize:f.size,detail:'動画はこのiPhone内に一時保存済みです。AI解析を開始できます。'});return f}).catch(e=>{console.error('動画の仮保存に失敗',e);videoMeta.textContent+='・動画の保存準備に失敗';updateMatchPipelineState({stageLabel:'端末内動画保存エラー',detail:e.message});return null})})
 let pendingFormSave=Promise.resolve(null);formFile.addEventListener('change',()=>{let f=formFile.files[0];if(!f)return;formVideo.src=URL.createObjectURL(f);pendingFormSave=storeClipVideo('__pending_form_video__',f).then(()=>f).catch(e=>{console.error('フォーム動画の仮保存失敗',e);return null})})
 formKind.addEventListener('change',renderChecks);
 load();renderChecks();renderAll();renderMatchPipelineState();
