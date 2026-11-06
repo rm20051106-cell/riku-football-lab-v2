@@ -537,6 +537,31 @@ async function postVideoToAI(file, endpoint, extra, resultElement){
   resultElement.textContent='解析に失敗：'+msg+'。設定画面の「接続テスト」も確認してください。';
  }
 }
+function putMatchUploadChunkWithProgress(url,blob,offset,onProgress){
+ return new Promise((resolve,reject)=>{
+  const xhr=new XMLHttpRequest();
+  let settled=false;
+  const fail=message=>{if(settled)return;settled=true;reject(new Error(message))};
+  // Register upload listeners before open/send for iOS Safari compatibility.
+  xhr.upload.addEventListener('progress',event=>{
+   if(event.lengthComputable&&typeof onProgress==='function')onProgress(Math.min(blob.size,event.loaded));
+  });
+  xhr.addEventListener('load',()=>{
+   let data=null;try{data=JSON.parse(xhr.responseText||'null')}catch(e){}
+   if(xhr.status>=200&&xhr.status<300){if(!settled){settled=true;resolve(data||{})}}
+   else fail('HTTP '+xhr.status+'：'+(data?.detail||String(xhr.responseText||'').slice(0,140)));
+  });
+  xhr.addEventListener('error',()=>fail('通信エラー'));
+  xhr.addEventListener('abort',()=>fail('送信が中断されました'));
+  xhr.addEventListener('timeout',()=>fail('送信がタイムアウトしました'));
+  xhr.open('PUT',url,true);
+  xhr.withCredentials=false;
+  xhr.timeout=180000;
+  xhr.setRequestHeader('Content-Type','application/octet-stream');
+  xhr.setRequestHeader('X-Chunk-Offset',String(offset));
+  xhr.send(blob);
+ });
+}
 async function postMatchJobToAI(file,resultElement){
  const u=getApiUrl();
  if(!u){resultElement.textContent='AIサーバーURLが未設定です。設定画面でURLを保存してください。';return}
@@ -559,8 +584,18 @@ async function postMatchJobToAI(file,resultElement){
   let session=null;
   if(uploadId){
    const resume=await fetch(u+'/analyze/match/uploads/'+encodeURIComponent(uploadId),{cache:'no-store'});
-   if(resume.ok)session=await resume.json();
-   else uploadId=null;
+   if(resume.ok){
+    session=await resume.json();
+    if(session.completed&&session.job_id){
+     jobId=session.job_id;
+     try{localStorage.setItem('riku_active_match_job_v1',jobId);localStorage.removeItem(storageKey)}catch(e){}
+     resultElement.textContent='受付済みの解析ジョブを確認しました。解析状況に再接続します…';
+     return await pollMatchJobToAI(jobId,resultElement);
+    }
+    if(Number(session.size_bytes)!==file.size||Number(session.chunk_size_bytes)!==chunkSize){
+     session=null;uploadId=null;
+    }
+   }else uploadId=null;
   }
   if(!session){
    resultElement.textContent='動画アップロードの準備中…';
@@ -570,7 +605,16 @@ async function postMatchJobToAI(file,resultElement){
    uploadId=initData.upload_id;session=initData;
    try{localStorage.setItem(storageKey,JSON.stringify({fingerprint,uploadId}))}catch(e){}
   }
-  const received=new Set(session.received_chunks||[]);
+  const received=new Set((session.received_chunks||[]).map(Number));
+  let confirmedBytes=0;
+  received.forEach(part=>{if(Number.isInteger(part)&&part>=0&&part<chunkCount)confirmedBytes+=Math.min(chunkSize,file.size-part*chunkSize)});
+  const showUploadProgress=(inFlightBytes,part)=>{
+   const estimated=Math.min(file.size-1,confirmedBytes+Math.max(0,Math.min(inFlightBytes||0,file.size-confirmedBytes)));
+   const percent=Math.min(99,Math.floor(estimated/file.size*100));
+   const confirmedPercent=Math.floor(confirmedBytes/file.size*100);
+   resultElement.textContent='動画を分割送信中：'+percent+'%（サーバー確認 '+confirmedPercent+'%）｜分割 '+(part+1)+'/'+chunkCount;
+  };
+  showUploadProgress(0,Math.max(0,received.size));
   for(let part=0;part<chunkCount;part++){
    if(received.has(part))continue;
    const start=part*chunkSize,end=Math.min(file.size,start+chunkSize);
@@ -578,24 +622,26 @@ async function postMatchJobToAI(file,resultElement){
    let lastError=null,ok=false;
    for(let attempt=1;attempt<=3&&!ok;attempt++){
     try{
-     const response=await fetch(u+'/analyze/match/uploads/'+encodeURIComponent(uploadId)+'/chunks/'+part,{method:'PUT',headers:{'Content-Type':'application/octet-stream','X-Chunk-Offset':String(start)},body:blob,credentials:'omit',cache:'no-store'});
-     const raw=await response.text();let data;try{data=JSON.parse(raw)}catch(e){data=null}
-     if(!response.ok)throw Error('分割 '+(part+1)+'/'+chunkCount+' HTTP '+response.status+'：'+(data?.detail||raw.slice(0,120)));
+     await putMatchUploadChunkWithProgress(
+      u+'/analyze/match/uploads/'+encodeURIComponent(uploadId)+'/chunks/'+part,
+      blob,start,loaded=>showUploadProgress(loaded,part)
+     );
      ok=true;
-    }catch(e){lastError=e;if(attempt<3)await new Promise(resolve=>setTimeout(resolve,900*attempt))}
+    }catch(e){lastError=e;showUploadProgress(0,part);if(attempt<3)await new Promise(resolve=>setTimeout(resolve,900*attempt))}
    }
    if(!ok)throw Error('分割 '+(part+1)+'/'+chunkCount+' の送信に失敗しました。もう一度同じ動画を選ぶと受信済み分割から再開できます。'+(lastError?' '+lastError.message:''));
-   const uploaded=Math.min(file.size,end);
-   resultElement.textContent='動画を分割送信中：'+Math.round(uploaded/file.size*100)+'%（'+(part+1)+'/'+chunkCount+'）';
+   confirmedBytes+=blob.size;
+   received.add(part);
+   showUploadProgress(0,part);
   }
   resultElement.textContent='全分割の受信を確認中…';
   const complete=await fetch(u+'/analyze/match/uploads/'+encodeURIComponent(uploadId)+'/complete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jersey_numbers:String(state.settings.jersey1)+','+String(state.settings.jersey2)}),credentials:'omit',cache:'no-store'});
   const completeRaw=await complete.text();let created;try{created=JSON.parse(completeRaw)}catch(e){created=null}
   if(!complete.ok||!created||!created.job_id)throw Error('動画の組み立て HTTP '+complete.status+'：'+(created?.detail||completeRaw.slice(0,180)));
-  try{localStorage.removeItem(storageKey)}catch(e){}
   jobId=created.job_id;
-  resultElement.textContent='動画を受け付けました。解析ジョブを開始します…';
-  try{localStorage.setItem('riku_active_match_job_v1',jobId)}catch(e){}
+  // Persist the job first. If the tab closes now, startup can reconnect without re-uploading.
+  try{localStorage.setItem('riku_active_match_job_v1',jobId);localStorage.removeItem(storageKey)}catch(e){}
+  resultElement.textContent='サーバーが動画を受け付け、解析ジョブ '+jobId+' を作成しました。解析状況に接続します…';
   return await pollMatchJobToAI(jobId,resultElement);
  }catch(e){
   resultElement.textContent='試合動画の解析に失敗：'+e.message+(jobId?'（ジョブID：'+jobId+'）':'');
