@@ -786,7 +786,7 @@ async function postMatchJobToAI(file,resultElement){
   }
   const verifiedBytes=Number(verified.received_bytes);
   const verifiedChunks=Number(verified.total_chunks);
-  if(!Number.isSafeInteger(verifiedBytes)||verifiedBytes<0||verifiedBytes!==file.size||verifiedChunks!==chunkCount||(verified.missing_chunks||[]).length){
+  if(!Number.isSafeInteger(verifiedBytes)||verifiedBytes<0||verifiedBytes!==file.size||!Number.isSafeInteger(verified.total_chunks)||verifiedChunks!==chunkCount||!Array.isArray(verified.missing_chunks)||verified.missing_chunks.length!==0){
    throw Error('サーバー確認で未受信の分割が残っています。動画をもう一度選ぶと未受信分から再開できます。');
   }
   confirmedBytes=Number(verified.received_bytes);
