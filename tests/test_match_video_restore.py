@@ -98,6 +98,14 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         self.assertLess(handler.index("if(!f)return"), handler.index("videoFile.value=''"))
         self.assertIn("pendingMatchSave=storeClipVideo('__pending_match_video__',f)", handler)
 
+    def test_analysis_uses_saved_file_after_picker_value_is_cleared(self):
+        start = self.html.index("async function sendMatchToAI()")
+        end = self.html.index("function sendFormToAI()", start)
+        handler = self.html[start:end]
+        self.assertIn("let file=videoFile.files[0]||await pendingMatchSave", handler)
+        self.assertIn("getClipVideo('__pending_match_video__')", handler)
+        self.assertIn("new File([saved.blob]", handler)
+
     def test_indexeddb_video_save_rejects_on_transaction_abort(self):
         start = self.html.index("async function storeClipVideo")
         end = self.html.index("async function getClipVideo", start)
