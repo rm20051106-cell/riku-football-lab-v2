@@ -137,7 +137,9 @@ def load_match_uploads() -> dict:
     for upload_id, payload in rows:
         try:
             item = json.loads(payload)
-            if isinstance(item, dict) and os.path.isfile(item.get("path", "")):
+            if isinstance(item, dict) and isinstance(item.get("path"), str) and item["path"].strip():
+                # Keep the session even if its ephemeral video file vanished. The upload
+                # resume endpoint recreates the sparse file and marks old chunks missing.
                 restored[upload_id] = item
         except (TypeError, ValueError):
             continue
