@@ -66,6 +66,20 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         self.assertIn("function returnToMatchWorkspace()", self.html)
         self.assertIn("renderHomeMatchRecovery();", self.html)
 
+    def test_home_recovery_offers_same_video_reselection_for_pending_upload(self):
+        self.assertIn('id="homeMatchReselect"', self.html)
+        self.assertIn("const needsReselect=!!pipeline.uploadId&&!activeJob", self.html)
+        self.assertIn("if(reselect)reselect.hidden=!needsReselect", self.html)
+        self.assertIn("function reselectPendingMatchVideo()", self.html)
+        self.assertIn("picker.click()", self.html)
+
+    def test_return_to_match_workspace_waits_for_indexeddb_restore_before_reconnect(self):
+        start = self.html.index("async function returnToMatchWorkspace()")
+        end = self.html.index("function reselectPendingMatchVideo()", start)
+        handler = self.html[start:end]
+        self.assertIn("await pendingMatchRestore", handler)
+        self.assertLess(handler.index("await pendingMatchRestore"), handler.index("pollMatchJobToAI"))
+
     def test_upload_resume_falls_back_to_persisted_pipeline_fingerprint(self):
         start = self.html.index("async function postMatchJobToAI")
         end = self.html.index("async function pollMatchJobToAI", start)
