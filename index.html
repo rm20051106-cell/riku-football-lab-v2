@@ -115,7 +115,7 @@ function load(){try{let s=JSON.parse(localStorage.getItem(KEY));if(s&&s.settings
 function persist(){localStorage.setItem(KEY,JSON.stringify(state));renderAll()}
 function today(){return new Date().toLocaleDateString('sv-SE')}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function showView(id){document.querySelectorAll('.view').forEach(x=>x.classList.toggle('active',x.id===id));document.querySelectorAll('.nav button').forEach(x=>x.classList.toggle('active',x.dataset.view===id));if(id==='settings'){playerName.value=state.settings.name;jersey1.value=state.settings.jersey1;jersey2.value=state.settings.jersey2;apiBaseUrl.value=state.settings.apiBaseUrl||'';apiStatus.textContent=state.settings.apiBaseUrl?'保存済み：'+state.settings.apiBaseUrl:'未設定';loadPlayerProfileFields()}window.scrollTo({top:0,behavior:'smooth'});renderAll()}
+function showView(id){document.querySelectorAll('.view').forEach(x=>x.classList.toggle('active',x.id===id));document.querySelectorAll('.nav button').forEach(x=>x.classList.toggle('active',x.dataset.view===id));try{localStorage.setItem('riku_last_view_v1',String(id))}catch(e){console.warn('画面状態の保存をスキップ',e)}if(id==='settings'){playerName.value=state.settings.name;jersey1.value=state.settings.jersey1;jersey2.value=state.settings.jersey2;apiBaseUrl.value=state.settings.apiBaseUrl||'';apiStatus.textContent=state.settings.apiBaseUrl?'保存済み：'+state.settings.apiBaseUrl:'未設定';loadPlayerProfileFields()}window.scrollTo({top:0,behavior:'smooth'});renderAll()}
 function inferTrainingFocus(menu,category){const source=(String(menu||'')+' '+String(category||'')).toLowerCase();if(/ドリブル|突破|切り返し|ボールタッチ|1対1/.test(source))return 'ドリブル';if(/シュート|キック|フリーキック/.test(source))return 'シュート';if(/パス|受ける|首振り|ファーストタッチ/.test(source))return 'ボールを受ける';if(/守備|プレス/.test(source))return '守備・プレス';if(/オフザボール|動き出し|ポジショニング/.test(source))return 'オフザボール';return 'その他'}function getTrainingSteps(focus){
  const common={
  'ドリブル':['マーカーでボールを運ぶ','左右の切り返しを行う','親子1対1で相手を見て突破方向を選ぶ'],
@@ -1915,6 +1915,7 @@ let pendingMatchSave=Promise.resolve(null);videoFile.addEventListener('change',(
 let pendingFormSave=Promise.resolve(null);formFile.addEventListener('change',()=>{let f=formFile.files[0];if(!f)return;formVideo.src=URL.createObjectURL(f);pendingFormSave=storeClipVideo('__pending_form_video__',f).then(()=>f).catch(e=>{console.error('フォーム動画の仮保存失敗',e);return null})})
 formKind.addEventListener('change',renderChecks);
 load();renderChecks();renderAll();renderMatchPipelineState();
+try{if(safeMatchStorageGet('riku_last_view_v1')==='video')showView('video')}catch(e){console.warn('前回画面の復元をスキップ',e)}
 restorePendingMatchVideo();
 try{
  const pendingJobId=safeMatchStorageGet(MATCH_ACTIVE_JOB_KEY);
