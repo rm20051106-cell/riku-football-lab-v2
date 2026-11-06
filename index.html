@@ -765,7 +765,7 @@ async function postMatchJobToAI(file,resultElement){
       blob,start,loaded=>showUploadProgress(loaded,part)
      );
      ok=true;
-    }catch(e){lastError=e;showUploadProgress(0,part);if(attempt<3)await new Promise(resolve=>setTimeout(resolve,900*attempt))}
+    }catch(e){lastError=e;showUploadProgress(0,part);if(attempt<3){resultElement.textContent='分割 '+(part+1)+' の再送信準備中（'+attempt+'/3）…';await new Promise(resolve=>setTimeout(resolve,900*attempt))}}
    }
    if(!ok)throw Error('分割 '+(part+1)+'/'+chunkCount+' の送信に失敗しました。もう一度同じ動画を選ぶと受信済み分割から再開できます。'+(lastError?' '+lastError.message:''));
    confirmedBytes+=blob.size;
