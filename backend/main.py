@@ -22,8 +22,8 @@ MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "120"))
 MAX_SECONDS = int(os.getenv("MAX_VIDEO_SECONDS", "60"))
 MAX_MATCH_SECONDS = int(os.getenv("MAX_MATCH_VIDEO_SECONDS", "1200"))
 MAX_MATCH_UPLOAD_MB = int(os.getenv("MAX_MATCH_UPLOAD_MB", "500"))
-MATCH_SAMPLE_RATE = float(os.getenv("MATCH_SAMPLE_RATE", "0.5"))
-MATCH_MAX_SAMPLES = int(os.getenv("MATCH_MAX_SAMPLES", "600"))
+MATCH_SAMPLE_RATE = float(os.getenv("MATCH_SAMPLE_RATE", "1.0"))
+MATCH_MAX_SAMPLES = int(os.getenv("MATCH_MAX_SAMPLES", "1200"))
 POSE_LANDMARKER_MODEL = os.getenv("POSE_LANDMARKER_MODEL", "/app/models/pose_landmarker_lite.task")
 match_jobs = {}
 match_uploads = {}
@@ -626,6 +626,16 @@ def iter_sampled_video_frames(capture, frame_interval, max_samples):
                 return
 
 
+def should_run_match_jersey_ocr(sample_index, every=5):
+    """Throttle expensive shirt OCR while retaining repeated identity candidates."""
+    try:
+        index = int(sample_index)
+        cadence = max(1, int(every))
+    except (TypeError, ValueError, OverflowError):
+        return False
+    return index > 0 and (index == 1 or index % cadence == 0)
+
+
 def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
     cap = cv2.VideoCapture(path)
     if not cap.isOpened():
@@ -671,7 +681,7 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
                 detected_count = len(detected.pose_landmarks or [])
                 for person_index, pose_lm in enumerate(detected.pose_landmarks or []):
                     metrics = analyze_task_pose(pose_lm, frame.shape[1], frame.shape[0])
-                    ocr = read_jersey_number(frame, metrics["landmarks"], targets)
+                    ocr = read_jersey_number(frame, metrics["landmarks"], targets) if should_run_match_jersey_ocr(sample_index) else []
                     for item in ocr:
                         jersey_counts[item["number"]] = jersey_counts.get(item["number"], 0) + 1
                     people.append({
