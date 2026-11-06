@@ -19,6 +19,7 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from job_store import init_state_store, load_match_jobs, load_match_uploads, save_match_job, save_match_upload, delete_match_upload, cleanup_expired_match_uploads
 from video_sampling import read_sampled_frame
+from upload_integrity import verify_uploaded_chunks
 
 APP_NAME = "RIKU FOOTBALL LAB Free AI Analysis API"
 MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "120"))
@@ -999,8 +1000,13 @@ def complete_match_chunk_upload(upload_id: str, background_tasks: BackgroundTask
     missing = [i for i in range(expected_count) if i not in received]
     if missing:
         raise HTTPException(status_code=409, detail="未受信の分割があります：" + ",".join(str(x) for x in missing[:20]))
-    if os.path.getsize(upload["path"]) != upload["size_bytes"]:
-        raise HTTPException(status_code=409, detail="受信した動画サイズが一致しません。")
+    try:
+        verify_uploaded_chunks(
+            upload["path"], upload["size_bytes"], upload["chunk_size_bytes"],
+            upload["chunks"],
+        )
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail=f"動画データの整合性を確認できません：{exc}")
     jersey_numbers = str(payload.get("jersey_numbers") or "10,74")
     job_id = uuid.uuid4().hex
     source_path = upload["path"]
