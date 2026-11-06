@@ -30,7 +30,23 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         self.assertIn("lastModified:file.lastModified||Date.now()", helper)
 
     def test_restore_is_invoked_during_app_startup(self):
-        self.assertIn("load();renderChecks();renderAll();renderMatchPipelineState();\nrestorePendingMatchVideo();", self.html)
+        self.assertIn("load();renderChecks();renderAll();renderMatchPipelineState();", self.html)
+        self.assertIn("restorePendingMatchVideo();", self.html)
+
+    def test_last_selected_view_is_persisted_and_restored(self):
+        start = self.html.index("function showView(id)")
+        end = self.html.index("\\nfunction ", start)
+        show_view = self.html[start:end]
+        self.assertIn("localStorage.setItem('riku_last_view_v1',String(id))", show_view)
+        self.assertIn("safeMatchStorageGet('riku_last_view_v1')==='video'", self.html)
+        self.assertIn("showView('video')", self.html)
+
+    def test_match_history_persists_stable_job_id(self):
+        start = self.html.index("function saveMatchScanResult")
+        end = self.html.index("function formatMatchTime", start)
+        save = self.html[start:end]
+        self.assertIn("jobId:result.job_id||null", save)
+        self.assertIn("String(x.jobId||'')===stableJobId", save)
 
 
 if __name__ == "__main__":
