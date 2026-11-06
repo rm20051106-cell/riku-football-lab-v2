@@ -25,7 +25,7 @@ button,.button{border:0;border-radius:12px;padding:12px 14px;font-weight:800;fon
 <main>
 <section class="view active" id="home">
  <div class="hero"><div class="eyebrow">YOUR NEXT LEVEL STARTS HERE</div><h1>陸玖の成長を、<br>記録から武器に。</h1><p>練習・試合動画・シュートフォーム・測定記録をひとつに。毎回の振り返りを、次のプレーにつなげよう。</p><div class="btnrow"><button onclick="showView('video')">▶ 動画を分析する</button><button class="secondary" onclick="showView('form')">⚽ シュート・FKフォーム</button><button class="secondary" onclick="showView('training')">今日の練習を記録</button><button class="secondary" onclick="showView('training')">お手本・練習解説</button></div></div>
- <div id="homeMatchRecovery" class="card" hidden style="border-color:#c8f169;margin-top:12px"><b>動画分析の続きがあります</b><div id="homeMatchRecoveryText" class="tiny muted" style="margin-top:5px"></div><div class="btnrow"><button class="small" onclick="returnToMatchWorkspace()">動画分析に戻る</button></div></div>
+ <div id="homeMatchRecovery" class="card" hidden style="border-color:#c8f169;margin-top:12px"><b>動画分析の続きがあります</b><div id="homeMatchRecoveryText" class="tiny muted" style="margin-top:5px"></div><div class="btnrow"><button class="small" onclick="returnToMatchWorkspace()">動画分析に戻る</button><button class="secondary small" id="homeMatchReselect" onclick="reselectPendingMatchVideo()" hidden>同じ動画を選び直す</button></div></div>
  <div class="grid">
   <div class="card"><div class="muted tiny">今月の練習日</div><div class="stat" id="homeDays">0 <small>日</small></div><div class="progress"><span id="monthProgress"></span></div><div class="tiny muted">記録した練習日数</div></div>
   <div class="card"><div class="muted tiny">動画・フォーム記録</div><div class="stat" id="homeVideos">0 <small>件</small></div><div class="tiny muted">振り返りを積み重ねる</div></div>
@@ -626,14 +626,23 @@ function renderHomeMatchRecovery(){
  card.hidden=!pending;
  if(!pending)return;
  const label=document.getElementById('homeMatchRecoveryText');
- if(label)label.textContent=(stage||'動画処理の再開待ち')+'。'+(activeJob?'解析ジョブの状態を再確認できます。':'同じ動画を選ぶと受信済みの分割から再開できます。');
+ const reselect=document.getElementById('homeMatchReselect');
+ const needsReselect=!!pipeline.uploadId&&!activeJob;
+ if(reselect)reselect.hidden=!needsReselect;
+ if(label)label.textContent=(stage||'動画処理の再開待ち')+'。'+(activeJob?'解析ジョブの状態を再確認できます。':needsReselect?'同じ動画を選び直すと、サーバー確認済みの分割から再開できます。':'動画分析画面で保存状態を確認できます。');
 }
-function returnToMatchWorkspace(){
+async function returnToMatchWorkspace(){
  showView('video');
  pendingMatchRestore=restorePendingMatchVideo();
+ await pendingMatchRestore;
  const activeJob=safeMatchStorageGet(MATCH_ACTIVE_JOB_KEY)||readMatchPipelineState().jobId;
- if(activeJob&&matchAiResult)pollMatchJobToAI(activeJob,matchAiResult);
+ if(activeJob&&matchAiResult)await pollMatchJobToAI(activeJob,matchAiResult);
  renderMatchPipelineState();
+}
+function reselectPendingMatchVideo(){
+ showView('video');
+ const picker=document.getElementById('videoFile');
+ if(picker)picker.click();
 }
 function renderMatchPipelineState(){
  renderHomeMatchRecovery();
