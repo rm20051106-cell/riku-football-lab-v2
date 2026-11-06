@@ -699,6 +699,7 @@ async function postMatchJobToAI(file,resultElement){
   if(hj.ok!==true && !(hj.status==='ready' && hj.service==='RIKU FOOTBALL LAB Free AI Analysis API'))throw Error('サーバーの応答が想定外です');
   const chunkSize=4*1024*1024;
   const chunkCount=Math.ceil(file.size/chunkSize);
+  if(!Number.isSafeInteger(chunkCount)||chunkCount<1)throw Error('動画の分割数を正しく計算できません。ファイルを確認してください。');
   resultElement.textContent='動画データを分割して照合中…';
   updateMatchPipelineState({stageLabel:'動画データの照合中',progress:0,detail:'分割データのSHA-256を計算しています。'});
   const chunkHashes=await buildMatchChunkHashes(file,chunkSize,(done,total)=>{
