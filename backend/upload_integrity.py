@@ -61,6 +61,10 @@ def build_upload_resume_state(total_size: int, chunk_size: int, chunks: dict) ->
     return {
         "total_chunks": total_chunks,
         "received_chunks": received,
+        "received_chunk_sha256": {
+            str(index): str((chunks[str(index)]).get("sha256", ""))
+            for index in received
+        },
         "missing_chunks": missing,
         "received_bytes": received_bytes,
         "confirmed_percent": int(received_bytes * 100 / total_size),
