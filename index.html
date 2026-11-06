@@ -914,19 +914,25 @@ async function restorePendingMatchVideo(){
  }catch(e){console.warn('端末内保存動画の復元に失敗',e);return false}
 }
 async function sendMatchToAI(){
- // Wait for the IndexedDB restore started during app boot before deciding that no video is available.
- try{await pendingMatchRestore}catch(e){console.warn('起動時の動画復元待機に失敗',e)}
- let file=videoFile.files[0]||await pendingMatchSave;
- if(!file){
-  try{
-   const saved=await getClipVideo('__pending_match_video__');
-   if(saved&&saved.blob){
-    file=new File([saved.blob],saved.name||'match-video.mp4',{type:saved.type||saved.blob.type||'video/mp4',lastModified:Number(saved.lastModified)||Date.now()});
-   }
-  }catch(e){console.warn('端末保存動画の再取得に失敗',e)}
+ if(window.__rikuMatchUploadStarting){matchAiResult.textContent='動画の送信準備はすでに進行中です。二重に開始せず、そのままお待ちください。';return;}
+ window.__rikuMatchUploadStarting=true;
+ try{
+  // Wait for the IndexedDB restore started during app boot before deciding that no video is available.
+  try{await pendingMatchRestore}catch(e){console.warn('起動時の動画復元待機に失敗',e)}
+  let file=videoFile.files[0]||await pendingMatchSave;
+  if(!file){
+   try{
+    const saved=await getClipVideo('__pending_match_video__');
+    if(saved&&saved.blob){
+     file=new File([saved.blob],saved.name||'match-video.mp4',{type:saved.type||saved.blob.type||'video/mp4',lastModified:Number(saved.lastModified)||Date.now()});
+    }
+   }catch(e){console.warn('端末保存動画の再取得に失敗',e)}
+  }
+  if(!file){matchAiResult.textContent='動画ファイルを確認できません。元の動画を選び直してください。';return}
+  await postMatchJobToAI(file,matchAiResult);
+ }finally{
+  window.__rikuMatchUploadStarting=false;
  }
- if(!file){matchAiResult.textContent='動画ファイルを確認できません。元の動画を選び直してください。';return}
- await postMatchJobToAI(file,matchAiResult);
 }
 
 function sendFormToAI(){postVideoToAI(formFile.files[0],'/analyze/form',{kick_type:formKind.value,dominant_foot:formFoot.value,camera_angle:formCameraAngle.value},formAiResult)}
