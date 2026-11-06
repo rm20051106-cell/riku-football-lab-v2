@@ -106,6 +106,7 @@ class Stage62FullVideoSamplingTests(unittest.TestCase):
         self.assertIn("iter_sampled_video_frames", names)
         self.assertIn("sample_limit", names)
         attributes = {n.attr for n in ast.walk(node) if isinstance(n, ast.Attribute)}
+        self.assertIn("grab", attributes)
         self.assertNotIn("set", attributes)
         iterator_attributes = {n.attr for n in ast.walk(ITER_NODE) if isinstance(n, ast.Attribute)}
         self.assertIn("grab", iterator_attributes)
