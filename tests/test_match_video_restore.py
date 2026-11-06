@@ -241,3 +241,10 @@ if __name__ == "__main__":
         self.assertIn("Number.isSafeInteger(chunkCount)", handler)
         self.assertIn("chunkCount<1", handler)
 
+    def test_resume_ignores_invalid_server_chunk_indexes(self):
+        start = self.html.index("async function postMatchJobToAI")
+        end = self.html.index("async function pollMatchJobToAI", start)
+        handler = self.html[start:end]
+        self.assertIn("Array.isArray(session.received_chunks)", handler)
+        self.assertIn("Number.isInteger(part)&&part>=0&&part<chunkCount", handler)
+
