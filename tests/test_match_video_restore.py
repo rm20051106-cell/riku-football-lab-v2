@@ -41,6 +41,16 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         self.assertIn("safeMatchStorageGet('riku_last_view_v1')==='video'", self.html)
         self.assertIn("showView('video')", self.html)
 
+
+    def test_startup_video_restore_is_awaitable_before_analysis(self):
+        self.assertIn("pendingMatchRestore=Promise.resolve(false)", self.html)
+        self.assertIn("pendingMatchRestore=restorePendingMatchVideo();", self.html)
+        start = self.html.index("async function sendMatchToAI()")
+        end = self.html.index("function sendFormToAI()", start)
+        handler = self.html[start:end]
+        self.assertIn("await pendingMatchRestore", handler)
+        self.assertIn("getClipVideo('__pending_match_video__')", handler)
+
     def test_match_history_persists_stable_job_id(self):
         start = self.html.index("function saveMatchScanResult")
         end = self.html.index("function formatMatchTime", start)
