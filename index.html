@@ -741,7 +741,7 @@ async function postMatchJobToAI(file,resultElement){
    updateMatchPipelineState({stageLabel:'アップロード準備完了',progress:0,uploadId,uploadFingerprint:fingerprint,detail:'分割送信を開始します。同じ動画を選び直すと続きから再開できます。'});
    try{localStorage.setItem(storageKey,JSON.stringify({fingerprint,uploadId}))}catch(e){}
   }
-  const received=new Set((session.received_chunks||[]).map(Number));
+  const received=new Set((Array.isArray(session.received_chunks)?session.received_chunks:[]).map(Number).filter(part=>Number.isInteger(part)&&part>=0&&part<chunkCount));
   let confirmedBytes=0;
   received.forEach(part=>{if(Number.isInteger(part)&&part>=0&&part<chunkCount)confirmedBytes+=Math.min(chunkSize,file.size-part*chunkSize)});
   const showUploadProgress=(inFlightBytes,part)=>{
