@@ -106,6 +106,15 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         self.assertIn("db.close()", helper)
         self.assertIn("動画保存が中断されました", helper)
 
+    def test_indexeddb_video_read_rejects_on_transaction_abort_once(self):
+        start = self.html.index("async function getClipVideo")
+        end = self.html.index("async function removeClipVideo", start)
+        helper = self.html[start:end]
+        self.assertIn("let settled=false", helper)
+        self.assertIn("const finish=(fn,value)=>{if(settled)return", helper)
+        self.assertIn("tx.onabort", helper)
+        self.assertIn("動画の読み込みが中断されました", helper)
+
     def test_upload_resume_falls_back_to_persisted_pipeline_fingerprint(self):
         start = self.html.index("async function postMatchJobToAI")
         end = self.html.index("async function pollMatchJobToAI", start)
