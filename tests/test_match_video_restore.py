@@ -183,6 +183,13 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         self.assertIn("同じ動画を選ぶと受信済み分割から再開できます", handler)
         self.assertNotIn("uploadId:null", catch)
 
+    def test_match_upload_does_not_delete_local_pending_video(self):
+        start = self.html.index("async function postMatchJobToAI")
+        end = self.html.index("async function pollMatchJobToAI", start)
+        handler = self.html[start:end]
+        self.assertNotIn("removeClipVideo('__pending_match_video__')", handler)
+        self.assertIn("updateMatchPipelineState({stageLabel:'解析ジョブ受付完了'", handler)
+
     def test_startup_video_restore_is_awaitable_before_analysis(self):
         self.assertIn("pendingMatchRestore=Promise.resolve(false)", self.html)
         self.assertIn("pendingMatchRestore=restorePendingMatchVideo();", self.html)
