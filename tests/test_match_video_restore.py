@@ -42,6 +42,16 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         self.assertIn("showView('video')", self.html)
 
 
+    def test_upload_resume_falls_back_to_persisted_pipeline_fingerprint(self):
+        start = self.html.index("async function postMatchJobToAI")
+        end = self.html.index("async function pollMatchJobToAI", start)
+        handler = self.html[start:end]
+        self.assertIn("const previousPipeline=readMatchPipelineState()", handler)
+        self.assertIn("uploadFingerprint:null", handler)
+        self.assertIn("previousPipeline.uploadFingerprint===fingerprint", handler)
+        self.assertIn("uploadFingerprint:fingerprint", handler)
+        self.assertIn("pipelineResume?.uploadId", handler)
+
     def test_startup_video_restore_is_awaitable_before_analysis(self):
         self.assertIn("pendingMatchRestore=Promise.resolve(false)", self.html)
         self.assertIn("pendingMatchRestore=restorePendingMatchVideo();", self.html)
