@@ -66,12 +66,16 @@ class MatchStateStoreTests(unittest.TestCase):
         restored = job_store.load_match_uploads()
         self.assertEqual(restored["upload-1"]["chunks"]["0"]["sha256"], "abc")
 
-    def test_missing_upload_file_is_not_restored(self):
+    def test_missing_upload_file_session_is_restored_for_chunk_recovery(self):
+        missing_path = str(Path(self.temp_dir.name) / "missing.mp4")
         job_store.save_match_upload("upload-missing", {
-            "upload_id": "upload-missing", "path": str(Path(self.temp_dir.name) / "missing.mp4"),
-            "chunks": {},
+            "upload_id": "upload-missing", "path": missing_path,
+            "size_bytes": 100, "chunk_size_bytes": 40, "chunks": {"0": {"sha256": "a" * 64, "size_bytes": 40}},
         })
-        self.assertNotIn("upload-missing", job_store.load_match_uploads())
+        restored = job_store.load_match_uploads()
+        self.assertIn("upload-missing", restored)
+        self.assertEqual(restored["upload-missing"]["path"], missing_path)
+        self.assertFalse(Path(missing_path).exists())
 
     def test_upload_session_can_be_deleted(self):
         job_store.save_match_upload("upload-delete", {"upload_id": "upload-delete", "path": "unused"})
