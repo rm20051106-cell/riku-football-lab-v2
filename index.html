@@ -863,7 +863,7 @@ async function createRikuHighlight(){
   if(out)out.innerHTML='<b>陸玖ハイライト完成（'+data.clip_count+'場面）</b><video controls playsinline preload="metadata" style="width:100%;max-width:520px;border-radius:12px;margin-top:8px" src="'+url+'"></video><div><a href="'+url+'" target="_blank" rel="noopener">ハイライト動画を開く</a></div><div class="tiny muted">選択した「陸玖確認済み・良かった」場面のみを連結しました。動画はサーバーの一時保存です。iPhoneでは動画を開き、共有ボタンから「ファイルに保存」を選んでください。サーバー再起動後は再作成が必要です。'+(savedId?'履歴にも紐づけました。':'解析履歴を保存すると、この動画を履歴にも紐づけられます。')+'</div>';
  }catch(e){if(out)out.textContent='ハイライト作成に失敗：'+e.message}
 }
-async async function restorePendingMatchVideo(){
+async function restorePendingMatchVideo(){
  try{
   const saved=await getClipVideo('__pending_match_video__');
   if(!saved||!saved.blob)return false;
