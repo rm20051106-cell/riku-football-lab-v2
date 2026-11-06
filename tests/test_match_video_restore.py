@@ -297,5 +297,12 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         handler = self.html[start:end]
         self.assertIn("session&&typeof session==='object'&&!Array.isArray(session)", handler)
 
+    def test_resume_chunk_list_is_validated_before_mapping(self):
+        start = self.html.index("async function postMatchJobToAI")
+        end = self.html.index("async function pollMatchJobToAI", start)
+        handler = self.html[start:end]
+        self.assertIn("Array.isArray(session.received_chunks)?session.received_chunks:[]", handler)
+        self.assertNotIn("(session.received_chunks||[]).map(Number)", handler)
+
 if __name__ == "__main__":
     unittest.main()
