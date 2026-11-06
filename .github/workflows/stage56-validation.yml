@@ -21,12 +21,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Install browser test dependencies
+      - name: Install ffmpeg
         run: |
-          sudo apt-get update
+          sudo apt-get update -qq
           sudo apt-get install -y ffmpeg
-          python -m pip install --disable-pip-version-check playwright
-          python -m playwright install --with-deps chromium
+      - name: Install Playwright Python package
+        run: python -m pip install --disable-pip-version-check playwright
+      - name: Install Chromium browser
+        run: python -m playwright install chromium
       - name: Check Python syntax
         run: python -m compileall -q backend tests
       - name: Check inline and application JavaScript syntax
