@@ -274,3 +274,9 @@ if __name__ == "__main__":
         end = self.html.index("async function pollMatchJobToAI", start)
         handler = self.html[start:end]
         self.assertIn("session.completed&&typeof session.job_id==='string'&&session.job_id.trim()", handler)
+    def test_resume_hash_metadata_must_be_an_object_not_array(self):
+        start = self.html.index("async function postMatchJobToAI")
+        end = self.html.index("async function pollMatchJobToAI", start)
+        handler = self.html[start:end]
+        self.assertIn("typeof session.received_chunk_sha256==='object'", handler)
+        self.assertIn("!Array.isArray(session.received_chunk_sha256)", handler)
