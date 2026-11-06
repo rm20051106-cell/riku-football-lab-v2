@@ -23,9 +23,10 @@ jobs:
           node-version: "22"
       - name: Install browser test dependencies
         run: |
-          ffmpeg -version
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
           python -m pip install --disable-pip-version-check playwright
-          python -m playwright install chromium webkit
+          python -m playwright install --with-deps chromium webkit
       - name: Check Python syntax
         run: python -m compileall -q backend tests
       - name: Check inline and application JavaScript syntax
