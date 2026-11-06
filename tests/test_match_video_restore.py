@@ -15,7 +15,7 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
 
     def test_analysis_can_resume_without_file_input_after_reload(self):
         start = self.html.index("async function sendMatchToAI()")
-        end = self.html.index("async function sendFormToAI()", start)
+        end = self.html.index("function sendFormToAI()", start)
         handler = self.html[start:end]
         self.assertIn("videoFile.files[0]||await pendingMatchSave", handler)
         self.assertIn("getClipVideo('__pending_match_video__')", handler)
