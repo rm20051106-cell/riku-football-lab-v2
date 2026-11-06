@@ -30,3 +30,39 @@ def verify_uploaded_chunks(path: str, total_size: int, chunk_size: int, chunks: 
                 remaining -= len(block)
             if digest.hexdigest() != metadata.get("sha256"):
                 raise ValueError(f"chunk SHA-256 mismatch: {index}")
+
+
+def build_upload_resume_state(total_size: int, chunk_size: int, chunks: dict) -> dict:
+    """Return authoritative server-side chunk receipt and resume metadata."""
+    try:
+        total_size = int(total_size)
+        chunk_size = int(chunk_size)
+    except (TypeError, ValueError):
+        raise ValueError("invalid upload dimensions")
+    if total_size <= 0 or chunk_size <= 0:
+        raise ValueError("upload dimensions must be positive")
+    total_chunks = (total_size + chunk_size - 1) // chunk_size
+    received = []
+    received_bytes = 0
+    for raw_index, metadata in (chunks or {}).items():
+        try:
+            index = int(raw_index)
+        except (TypeError, ValueError):
+            raise ValueError("invalid chunk index")
+        if index < 0 or index >= total_chunks or str(index) != str(raw_index):
+            raise ValueError("chunk index out of range")
+        expected_size = min(chunk_size, total_size - index * chunk_size)
+        if not isinstance(metadata, dict) or int(metadata.get("size_bytes", -1)) != expected_size:
+            raise ValueError("chunk metadata size mismatch")
+        received.append(index)
+        received_bytes += expected_size
+    received.sort()
+    missing = [index for index in range(total_chunks) if index not in set(received)]
+    return {
+        "total_chunks": total_chunks,
+        "received_chunks": received,
+        "missing_chunks": missing,
+        "received_bytes": received_bytes,
+        "confirmed_percent": int(received_bytes * 100 / total_size),
+    }
+
