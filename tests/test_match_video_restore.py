@@ -347,5 +347,30 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         self.assertIn("Array.isArray(verified.missing_chunks)", handler)
         self.assertIn("Number.isSafeInteger(verified.total_chunks)", handler)
 
+
+    def test_upload_id_and_fingerprint_are_in_scope_for_failure_recovery(self):
+        start = self.html.index("async function postMatchJobToAI")
+        end = self.html.index("async function pollMatchJobToAI", start)
+        handler = self.html[start:end]
+        try_index = handler.index(" try{")
+        upload_id_decl = handler.index(" let uploadId=null;")
+        fingerprint_decl = handler.index(" let uploadFingerprint=null;")
+        catch_index = handler.rfind("}catch(e){")
+        self.assertLess(upload_id_decl, try_index)
+        self.assertLess(fingerprint_decl, try_index)
+        self.assertLess(try_index, catch_index)
+        self.assertIn("uploadId=(", handler)
+        self.assertNotIn("let uploadId=(", handler)
+        self.assertIn("uploadFingerprint||readMatchPipelineState().uploadFingerprint", handler[catch_index:])
+
+    def test_upload_failure_recovery_preserves_previous_session_metadata(self):
+        start = self.html.index("async function postMatchJobToAI")
+        end = self.html.index("async function pollMatchJobToAI", start)
+        handler = self.html[start:end]
+        catch = handler[handler.rfind("}catch(e){"):]
+        self.assertIn("uploadId||readMatchPipelineState().uploadId||previousPipeline.uploadId", catch)
+        self.assertIn("uploadFingerprint||readMatchPipelineState().uploadFingerprint||previousPipeline.uploadFingerprint", catch)
+        self.assertIn("renderMatchPipelineState();", catch)
+
 if __name__ == "__main__":
     unittest.main()
