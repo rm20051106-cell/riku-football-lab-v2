@@ -42,41 +42,45 @@ class FakeCapture:
 
 
 class Stage62FullVideoSamplingTests(unittest.TestCase):
-    def test_fifteen_minute_video_is_scanned_at_half_second_intervals(self):
+    def test_fifteen_minute_video_uses_two_fps_and_1800_samples(self):
         plan = build(30, 30 * 60 * 15)
         self.assertEqual(plan["frame_interval"], 15)
         self.assertEqual(plan["sampling_interval_seconds"], 0.5)
+        self.assertEqual(plan["sampling_rate_fps"], 2.0)
         self.assertEqual(plan["sample_limit"], 2400)
         self.assertEqual(plan["estimated_samples"], 1800)
 
-    def test_twenty_minute_video_has_twenty_four_hundred_samples_to_end(self):
+    def test_twenty_minute_video_uses_two_fps_and_2400_samples(self):
         plan = build(30, 30 * 60 * 20)
+        self.assertEqual(plan["frame_interval"], 15)
         self.assertEqual(plan["sample_limit"], 2400)
         self.assertEqual(plan["estimated_samples"], 2400)
-        self.assertEqual(plan["sampling_interval_seconds"], 1.0)
+        self.assertEqual(plan["sampling_interval_seconds"], 0.5)
         self.assertAlmostEqual((plan["estimated_samples"] - 1) * plan["sampling_interval_seconds"], 1199.5)
 
     def test_twenty_five_fps_video_uses_near_half_second_sampling(self):
         plan = build(25, 25 * 60 * 20)
         self.assertEqual(plan["frame_interval"], 13)
-        self.assertEqual(plan["sample_limit"], 1200)
+        self.assertEqual(plan["sample_limit"], 2400)
+        self.assertEqual(plan["estimated_samples"], 2308)
+        self.assertAlmostEqual(plan["sampling_interval_seconds"], 0.52)
 
     def test_short_video_estimate_uses_only_frames_that_exist(self):
         plan = build(30, 30 * 45)
-        self.assertEqual(plan["sample_limit"], 1200)
+        self.assertEqual(plan["sample_limit"], 2400)
         self.assertEqual(plan["estimated_samples"], 90)
 
     def test_sample_rate_and_cap_are_bounded(self):
         plan = build(30, 30 * 60 * 20, target_rate=4, max_samples=99999)
         self.assertEqual(plan["sampling_rate_fps"], 2.0)
-        self.assertEqual(plan["sample_limit"], 1200)
-        self.assertEqual(plan["estimated_samples"], 1200)
+        self.assertEqual(plan["sample_limit"], 2400)
+        self.assertEqual(plan["estimated_samples"], 2400)
 
     def test_invalid_fps_uses_safe_one_second_interval(self):
         plan = build(float("nan"), 0)
         self.assertEqual(plan["frame_interval"], 1)
         self.assertEqual(plan["sampling_interval_seconds"], 1.0)
-        self.assertEqual(plan["sample_limit"], 1200)
+        self.assertEqual(plan["sample_limit"], 2400)
         self.assertIsNone(plan["estimated_samples"])
 
     def test_iterator_scans_fifteen_minutes_to_actual_eof_at_two_fps(self):
@@ -96,22 +100,22 @@ class Stage62FullVideoSamplingTests(unittest.TestCase):
 
     def test_iterator_stops_at_real_eof_for_short_video(self):
         capture = FakeCapture(125)
-        samples = list(iterate_frames(capture, 30, 1200))
+        samples = list(iterate_frames(capture, 15, 2400))
         self.assertEqual([item[0] for item in samples], [0, 15, 30, 45, 60, 75, 90, 105, 120])
         self.assertEqual(capture.position, 125)
 
     def test_iterator_respects_hard_sample_ceiling(self):
         capture = FakeCapture(30 * 60 * 30)
-        samples = list(iterate_frames(capture, 30, 1200))
-        self.assertEqual(len(samples), 1200)
+        samples = list(iterate_frames(capture, 15, 2400))
+        self.assertEqual(len(samples), 2400)
         self.assertEqual(samples[-1][0], 35985)
 
     def test_jersey_ocr_is_throttled_to_first_and_every_tenth_sample(self):
         self.assertTrue(should_run_ocr(1))
         self.assertFalse(should_run_ocr(2))
         self.assertFalse(should_run_ocr(9))
-        self.assertTrue(should_run_ocr(20))
         self.assertTrue(should_run_ocr(10))
+        self.assertTrue(should_run_ocr(20))
         self.assertFalse(should_run_ocr(0))
 
     def test_match_scanner_uses_sampling_plan_and_sequential_iterator(self):
