@@ -893,18 +893,6 @@ async function sendMatchToAI(){
  await postMatchJobToAI(file,matchAiResult);
 }
 
- let file=videoFile.files[0]||await pendingMatchSave;
- if(!file){
-  try{
-   const saved=await getClipVideo('__pending_match_video__');
-   if(saved&&saved.blob){
-    file=new File([saved.blob],saved.name||'match-video.mp4',{type:saved.type||saved.blob.type||'video/mp4',lastModified:Number(saved.lastModified)||Date.now()});
-   }
-  }catch(e){console.warn('端末保存動画の再取得に失敗',e)}
- }
- if(!file){matchAiResult.textContent='動画ファイルを確認できません。元の動画を選び直してください。';return}
- await postMatchJobToAI(file,matchAiResult);
-}
 function sendFormToAI(){postVideoToAI(formFile.files[0],'/analyze/form',{kick_type:formKind.value,dominant_foot:formFoot.value,camera_angle:formCameraAngle.value},formAiResult)}
 async function getVideoBackupManifest(){try{const db=await openVideoDB();return await new Promise((resolve,reject)=>{const tx=db.transaction('videos','readonly'),store=tx.objectStore('videos'),req=store.getAll(),keys=store.getAllKeys();let values=null,ids=null;const done=()=>{if(!values||!ids)return;const rows=values.map((v,i)=>({key:String(ids[i]),name:v.name||'動画',type:v.type||'',size:Number(v.size||v.blob?.size||0)}));db.close();resolve({count:rows.length,totalBytes:rows.reduce((n,x)=>n+x.size,0),files:rows})};req.onsuccess=()=>{values=req.result||[];done()};keys.onsuccess=()=>{ids=keys.result||[];done()};req.onerror=()=>{db.close();reject(req.error)};keys.onerror=()=>{db.close();reject(keys.error)}})}catch(e){return {count:null,totalBytes:null,files:[],note:'動画一覧を取得できませんでした'}}}
 async function exportData(){try{const manifest=await getVideoBackupManifest();const backup={format:'RIKU_FOOTBALL_LAB_BACKUP',version:2,createdAt:new Date().toISOString(),appData:state,videoManifest:manifest,videoPolicy:'動画ファイル本体はJSONに含まれません。端末内IndexedDBに保存された動画はこの書き出し・復元で削除も上書きもされません。別端末への動画移行は動画ファイルを個別に保存してください。'};const blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'});downloadBackupBlob(blob,'riku-football-lab-backup-'+today()+'.json')}catch(e){alert('バックアップを書き出せませんでした。端末の空き容量を確認してください。')}}
