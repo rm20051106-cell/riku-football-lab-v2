@@ -269,3 +269,8 @@ if __name__ == "__main__":
         catch = handler[handler.rfind("}catch(e){"):]
         self.assertIn("uploadId:uploadId||readMatchPipelineState().uploadId||null", catch)
         self.assertIn("uploadFingerprint:readMatchPipelineState().uploadFingerprint||null", catch)
+    def test_completed_upload_resume_requires_valid_job_id(self):
+        start = self.html.index("async function postMatchJobToAI")
+        end = self.html.index("async function pollMatchJobToAI", start)
+        handler = self.html[start:end]
+        self.assertIn("session.completed&&typeof session.job_id==='string'&&session.job_id.trim()", handler)
