@@ -199,6 +199,17 @@ class MatchVideoRestoreRegressionTests(unittest.TestCase):
         self.assertLess(persist, poll)
         self.assertIn("uploadId:null", handler[persist-220:persist+220])
 
+    def test_stage100_long_video_recovery_invariants_are_present_together(self):
+        self.assertIn("idb", self.html.lower())
+        self.assertIn("function reselectPendingMatchVideo()", self.html)
+        self.assertIn("window.__rikuMatchUploadStarting", self.html)
+        self.assertIn("matchVideoSelectionVersion", self.html)
+        self.assertIn("saved.blob.size<=0", self.html)
+        self.assertIn("tx.oncomplete=()=>finish(resolve,result)", self.html)
+        self.assertIn("stageLabel:'通信・処理エラー／再接続待ち'", self.html)
+        self.assertIn("localStorage.setItem('riku_active_match_job_v1',jobId)", self.html)
+        self.assertIn("renderHomeMatchRecovery();", self.html)
+
     def test_startup_video_restore_is_awaitable_before_analysis(self):
         self.assertIn("pendingMatchRestore=Promise.resolve(false)", self.html)
         self.assertIn("pendingMatchRestore=restorePendingMatchVideo();", self.html)
