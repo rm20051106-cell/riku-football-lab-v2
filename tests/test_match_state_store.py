@@ -24,6 +24,21 @@ class MatchStateStoreTests(unittest.TestCase):
             os.environ["RIKU_STATE_DB"] = self.old_path
         self.temp_dir.cleanup()
 
+    def test_upload_completion_is_idempotent_and_reuses_original_job(self):
+        first, created_first = job_store.create_match_job_for_upload("upload-once", {
+            "job_id": "job-first", "status": "queued", "progress": 0,
+        })
+        second, created_second = job_store.create_match_job_for_upload("upload-once", {
+            "job_id": "job-second", "status": "queued", "progress": 0,
+        })
+        self.assertEqual(first, "job-first")
+        self.assertEqual(second, "job-first")
+        self.assertTrue(created_first)
+        self.assertFalse(created_second)
+        self.assertEqual(job_store.get_match_upload_completion("upload-once"), "job-first")
+        self.assertIn("job-first", job_store.load_match_jobs())
+        self.assertNotIn("job-second", job_store.load_match_jobs())
+
     def test_job_survives_store_reload_and_updates(self):
         job_store.save_match_job("job-1", {
             "job_id": "job-1", "status": "processing", "progress": 42,
