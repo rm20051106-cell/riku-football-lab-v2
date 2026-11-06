@@ -52,7 +52,7 @@ button,.button{border:0;border-radius:12px;padding:12px 14px;font-weight:800;fon
 <section class="view" id="video">
  <h1 class="section-title">動画分析ラボ</h1><p class="section-desc">iPhoneの写真・ファイルから試合や練習動画を選び、再生しながら時刻付きでプレーを記録・採点します。</p>
  <div class="card"><h2>① 動画を読み込む</h2><label class="label">動画タイトル</label><input id="videoTitle" placeholder="例：10/28 練習試合 前半"><label class="label">動画ファイル</label><input type="file" id="videoFile" accept="video/*"><div id="videoMeta" class="tiny muted" style="margin-top:8px">動画はこの画面内で再生します。ファイル自体はアップロードされません。</div><div class="video-wrap" id="videoWrap"><video id="matchVideo" controls playsinline preload="metadata"></video><div class="overlay-guide" id="overlayGuide"><div class="silhouette"></div><div class="guide-label">姿勢ガイド（目安）</div></div></div><div class="btnrow"><button class="secondary small" onclick="seekVideo(-1)">↶ 1秒戻る</button><button class="secondary small" onclick="seekVideo(1)">1秒進む ↷</button><button class="secondary small" onclick="toggleGuide()">姿勢ガイド ON/OFF</button></div><p class="tiny muted">動画は端末内で再生します。画面を閉じたり再読み込みすると、読み込んだ動画を再選択する必要があります。</p></div>
- <div class="card"><h2>② プレーを記録・採点</h2><div class="two"><div><label class="label">動画内の時刻（秒）</label><input type="number" id="clipTime" min="0" step="0.1" placeholder="動画から取得"></div><div><label class="label">プレー種別</label><select id="clipType"><option>ドリブル突破</option><option>パス・受ける動き</option><option>シュート</option><option>フリーキック</option><option>守備・プレス</option><option>ポジショニング</option><option>その他</option></select></div></div><div class="btnrow"><button class="secondary small" onclick="takeCurrentTime()">現在の再生時刻を入れる</button></div><div class="two"><div><label class="label">判断・準備 <b id="s1v">3</b>/5</label><input type="range" id="s1" min="1" max="5" value="3" oninput="s1v.textContent=this.value"></div><div><label class="label">技術・実行 <b id="s2v">3</b>/5</label><input type="range" id="s2" min="1" max="5" value="3" oninput="s2v.textContent=this.value"></div><div><label class="label">スピード・強度 <b id="s3v">3</b>/5</label><input type="range" id="s3" min="1" max="5" value="3" oninput="s3v.textContent=this.value"></div><div><label class="label">チームへの貢献 <b id="s4v">3</b>/5</label><input type="range" id="s4" min="1" max="5" value="3" oninput="s4v.textContent=this.value"></div></div><label class="label">良かった点</label><textarea id="clipGood" placeholder="例：相手の逆を取って加速できた"></textarea><label class="label">改善点・次回の意識</label><textarea id="clipImprove" placeholder="例：仕掛ける前に味方とゴールの位置を見る"></textarea><div class="btnrow"><button onclick="saveClip()">プレー分析を保存</button><button class="secondary" onclick="sendMatchToAI()">AIサーバーで動画解析</button></div><div id="matchAiResult" class="tiny muted" style="margin-top:10px"></div><div class="note">AI試合スキャンでは動画全体から姿勢データを抽出して履歴に保存できます。背番号の自動認識・陸玖本人の特定・プレー内容の判定・ハイライト動画の自動生成は、今後の開発機能です。姿勢データは画面内の人物の推定値で、陸玖本人のものとは限りません。</div></div>
+ <div class="card"><h2>② プレーを記録・採点</h2><div class="two"><div><label class="label">動画内の時刻（秒）</label><input type="number" id="clipTime" min="0" step="0.1" placeholder="動画から取得"></div><div><label class="label">プレー種別</label><select id="clipType"><option>ドリブル突破</option><option>パス・受ける動き</option><option>シュート</option><option>フリーキック</option><option>守備・プレス</option><option>ポジショニング</option><option>その他</option></select></div></div><div class="btnrow"><button class="secondary small" onclick="takeCurrentTime()">現在の再生時刻を入れる</button></div><div class="two"><div><label class="label">判断・準備 <b id="s1v">3</b>/5</label><input type="range" id="s1" min="1" max="5" value="3" oninput="s1v.textContent=this.value"></div><div><label class="label">技術・実行 <b id="s2v">3</b>/5</label><input type="range" id="s2" min="1" max="5" value="3" oninput="s2v.textContent=this.value"></div><div><label class="label">スピード・強度 <b id="s3v">3</b>/5</label><input type="range" id="s3" min="1" max="5" value="3" oninput="s3v.textContent=this.value"></div><div><label class="label">チームへの貢献 <b id="s4v">3</b>/5</label><input type="range" id="s4" min="1" max="5" value="3" oninput="s4v.textContent=this.value"></div></div><label class="label">良かった点</label><textarea id="clipGood" placeholder="例：相手の逆を取って加速できた"></textarea><label class="label">改善点・次回の意識</label><textarea id="clipImprove" placeholder="例：仕掛ける前に味方とゴールの位置を見る"></textarea><div class="btnrow"><button onclick="saveClip()">プレー分析を保存</button><button class="secondary" onclick="sendMatchToAI()">AIサーバーで動画解析</button></div><div id="matchAiResult" class="tiny muted" style="margin-top:10px"></div><div id="matchPipelineStatus" class="card tiny" style="margin-top:10px;background:#0d1928;border-color:#3a526b"><b>動画処理状況</b><div class="muted">まだアップロードしていません</div></div><div class="note">AI試合スキャンでは動画全体から姿勢データを抽出して履歴に保存できます。背番号の自動認識・陸玖本人の特定・プレー内容の判定・ハイライト動画の自動生成は、今後の開発機能です。姿勢データは画面内の人物の推定値で、陸玖本人のものとは限りません。</div></div>
  <div class="card"><h2>③ 保存したプレー分析</h2><div id="clipRecords"></div></div>
  <div class="card"><h2>④ プレーライブラリ</h2><p class="tiny muted">試合動画から抽出した場面候補を、検索・分類別に探せます。</p><label class="label" for="matchLibrarySearch">場面を検索</label><input id="matchLibrarySearch" placeholder="例：ドリブル、突破、試合名" oninput="renderMatchLibrary()"><label class="label" for="matchLibraryFilter">絞り込み</label><select id="matchLibraryFilter" onchange="renderMatchLibrary()"><option value="all">すべての場面</option><option value="riku">陸玖本人として確認済み</option><option value="good">陸玖・良かった</option><option value="improve">陸玖・改善したい</option><option value="unconfirmed">本人未確認</option><option>ドリブル</option><option>パス</option><option>シュート</option><option>ボールを受ける</option><option>守備・プレス</option><option>オフザボール</option><option>その他</option></select><div id="matchLibrary"><div class="empty">試合スキャン履歴を保存すると場面が表示されます。</div></div></div><div class="card"><h2>⑤ AI試合スキャン履歴</h2><div id="matchScanRecords"><div class="empty">AI解析の履歴はまだありません</div></div></div>
  <div class="card"><h2>⑤ 陸玖専属コーチレポート</h2><p class="tiny muted">保存された記録から、陸玖のプレー傾向と次の練習テーマを整理します。</p><div id="rikuCoachReport"><div class="empty">記録を集めるとレポートが表示されます</div></div></div>
@@ -497,6 +497,7 @@ async function postVideoToAI(file, endpoint, extra, resultElement){
  if(!file){resultElement.textContent='先に動画ファイルを選択してください。';return}
  if(file.size>500*1024*1024){resultElement.textContent='元動画が500MBを超えています。写真アプリで短くしてから選択してください。';return}
  resultElement.textContent='AIサーバーの起動を確認しています…';
+  updateMatchPipelineState({stageLabel:'サーバー接続確認中',progress:0,fileName:file.name||'試合動画',fileSize:file.size,detail:'接続と動画ファイルを確認しています。',jobId:null,uploadId:null});
  let stage='サーバー接続';
  try{
   let health=await fetch(u+'/health',{method:'GET',cache:'no-store'});
@@ -575,6 +576,38 @@ async function buildMatchChunkHashes(file,chunkSize,onProgress){
  }
  return hashes;
 }
+const MATCH_PIPELINE_STORAGE_KEY='riku_match_pipeline_status_v1';
+const MATCH_ACTIVE_JOB_KEY='riku_active_match_job_v1';
+function readMatchPipelineState(){
+ try{return JSON.parse(localStorage.getItem(MATCH_PIPELINE_STORAGE_KEY)||'{}')||{};}catch(e){return {};}
+}
+function updateMatchPipelineState(patch){
+ const next={...readMatchPipelineState(),...patch,updatedAt:new Date().toISOString()};
+ try{localStorage.setItem(MATCH_PIPELINE_STORAGE_KEY,JSON.stringify(next));}catch(e){}
+ renderMatchPipelineState();
+ return next;
+}
+function renderMatchPipelineState(){
+ const panel=document.getElementById('matchPipelineStatus');if(!panel)return;
+ const saved=readMatchPipelineState();
+ const activeJob=localStorage.getItem(MATCH_ACTIVE_JOB_KEY)||saved.jobId||'';
+ const stage=saved.stageLabel||'まだアップロードしていません';
+ const progress=Number.isFinite(Number(saved.progress))?Math.max(0,Math.min(100,Number(saved.progress))):0;
+ const updated=saved.updatedAt?new Date(saved.updatedAt).toLocaleString('ja-JP'):'—';
+ panel.innerHTML='<b>動画処理状況</b><div style="margin-top:5px">'+esc(stage)+'</div>'+
+  (saved.fileName?'<div class="tiny muted">'+esc(saved.fileName)+(saved.fileSize?' ・ '+(Number(saved.fileSize)/1024/1024).toFixed(1)+'MB':'')+'</div>':'')+
+  '<div class="progress"><span style="width:'+progress+'%"></span></div>'+
+  '<div class="tiny muted">進捗 '+progress+'% ・ 最終更新 '+esc(updated)+'</div>'+
+  (saved.detail?'<div class="tiny">'+esc(saved.detail)+'</div>':'')+
+  (activeJob?'<div class="tiny muted">解析ジョブID：'+esc(activeJob)+'</div><div class="btnrow"><button class="secondary small" onclick="reconnectSavedMatchJob()">解析状況を再接続</button></div>':
+   (saved.uploadId?'<div class="tiny muted">同じ動画を選ぶと、サーバー確認済みの分割から再開できます。</div>':''));
+}
+async function reconnectSavedMatchJob(){
+ const jobId=localStorage.getItem(MATCH_ACTIVE_JOB_KEY)||readMatchPipelineState().jobId;
+ if(!jobId){renderMatchPipelineState();return;}
+ updateMatchPipelineState({jobId,stageLabel:'保存済みの解析ジョブへ再接続中',detail:'サーバーから最新の状態を取得しています。'});
+ await pollMatchJobToAI(jobId,matchAiResult);
+}
 async function postMatchJobToAI(file,resultElement){
  const u=getApiUrl();
  if(!u){resultElement.textContent='AIサーバーURLが未設定です。設定画面でURLを保存してください。';return}
@@ -590,6 +623,7 @@ async function postMatchJobToAI(file,resultElement){
   const chunkSize=4*1024*1024;
   const chunkCount=Math.ceil(file.size/chunkSize);
   resultElement.textContent='動画データを分割して照合中…';
+  updateMatchPipelineState({stageLabel:'動画データの照合中',progress:0,detail:'分割データのSHA-256を計算しています。'});
   const chunkHashes=await buildMatchChunkHashes(file,chunkSize,(done,total)=>{
    resultElement.textContent='動画データを照合中：'+Math.floor(done/total*100)+'%';
   });
@@ -625,6 +659,7 @@ async function postMatchJobToAI(file,resultElement){
    const initRaw=await init.text();let initData;try{initData=JSON.parse(initRaw)}catch(e){initData=null}
    if(!init.ok||!initData||!initData.upload_id)throw Error('アップロード準備 HTTP '+init.status+'：'+(initData?.detail||initRaw.slice(0,180)));
    uploadId=initData.upload_id;session=initData;
+   updateMatchPipelineState({stageLabel:'アップロード準備完了',progress:0,uploadId,detail:'分割送信を開始します。同じ動画を選び直すと続きから再開できます。'});
    try{localStorage.setItem(storageKey,JSON.stringify({fingerprint,uploadId}))}catch(e){}
   }
   const received=new Set((session.received_chunks||[]).map(Number));
@@ -635,6 +670,7 @@ async function postMatchJobToAI(file,resultElement){
    const percent=Math.min(99,Math.floor(estimated/file.size*100));
    const confirmedPercent=Math.floor(confirmedBytes/file.size*100);
    resultElement.textContent='動画を分割送信中：'+percent+'%（サーバー確認 '+confirmedPercent+'%）｜分割 '+(part+1)+'/'+chunkCount;
+   updateMatchPipelineState({stageLabel:'動画を分割アップロード中',progress:confirmedPercent,uploadId,detail:'送信中の分割 '+(part+1)+'/'+chunkCount+'。表示進捗は推定値、確定進捗はサーバー受信確認済みです。'});
   };
   showUploadProgress(0,Math.max(0,received.size));
   for(let part=0;part<chunkCount;part++){
@@ -657,6 +693,7 @@ async function postMatchJobToAI(file,resultElement){
    showUploadProgress(0,part);
   }
   resultElement.textContent='サーバー側の受信状況を最終確認中…';
+  updateMatchPipelineState({stageLabel:'サーバー受信状況を確認中',progress:99,uploadId,detail:'分割数・受信バイト数・欠損分割を照合しています。'});
   const verifyResponse=await fetch(u+'/analyze/match/uploads/'+encodeURIComponent(uploadId),{cache:'no-store'});
   const verifyRaw=await verifyResponse.text();let verified;try{verified=JSON.parse(verifyRaw)}catch(e){verified=null}
   if(!verifyResponse.ok||!verified)throw Error('受信状況の確認 HTTP '+verifyResponse.status+'：'+(verified?.detail||verifyRaw.slice(0,140)));
@@ -671,20 +708,26 @@ async function postMatchJobToAI(file,resultElement){
   }
   confirmedBytes=Number(verified.received_bytes);
   resultElement.textContent='サーバー受信確認：100%。動画の整合性を検証して解析ジョブを作成しています…';
+  updateMatchPipelineState({stageLabel:'アップロード完了・整合性検証中',progress:100,uploadId,detail:'全分割の受信確認が完了しました。解析ジョブを作成しています。'});
   const complete=await fetch(u+'/analyze/match/uploads/'+encodeURIComponent(uploadId)+'/complete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jersey_numbers:String(state.settings.jersey1)+','+String(state.settings.jersey2)}),credentials:'omit',cache:'no-store'});
   const completeRaw=await complete.text();let created;try{created=JSON.parse(completeRaw)}catch(e){created=null}
   if(!complete.ok||!created||!created.job_id)throw Error('動画の組み立て HTTP '+complete.status+'：'+(created?.detail||completeRaw.slice(0,180)));
   jobId=created.job_id;
+  updateMatchPipelineState({stageLabel:'解析ジョブ受付完了',progress:0,jobId,uploadId:null,detail:'動画のアップロードは完了。解析サーバーの進捗を確認しています。'});
   // Persist the job first. If the tab closes now, startup can reconnect without re-uploading.
   try{localStorage.setItem('riku_active_match_job_v1',jobId);localStorage.removeItem(storageKey)}catch(e){}
   resultElement.textContent='サーバーが動画を受け付け、解析ジョブ '+jobId+' を作成しました。解析状況に接続します…';
   return await pollMatchJobToAI(jobId,resultElement);
  }catch(e){
   resultElement.textContent='試合動画の解析に失敗：'+e.message+(jobId?'（ジョブID：'+jobId+'）':'');
+  updateMatchPipelineState({stageLabel:'通信・処理エラー／再接続待ち',jobId:jobId||localStorage.getItem(MATCH_ACTIVE_JOB_KEY)||null,detail:e.message});
  }
 }
 async function pollMatchJobToAI(jobId,resultElement){
  const u=getApiUrl();
+ if(window.__rikuMatchPollingJob===jobId){resultElement.textContent='この解析ジョブはすでに再接続中です。';return;}
+ window.__rikuMatchPollingJob=jobId;
+ updateMatchPipelineState({jobId,stageLabel:'解析状況を確認中',detail:'サーバーの状態を定期的に確認しています。'});
  try{
   while(true){
    await new Promise(resolve=>setTimeout(resolve,3000));
@@ -718,9 +761,11 @@ async function pollMatchJobToAI(jobId,resultElement){
     }
    }
    resultElement.textContent='試合動画を解析中：'+(status.progress??0)+'%｜'+(status.stage||'処理中')+'。この画面を閉じずにお待ちください。';
-   if(status.status==='failed'||status.status==='interrupted'){try{localStorage.removeItem('riku_active_match_job_v1')}catch(e){}throw Error(status.error||'解析を再開できませんでした')}
+   updateMatchPipelineState({jobId,stageLabel:status.status==='queued'?'解析待ち':status.status==='processing'?(status.stage||'解析中'):'解析状態：'+status.status,progress:Number(status.progress??0),detail:'サーバー確認時刻 '+new Date().toLocaleTimeString('ja-JP')+'。画面を閉じてもジョブIDは端末に保存されます。'});
+   if(status.status==='failed'||status.status==='interrupted'){try{localStorage.removeItem(MATCH_ACTIVE_JOB_KEY)}catch(e){}updateMatchPipelineState({jobId:null,stageLabel:status.status==='interrupted'?'解析中断・動画の再送信が必要':'解析失敗',progress:Number(status.progress??0),detail:status.error||'解析を再開できませんでした'});throw Error(status.error||'解析を再開できませんでした')}
    if(status.status==='completed'){
-    try{localStorage.removeItem('riku_active_match_job_v1')}catch(e){}
+    try{localStorage.removeItem(MATCH_ACTIVE_JOB_KEY)}catch(e){}
+    updateMatchPipelineState({jobId:null,stageLabel:'解析完了',progress:100,detail:'解析結果を表示しました。履歴に保存すると後から振り返れます。'});
     const j=status.result||{},sm=j.summary||{};
     const notes=(sm.feedback||[]).map(x=>esc(x)).join('<br>');
     const jerseyCounts=sm.jersey_ocr_summary?.candidate_detection_counts||sm.jersey_ocr_summary?.candidate_frame_counts||{};
@@ -738,7 +783,8 @@ async function pollMatchJobToAI(jobId,resultElement){
   }
  }catch(e){
   resultElement.textContent='試合動画の解析に失敗：'+e.message+'（ジョブID：'+jobId+'）';
- }
+  updateMatchPipelineState({jobId:localStorage.getItem(MATCH_ACTIVE_JOB_KEY)||jobId,stageLabel:'解析状況の再接続待ち',detail:e.message+'。下の「解析状況を再接続」を押すか、アプリを開き直してください。'});
+ }finally{if(window.__rikuMatchPollingJob===jobId)window.__rikuMatchPollingJob=null;}
 }
 
 async function createRikuHighlight(){
@@ -1788,7 +1834,7 @@ function deleteMeasure(d,t,v){if(!confirm('この測定記録を削除します�
 let pendingMatchSave=Promise.resolve(null);videoFile.addEventListener('change',()=>{let f=videoFile.files[0];if(!f)return;matchVideo.src=URL.createObjectURL(f);videoMeta.textContent=`読み込み：${f.name}（${(f.size/1024/1024).toFixed(1)} MB）・端末保存準備中`;matchVideo.onloadedmetadata=()=>{clipTime.value='0.0';videoMeta.textContent=`読み込み：${f.name}（${(f.size/1024/1024).toFixed(1)} MB）・長さ ${matchVideo.duration.toFixed(1)} 秒`};pendingMatchSave=storeClipVideo('__pending_match_video__',f).then(()=>{videoMeta.textContent+= '・動画保存準備OK';return f}).catch(e=>{console.error('動画の仮保存に失敗',e);videoMeta.textContent+='・動画の保存準備に失敗';return null})})
 let pendingFormSave=Promise.resolve(null);formFile.addEventListener('change',()=>{let f=formFile.files[0];if(!f)return;formVideo.src=URL.createObjectURL(f);pendingFormSave=storeClipVideo('__pending_form_video__',f).then(()=>f).catch(e=>{console.error('フォーム動画の仮保存失敗',e);return null})})
 formKind.addEventListener('change',renderChecks);
-load();renderChecks();renderAll();
+load();renderChecks();renderAll();renderMatchPipelineState();
 try{
  const pendingJobId=localStorage.getItem('riku_active_match_job_v1');
  if(pendingJobId&&matchAiResult){
