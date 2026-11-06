@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from upload_integrity import verify_uploaded_chunks
+from upload_integrity import verify_uploaded_chunks, build_upload_resume_state
 
 
 class UploadIntegrityTests(unittest.TestCase):
@@ -22,6 +22,31 @@ class UploadIntegrityTests(unittest.TestCase):
 
     def tearDown(self):
         self.temp_dir.cleanup()
+
+    def test_resume_state_reports_out_of_order_chunks_and_partial_tail(self):
+        state = build_upload_resume_state(10, 4, {
+            "2": {"size_bytes": 2},
+            "0": {"size_bytes": 4},
+        })
+        self.assertEqual(state["total_chunks"], 3)
+        self.assertEqual(state["received_chunks"], [0, 2])
+        self.assertEqual(state["missing_chunks"], [1])
+        self.assertEqual(state["received_bytes"], 6)
+        self.assertEqual(state["confirmed_percent"], 60)
+
+    def test_resume_state_reports_complete_upload(self):
+        state = build_upload_resume_state(10, 4, {
+            "0": {"size_bytes": 4},
+            "1": {"size_bytes": 4},
+            "2": {"size_bytes": 2},
+        })
+        self.assertEqual(state["missing_chunks"], [])
+        self.assertEqual(state["received_bytes"], 10)
+        self.assertEqual(state["confirmed_percent"], 100)
+
+    def test_resume_state_rejects_invalid_chunk_metadata(self):
+        with self.assertRaisesRegex(ValueError, "metadata size"):
+            build_upload_resume_state(10, 4, {"2": {"size_bytes": 4}})
 
     def test_valid_chunks_pass_streaming_verification(self):
         verify_uploaded_chunks(str(self.path), 10, 4, self.chunks)
