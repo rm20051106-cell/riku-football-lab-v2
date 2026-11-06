@@ -609,6 +609,23 @@ def build_match_sampling_plan(fps, total_frames, target_rate=None, max_samples=N
     }
 
 
+def iter_sampled_video_frames(capture, frame_interval, max_samples):
+    """Yield evenly spaced decoded frames while reading the source sequentially to EOF."""
+    interval = max(1, int(frame_interval)) if not isinstance(frame_interval, bool) else 1
+    limit = max(0, int(max_samples)) if not isinstance(max_samples, bool) else 0
+    sample_index = 0
+    while sample_index < limit:
+        ok, frame = capture.read()
+        if not ok:
+            return
+        frame_index = sample_index * interval
+        sample_index += 1
+        yield frame_index, frame
+        for _ in range(interval - 1):
+            if not capture.grab():
+                return
+
+
 def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
     cap = cv2.VideoCapture(path)
     if not cap.isOpened():
@@ -639,12 +656,7 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
     )
     try:
         with mp_vision.PoseLandmarker.create_from_options(options) as landmarker:
-            exhausted = False
-            while sample_index < sample_limit:
-                ok, frame = cap.read()
-                if not ok:
-                    break
-                current_frame_idx = sample_index * interval
+            for current_frame_idx, frame in iter_sampled_video_frames(cap, interval, sample_limit):
                 sample_index += 1
                 h, w = frame.shape[:2]
                 if w > 960:
@@ -690,13 +702,7 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
                     frames.append(primary)
                 if progress_callback and duration > 0:
                     progress_callback(min(90, 15 + int(75 * min(1.0, (current_frame_idx / fps if fps > 0 else sample_index * actual_interval) / duration))))
-                # Sequential grabs avoid repeatedly seeking/decompressing from a new keyframe.
-                for _ in range(max(0, interval - 1)):
-                    if not cap.grab():
-                        exhausted = True
-                        break
-                if exhausted:
-                    break
+
     finally:
         cap.release()
     if not frames:
