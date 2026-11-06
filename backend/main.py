@@ -32,9 +32,13 @@ init_state_store()
 # Remove abandoned, incomplete temporary uploads after 24 hours; completed analysis records are untouched.
 for expired_upload_path in cleanup_expired_match_uploads(24):
     try:
-        if os.path.isfile(expired_upload_path):
-            os.remove(expired_upload_path)
-    except OSError:
+        temp_root = os.path.realpath(tempfile.gettempdir())
+        candidate_path = os.path.realpath(expired_upload_path)
+        if (candidate_path != temp_root
+                and os.path.commonpath((temp_root, candidate_path)) == temp_root
+                and os.path.isfile(candidate_path)):
+            os.remove(candidate_path)
+    except (OSError, ValueError):
         pass
 match_jobs = load_match_jobs()
 match_uploads = load_match_uploads()
