@@ -1138,7 +1138,22 @@ async function clearPendingMatchUpload(){const db=await openVideoDB();try{await 
 async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
  const chunkSizeDefault=6*1024*1024,sourceKey=getVideoSourceKey(file),duration=Number(matchVideo.duration||0),api=getApiUrl();
  const identity={sourceKey,size:file.size,name:file.name||'match-video.mp4',lastModified:Number(file.lastModified||0),jerseyNumbers};
- let saved=await getPendingMatchUpload(),session=null,chunkSize=chunkSizeDefault,total=0,nextChunk=0;
+ let saved=null,session=null,chunkSize=chunkSizeDefault,total=0,nextChunk=0,resumeStorageAvailable=true;
+ const persistResume=async record=>{
+  if(!resumeStorageAvailable)return false;
+  try{await savePendingMatchUpload(record);return true}
+  catch(error){
+   resumeStorageAvailable=false;
+   console.warn('アップロード再開情報を端末に保存できません',error);
+   resultElement.textContent='端末への再開情報保存ができません。アップロードは継続しますが、再読み込み後の再開はできません。';
+   return false;
+  }
+ };
+ try{saved=await getPendingMatchUpload()}catch(error){
+  resumeStorageAvailable=false;
+  console.warn('保存済みアップロード再開情報を読み込めません',error);
+  resultElement.textContent='端末の保存領域を利用できないため、今回の動画はこの画面を開いている間だけアップロードできます。再読み込み後の再開はできません。';
+ }
  if(saved&&saved.sourceKey===identity.sourceKey&&saved.size===identity.size&&saved.jerseyNumbers===identity.jerseyNumbers){
   resultElement.textContent='前回のアップロード状態を確認しています…';
   let statusResponse;
@@ -1150,15 +1165,15 @@ async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
    session={upload_id:saved.uploadId,total_chunks:Number(status.total_chunks)};
    chunkSize=Number(saved.chunkSize)||chunkSizeDefault;total=Number(status.total_chunks);nextChunk=Number(status.next_chunk);
    resultElement.textContent='前回の続きから再開します：'+Math.round((nextChunk/Math.max(1,total))*100)+'%（'+nextChunk+'/'+total+'）';
-  }else if(statusResponse.status===404){await clearPendingMatchUpload();saved=null}
+  }else if(statusResponse.status===404){try{await clearPendingMatchUpload()}catch(_){}saved=null}
   else throw Error('前回のアップロード状態を取得できません HTTP '+statusResponse.status+'。再開情報は保持しています。');
- }else if(saved){await clearPendingMatchUpload();saved=null}
+ }else if(saved){try{await clearPendingMatchUpload()}catch(_){}saved=null}
  if(!session){
   const init=await fetch(api+'/analyze/match/uploads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:identity.name,size_bytes:file.size,duration_seconds:Number.isFinite(duration)&&duration>0?duration:null,jersey_numbers:jerseyNumbers}),credentials:'omit',cache:'no-store'});
   const initRaw=await init.text();let created;try{created=JSON.parse(initRaw)}catch(e){created=null}
   if(!init.ok||!created?.upload_id)throw Error('分割アップロード開始 HTTP '+init.status+'：'+(created?.detail||initRaw.slice(0,180)));
   session=created;chunkSize=Number(created.chunk_size)||chunkSizeDefault;total=Number(created.total_chunks)||Math.ceil(file.size/chunkSize);nextChunk=0;
-  await savePendingMatchUpload({...identity,uploadId:session.upload_id,chunkSize,totalChunks:total,nextChunk,createdAt:Date.now()});
+  await persistResume({...identity,uploadId:session.upload_id,chunkSize,totalChunks:total,nextChunk,createdAt:Date.now()});
  }
  for(let i=nextChunk;i<total;i++){
   const part=file.slice(i*chunkSize,Math.min(file.size,(i+1)*chunkSize));let succeeded=false,lastError=null;
@@ -1174,7 +1189,7 @@ async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
     lastError=e;
     try{
      const check=await fetch(api+'/analyze/match/uploads/'+encodeURIComponent(session.upload_id),{method:'GET',credentials:'omit',cache:'no-store'});
-     if(check.ok){const current=await check.json();if(Number(current.total_bytes)===file.size&&Number.isInteger(Number(current.next_chunk))){nextChunk=Number(current.next_chunk);await savePendingMatchUpload({...identity,uploadId:session.upload_id,chunkSize,totalChunks:total,nextChunk,createdAt:saved?.createdAt||Date.now()});if(nextChunk>i)succeeded=true;}}
+     if(check.ok){const current=await check.json();if(Number(current.total_bytes)===file.size&&Number.isInteger(Number(current.next_chunk))){nextChunk=Number(current.next_chunk);await persistResume({...identity,uploadId:session.upload_id,chunkSize,totalChunks:total,nextChunk,createdAt:saved?.createdAt||Date.now()});if(nextChunk>i)succeeded=true;}}
      else if(check.status===404)throw Error('サーバー側のアップロード情報が消失しました。元動画から新規送信が必要です。');
     }catch(statusError){if(statusError.message&&statusError.message.includes('消失しました'))throw statusError}
     if(!succeeded&&attempt<3){resultElement.textContent='通信状態を確認して再試行しています… '+(i+1)+'/'+total+'（'+attempt+'/3）';await new Promise(resolve=>setTimeout(resolve,1200*attempt));}
@@ -1191,7 +1206,7 @@ async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
   try{
    completed=await fetch(api+'/analyze/match/uploads/'+encodeURIComponent(session.upload_id)+'/complete',{method:'POST',credentials:'omit',cache:'no-store'});
    const raw=await completed.text();try{body=JSON.parse(raw)}catch(e){body=null}
-   if(completed.ok&&body?.job_id){await clearPendingMatchUpload();return body}
+   if(completed.ok&&body?.job_id){try{await clearPendingMatchUpload()}catch(_){}return body}
    const detail='動画受信の確定 HTTP '+completed.status+'：'+(body?.detail||raw.slice(0,180));
    if(completed.status>=400&&completed.status<500)throw Error(detail);
    lastCompleteError=Error(detail);
@@ -4329,7 +4344,42 @@ function renderAiFormCompare(){
 }
 function deleteAiFormAnalysis(id){if(!confirm('このAI解析履歴を削除しますか？'))return;state.aiFormAnalyses=(state.aiFormAnalyses||[]).filter(x=>x.id!==id);persist()}
 function deleteMeasure(d,t,v){if(!confirm('この測定記録を削除しますか？'))return;let idx=state.measures.findIndex(x=>x.date===d&&x.type===t&&x.value===v);if(idx>=0)state.measures.splice(idx,1);persist()}
-let pendingMatchSave=Promise.resolve(null);videoFile.addEventListener('change',()=>{let f=videoFile.files[0];if(!f)return;matchVideo.src=URL.createObjectURL(f);videoMeta.textContent=`読み込み：${f.name}（${(f.size/1024/1024).toFixed(1)} MB）・端末保存準備中`;matchVideo.onloadedmetadata=()=>{clipTime.value='0.0';videoMeta.textContent=`読み込み：${f.name}（${(f.size/1024/1024).toFixed(1)} MB）・長さ ${matchVideo.duration.toFixed(1)} 秒`};pendingMatchSave=storeClipVideo('__pending_match_video__',f).then(()=>{videoMeta.textContent+= '・動画保存準備OK';return f}).catch(e=>{console.error('動画の仮保存に失敗',e);videoMeta.textContent+='・動画の保存準備に失敗';return null})})
+async function preflightMatchVideoStorage(file){
+ if(!navigator.storage||typeof navigator.storage.estimate!=='function')return {ok:true,checked:false};
+ try{
+  const estimate=await navigator.storage.estimate(),quota=Number(estimate.quota)||0,usage=Number(estimate.usage)||0;
+  if(!quota)return {ok:true,checked:false};
+  const free=Math.max(0,quota-usage),required=Math.ceil(file.size*1.1)+4*1024*1024;
+  return {ok:required<=free,checked:true,free,required};
+ }catch(error){console.warn('動画保存容量の事前確認に失敗',error);return {ok:true,checked:false};}
+}
+let pendingMatchSave=Promise.resolve(null);
+videoFile.addEventListener('change',()=>{
+ let f=videoFile.files[0];if(!f)return;
+ matchVideo.src=URL.createObjectURL(f);
+ videoMeta.textContent=`読み込み：${f.name}（${(f.size/1024/1024).toFixed(1)} MB）・端末保存容量を確認中`;
+ matchVideo.onloadedmetadata=()=>{clipTime.value='0.0';videoMeta.textContent=`読み込み：${f.name}（${(f.size/1024/1024).toFixed(1)} MB）・長さ ${matchVideo.duration.toFixed(1)} 秒`;};
+ pendingMatchSave=(async()=>{
+  const capacity=await preflightMatchVideoStorage(f);
+  if(!capacity.ok){
+   window.__matchVideoLocalSaveAvailable=false;
+   const warning='端末の空き容量が不足する可能性があるため動画を仮保存しません。今選択中の動画のアップロードは続けられますが、再読み込み後の再開はできません。';
+   videoMeta.textContent+='・'+warning;
+   return null;
+  }
+  try{
+   await storeClipVideo('__pending_match_video__',f);
+   window.__matchVideoLocalSaveAvailable=true;
+   videoMeta.textContent+='・動画保存準備OK';
+   return f;
+  }catch(error){
+   console.error('動画の仮保存に失敗',error);
+   window.__matchVideoLocalSaveAvailable=false;
+   videoMeta.textContent+='・端末保存不可（'+(error.name==='QuotaExceededError'?'容量不足':'保存エラー')+'）。選択中の動画のアップロードは続けられますが、再読み込み後の再開はできません。';
+   return null;
+  }
+ })();
+});
 let pendingFormSave=Promise.resolve(null);formFile.addEventListener('change',()=>{let f=formFile.files[0];if(!f)return;const phaseStatus=document.getElementById('formPhaseMarkerStatus');if(phaseStatus)phaseStatus.textContent='動画を読み込みました。AI解析後、節目を手動登録できます。';formVideo.src=URL.createObjectURL(f);pendingFormSave=storeClipVideo('__pending_form_video__',f).then(()=>f).catch(e=>{console.error('フォーム動画の仮保存失敗',e);return null})})
 formKind.addEventListener('change',renderChecks);
 load();renderChecks();renderAll();renderKickManualReview();if(typeof apiBaseUrl!=='undefined'){apiBaseUrl.value=state.settings.apiBaseUrl||'';apiStatus.textContent=state.settings.apiBaseUrl?'保存済み：'+state.settings.apiBaseUrl:'未設定'}
