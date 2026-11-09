@@ -1053,9 +1053,11 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 "mimeType": "video/mp4",
                 "buffer": b"W" * (7 * 1024 * 1024 + 19),
             })
+            # AI upload uses the selected File directly. Do not block this test on
+            # the independent IndexedDB background-save promise.
             page.wait_for_function(
-                "() => document.getElementById('videoMeta').textContent.includes('動画保存準備OK')",
-                timeout=30000,
+                "() => document.getElementById('videoFile').files.length === 1",
+                timeout=5000,
             )
             page.evaluate("""() => {
                 Object.defineProperty(document.getElementById('matchVideo'), 'duration',
