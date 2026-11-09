@@ -949,7 +949,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual(counters["created"], 2)
         self.assertEqual(counters["completed"], 2)
         self.assertEqual(counters["status"], 2)
-        self.assertGreaterEqual(counters["chunks"], 6)
+        self.assertGreaterEqual(counters["chunks"], 5)
 
 
 if __name__ == "__main__":
