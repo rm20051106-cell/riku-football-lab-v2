@@ -4353,29 +4353,30 @@ async function preflightMatchVideoStorage(file){
   return {ok:required<=free,checked:true,free,required};
  }catch(error){console.warn('動画保存容量の事前確認に失敗',error);return {ok:true,checked:false};}
 }
-let pendingMatchSave=Promise.resolve(null);
+let pendingMatchSave=Promise.resolve(null),matchVideoStorageWarning='';
 videoFile.addEventListener('change',()=>{
  let f=videoFile.files[0];if(!f)return;
+ matchVideoStorageWarning='';
  matchVideo.src=URL.createObjectURL(f);
  videoMeta.textContent=`読み込み：${f.name}（${(f.size/1024/1024).toFixed(1)} MB）・端末保存容量を確認中`;
- matchVideo.onloadedmetadata=()=>{clipTime.value='0.0';videoMeta.textContent=`読み込み：${f.name}（${(f.size/1024/1024).toFixed(1)} MB）・長さ ${matchVideo.duration.toFixed(1)} 秒`;};
+ matchVideo.onloadedmetadata=()=>{clipTime.value='0.0';videoMeta.textContent=`読み込み：${f.name}（${(f.size/1024/1024).toFixed(1)} MB）・長さ ${matchVideo.duration.toFixed(1)} 秒`+(matchVideoStorageWarning?'・'+matchVideoStorageWarning:'');};
  pendingMatchSave=(async()=>{
   const capacity=await preflightMatchVideoStorage(f);
   if(!capacity.ok){
    window.__matchVideoLocalSaveAvailable=false;
    const warning='端末の空き容量が不足する可能性があるため動画を仮保存しません。今選択中の動画のアップロードは続けられますが、再読み込み後は動画の再選択が必要で、自動再開はできません。';
-   videoMeta.textContent+='・'+warning;
+   matchVideoStorageWarning=warning;videoMeta.textContent+='・'+warning;
    return null;
   }
   try{
    await storeClipVideo('__pending_match_video__',f);
    window.__matchVideoLocalSaveAvailable=true;
-   videoMeta.textContent+='・動画保存準備OK';
+   matchVideoStorageWarning='';videoMeta.textContent+='・動画保存準備OK';
    return f;
   }catch(error){
    console.error('動画の仮保存に失敗',error);
    window.__matchVideoLocalSaveAvailable=false;
-   videoMeta.textContent+='・端末保存不可（'+(error.name==='QuotaExceededError'?'容量不足':'保存エラー')+'）。選択中の動画のアップロードは続けられますが、再読み込み後は動画の再選択が必要で、自動再開はできません。';
+   matchVideoStorageWarning='端末保存不可（'+(error.name==='QuotaExceededError'?'容量不足':'保存エラー')+'）。選択中の動画のアップロードは続けられますが、再読み込み後は動画の再選択が必要で、自動再開はできません。';videoMeta.textContent+='・'+matchVideoStorageWarning;
    return null;
   }
  })();
