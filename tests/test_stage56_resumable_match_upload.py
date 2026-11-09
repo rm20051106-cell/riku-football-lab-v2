@@ -1,13 +1,34 @@
 import ast
 import hashlib
+import json
+import os
 import pathlib
 import tempfile
+import time
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SOURCE = (ROOT / "backend" / "main.py").read_text(encoding="utf-8")
 HTML = (ROOT / "index.html").read_text(encoding="utf-8")
 TREE = ast.parse(SOURCE)
+
+
+
+
+def load_session_helpers(directory):
+    names = {"match_upload_manifest_path", "persist_match_upload_state",
+             "restore_match_upload_sessions"}
+    nodes = [item for item in TREE.body
+             if isinstance(item, ast.FunctionDef) and item.name in names]
+    module = ast.Module(body=nodes, type_ignores=[])
+    namespace = {
+        "Path": pathlib.Path, "os": os, "json": json, "time": time,
+        "MATCH_UPLOAD_SESSION_DIR": pathlib.Path(directory),
+        "MATCH_UPLOAD_SESSION_TTL_SECONDS": 24 * 60 * 60,
+        "MAX_MATCH_UPLOAD_MB": 500,
+    }
+    exec(compile(module, "<stage56-session>", "exec"), namespace)
+    return namespace
 
 
 def load_append_helper():
@@ -58,6 +79,35 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
             state = {"path": tmp.name, "chunk_size": 4, "total_size": 6}
             with self.assertRaises(ValueError):
                 append(state, 0, b"bad")
+
+
+    def test_upload_session_manifest_restores_after_process_restart_and_truncates_uncommitted_tail(self):
+        with tempfile.TemporaryDirectory() as directory:
+            helpers = load_session_helpers(directory)
+            with tempfile.NamedTemporaryFile(delete=False) as video:
+                video.write(b"committed")
+                video.write(b"uncommitted-tail")
+                video_path = video.name
+            state = {
+                "path": video_path, "filename": "match.mp4", "total_size": 100,
+                "duration_seconds": 900.0, "chunk_size": 4, "total_chunks": 25,
+                "next_chunk": 2, "received_bytes": 9, "chunk_hashes": {0: "abc", 1: "def"},
+                "jersey_numbers": "10,74",
+            }
+            helpers["persist_match_upload_state"]("recoverable-upload", state)
+            restored = helpers["restore_match_upload_sessions"]()
+            self.assertIn("recoverable-upload", restored)
+            self.assertEqual(restored["recoverable-upload"]["next_chunk"], 2)
+            self.assertEqual(restored["recoverable-upload"]["chunk_hashes"], {0: "abc", 1: "def"})
+            with open(video_path, "rb") as saved:
+                self.assertEqual(saved.read(), b"committed")
+            os.remove(video_path)
+
+    def test_upload_status_endpoint_and_manifest_cleanup_are_wired(self):
+        self.assertIn('@app.get("/analyze/match/uploads/{upload_id}")', SOURCE)
+        self.assertIn('"next_chunk": upload_state["next_chunk"]', SOURCE)
+        self.assertIn("persist_match_upload_state(upload_id, match_uploads[upload_id])", SOURCE)
+        self.assertIn("match_upload_manifest_path(upload_id).unlink(missing_ok=True)", SOURCE)
 
     def test_api_and_frontend_use_chunked_upload_not_single_large_post(self):
         self.assertIn("/analyze/match/uploads", SOURCE)
