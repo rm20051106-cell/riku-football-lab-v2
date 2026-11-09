@@ -1197,8 +1197,8 @@ async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
   }
   if(!succeeded)throw lastError||Error('動画の分割送信に失敗しました');
   nextChunk=Math.max(nextChunk,i+1);
-  await savePendingMatchUpload({...identity,uploadId:session.upload_id,chunkSize,totalChunks:total,nextChunk,createdAt:saved?.createdAt||Date.now()});
-  resultElement.textContent='動画を分割送信中：'+Math.round((nextChunk/total)*100)+'%（'+nextChunk+'/'+total+'）｜中断しても同じ動画を再選択すると続きから再開できます。';
+  await persistResume({...identity,uploadId:session.upload_id,chunkSize,totalChunks:total,nextChunk,createdAt:saved?.createdAt||Date.now()});
+  resultElement.textContent='動画を分割送信中：'+Math.round((nextChunk/total)*100)+'%（'+nextChunk+'/'+total+'）'+(resumeStorageAvailable?'｜中断しても同じ動画を再選択すると続きから再開できます。':'｜端末保存不可。アップロードは継続中ですが、再読み込み後の再開はできません。');
  }
  resultElement.textContent='全データの送信が完了。サーバー側で受信内容を確認しています…';
  let completed=null,body=null,lastCompleteError=null;
