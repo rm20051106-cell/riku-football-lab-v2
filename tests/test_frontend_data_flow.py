@@ -7,7 +7,7 @@ HTML = (Path(__file__).resolve().parents[1] / "index.html").read_text(encoding="
 class FrontendDataFlowContracts(unittest.TestCase):
     def test_video_blob_validation_and_unique_record_ids(self):
         self.assertIn("function validateStoredVideoBlob(blob)", HTML)
-        self.assertIn("async function storeClipVideo(id,file){\\n validateStoredVideoBlob(file);", HTML)
+        self.assertIn("async function storeClipVideo(id,file){\n validateStoredVideoBlob(file);", HTML)
         self.assertIn("function nextUniqueRecordId(...collections)", HTML)
 
     def test_video_restore_verifies_bytes_and_rolls_back_failed_metadata(self):
