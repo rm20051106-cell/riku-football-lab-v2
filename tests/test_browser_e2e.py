@@ -444,6 +444,42 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual(result["oldVideoFirstByte"], 1, result)
         self.assertEqual(result["rollbackChunks"], 1, result)
 
+    def test_video_replacement_cleans_orphaned_generation_chunks(self):
+        page = self.page
+        result = page.evaluate("""async () => {
+            await storeClipVideo('gc-check', new Blob([new Uint8Array([1, 2, 3])], {type: 'video/mp4'}));
+            const db = await openVideoDB();
+            try {
+                await new Promise((resolve, reject) => {
+                    const tx = db.transaction('videoChunks', 'readwrite');
+                    tx.objectStore('videoChunks').put(new Uint8Array([7, 7]), 'gc-check|abandoned-generation|00000000');
+                    tx.oncomplete = resolve;
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                });
+            } finally { db.close(); }
+            await storeClipVideo('gc-check', new Blob([new Uint8Array([4, 5, 6, 7])], {type: 'video/mp4'}));
+            const record = await (async () => {
+                const d = await openVideoDB();
+                try { return await new Promise((resolve, reject) => {
+                    const tx = d.transaction('videos', 'readonly'), req = tx.objectStore('videos').get('gc-check');
+                    req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error);
+                }); } finally { d.close(); }
+            })();
+            const d = await openVideoDB();
+            try { return await new Promise((resolve, reject) => {
+                const tx = d.transaction('videoChunks', 'readonly'), req = tx.objectStore('videoChunks').getAllKeys();
+                req.onsuccess = () => resolve({
+                    activePrefix: record?.chunkPrefix,
+                    keys: (req.result || []).map(String).filter(k => k.startsWith('gc-check|'))
+                });
+                req.onerror = () => reject(req.error);
+            }); } finally { d.close(); }
+        }""")
+        self.assertEqual(len(result["keys"]), 1, result)
+        self.assertTrue(result["keys"][0].startswith(result["activePrefix"]), result)
+        self.assertNotIn("abandoned-generation", result["keys"][0])
+
     def test_video_storage_serialization_and_legacy_blob_compatibility(self):
         page = self.page
         result = page.evaluate("""async () => {
