@@ -296,7 +296,8 @@ async function storeClipVideo(id,file){
    tx.onabort=()=>reject(tx.error||new Error('動画保存の確定が中断されました'));
   });
   metadataCommitted=true;
-  try{await cleanupOrphanedVideoChunks(key,db,previous?.storageFormat==='chunked-v1'?String(previous.chunkPrefix||''):'')}
+  if(previous?.storageFormat==='chunked-v1'&&previous.chunkPrefix){try{await deleteChunks(String(previous.chunkPrefix))}catch(cleanupError){console.warn('置換済み動画チャンクの後片付けを保留しました',cleanupError)}}
+  try{await cleanupOrphanedVideoChunks(key,db)}
   catch(cleanupError){console.warn('不要動画チャンクの後片付けを保留しました',cleanupError)}
   return true;
  }catch(error){
