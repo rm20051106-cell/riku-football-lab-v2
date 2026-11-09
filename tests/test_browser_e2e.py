@@ -453,6 +453,8 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 await new Promise((resolve, reject) => {
                     const tx = db.transaction('videoChunks', 'readwrite');
                     tx.objectStore('videoChunks').put(new Uint8Array([7, 7]), 'gc-check|abandoned-generation|00000000');
+                    const pendingGeneration = Date.now().toString(36) + '-still-writing';
+                    tx.objectStore('videoChunks').put(new Uint8Array([8, 8]), 'gc-check|' + pendingGeneration + '|00000000');
                     tx.oncomplete = resolve;
                     tx.onerror = () => reject(tx.error);
                     tx.onabort = () => reject(tx.error);
@@ -476,9 +478,10 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 req.onerror = () => reject(req.error);
             }); } finally { d.close(); }
         }""")
-        self.assertEqual(len(result["keys"]), 1, result)
-        self.assertTrue(result["keys"][0].startswith(result["activePrefix"]), result)
-        self.assertNotIn("abandoned-generation", result["keys"][0])
+        self.assertEqual(len(result["keys"]), 2, result)
+        self.assertTrue(any(key.startswith(result["activePrefix"]) for key in result["keys"]), result)
+        self.assertFalse(any("abandoned-generation" in key for key in result["keys"]), result)
+        self.assertTrue(any("still-writing" in key for key in result["keys"]), result)
 
     def test_video_storage_serialization_and_legacy_blob_compatibility(self):
         page = self.page
