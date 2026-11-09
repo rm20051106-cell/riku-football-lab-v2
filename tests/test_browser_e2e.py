@@ -359,12 +359,13 @@ class RikuBrowserE2ETests(unittest.TestCase):
             } finally { db.close(); }
             const restored = await getClipVideo('serialized-check');
             const legacyBlob = new Blob([new Uint8Array([9, 8, 7])], {type: 'video/webm'});
+            const legacyBuffer = await legacyBlob.arrayBuffer();
             const legacyDb = await openVideoDB();
             try {
                 await new Promise((resolve, reject) => {
                     const tx = legacyDb.transaction('videos', 'readwrite');
                     tx.objectStore('videos').put({
-                        blobData: await legacyBlob.arrayBuffer(), blobType: 'video/webm', name: 'legacy.webm', type: 'video/webm', size: 3
+                        blobData: legacyBuffer, blobType: 'video/webm', name: 'legacy.webm', type: 'video/webm', size: 3
                     }, 'legacy-check');
                     tx.oncomplete = resolve;
                     tx.onerror = () => reject(tx.error);
