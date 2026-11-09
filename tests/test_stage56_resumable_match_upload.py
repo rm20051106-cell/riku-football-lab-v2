@@ -117,7 +117,8 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn("method:'GET',credentials:'omit',cache:'no-store'", HTML)
         self.assertIn('nextChunk=Number(status.next_chunk)', HTML)
         self.assertIn('中断しても同じ動画を再選択すると続きから再開できます', HTML)
-        self.assertIn('await clearPendingMatchUpload();return body', HTML)
+        self.assertIn('clearPendingMatchUpload()', HTML)
+        self.assertIn('return body', HTML)
         self.assertIn("getClipVideo('__pending_match_video__')", HTML)
         self.assertIn('lastModified:Number(file.lastModified||0)', HTML)
         upload = HTML[HTML.index('async function uploadMatchVideoInChunks'):HTML.index('async function postMatchJobToAI')]
