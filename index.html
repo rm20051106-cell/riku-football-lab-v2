@@ -1200,7 +1200,7 @@ async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
   await persistResume({...identity,uploadId:session.upload_id,chunkSize,totalChunks:total,nextChunk,createdAt:saved?.createdAt||Date.now()});
   resultElement.textContent='動画を分割送信中：'+Math.round((nextChunk/total)*100)+'%（'+nextChunk+'/'+total+'）'+(resumeStorageAvailable?'｜中断しても同じ動画を再選択すると続きから再開できます。':'｜端末保存不可。アップロードは継続中ですが、再読み込み後は動画の再選択が必要で、自動再開はできません。');
  }
- resultElement.textContent='全データの送信が完了。サーバー側で受信内容を確認しています…';
+ resultElement.textContent='全データの送信が完了。サーバー側で受信内容を確認しています…'+(resumeStorageAvailable?'':'｜端末保存不可。アップロードは継続できましたが、再読み込み後は動画の再選択が必要で、自動再開はできません。');
  let completed=null,body=null,lastCompleteError=null;
  for(let attempt=1;attempt<=3;attempt++){
   try{
