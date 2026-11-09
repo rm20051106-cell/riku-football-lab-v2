@@ -364,7 +364,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 await new Promise((resolve, reject) => {
                     const tx = legacyDb.transaction('videos', 'readwrite');
                     tx.objectStore('videos').put({
-                        blob: legacyBlob, name: 'legacy.webm', type: 'video/webm', size: 3
+                        blobData: await legacyBlob.arrayBuffer(), blobType: 'video/webm', name: 'legacy.webm', type: 'video/webm', size: 3
                     }, 'legacy-check');
                     tx.oncomplete = resolve;
                     tx.onerror = () => reject(tx.error);
@@ -373,7 +373,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             } finally { legacyDb.close(); }
             const legacy = await getClipVideo('legacy-check');
             return {
-                rawUsesArrayBuffer: raw?.blobData instanceof ArrayBuffer,
+                rawUsesChunkedStorage: raw?.storageFormat === 'chunked-v1',
                 rawBlobPropertyOmitted: !Object.prototype.hasOwnProperty.call(raw || {}, 'blob'),
                 rawName: raw?.name,
                 rawSize: raw?.size,
@@ -383,7 +383,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 legacyBytes: legacy?.blob?.size
             };
         }""")
-        self.assertTrue(result["rawUsesArrayBuffer"], result)
+        self.assertTrue(result["rawUsesChunkedStorage"], result)
         self.assertTrue(result["rawBlobPropertyOmitted"], result)
         self.assertEqual(result["rawName"], "video")
         self.assertEqual(result["rawSize"], 4)
