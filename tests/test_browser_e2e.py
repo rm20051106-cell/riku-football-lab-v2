@@ -990,6 +990,76 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual(result["title"], "delayed-match.mp4", result)
 
 
+    def test_webkit_resumes_saved_match_upload_after_page_reload(self):
+        browser = self.playwright.webkit.launch(headless=True)
+        context = browser.new_context(viewport={"width": 390, "height": 844}, service_workers="block")
+        page = context.new_page()
+        try:
+            page.goto(self.base_url, wait_until="load")
+            page.wait_for_function("typeof uploadMatchVideoInChunks === 'function'")
+            page.locator('.nav button[data-view="video"]').click()
+            page.evaluate("""() => { state.settings.apiBaseUrl = 'https://riku-resume-mock.invalid'; persist(); }""")
+            page.locator("#videoFile").set_input_files({
+                "name": "resume-after-reload.mp4", "mimeType": "video/mp4",
+                "buffer": b"R" * (6 * 1024 * 1024 + 23),
+            })
+            page.wait_for_function("() => document.getElementById('videoFile').files.length === 1")
+            original = page.evaluate("""async () => {
+                const file = document.getElementById('videoFile').files[0];
+                await storeClipVideo('__pending_match_video__', file);
+                await savePendingMatchUpload({sourceKey:getVideoSourceKey(file),size:file.size,
+                    name:file.name,lastModified:file.lastModified,jerseyNumbers:'10,74',
+                    uploadId:'resume-upload',chunkSize:6*1024*1024,totalChunks:2,nextChunk:1,createdAt:Date.now()});
+                return {size:file.size,sourceKey:getVideoSourceKey(file)};
+            }""")
+            page.reload(wait_until="load")
+            page.wait_for_function("typeof uploadMatchVideoInChunks === 'function'")
+            counters = {"status": 0, "created": 0, "puts": [], "completed": 0}
+            def mock_api(route):
+                request = route.request
+                if not request.url.startswith("https://riku-resume-mock.invalid/"):
+                    route.continue_()
+                    return
+                path = request.url.split("riku-resume-mock.invalid", 1)[-1]
+                headers = {"Access-Control-Allow-Origin":"*",
+                           "Access-Control-Allow-Methods":"GET, POST, PUT, DELETE, OPTIONS",
+                           "Access-Control-Allow-Headers":"*"}
+                if request.method == "OPTIONS":
+                    route.fulfill(status=204, headers=headers)
+                elif path == "/analyze/match/uploads/resume-upload" and request.method == "GET":
+                    counters["status"] += 1
+                    route.fulfill(status=200, headers=headers, content_type="application/json",
+                                  body=json.dumps({"ok":True,"upload_id":"resume-upload",
+                                                   "next_chunk":1,"total_chunks":2,
+                                                   "received_bytes":6*1024*1024,
+                                                   "total_bytes":original["size"],"complete":False}))
+                elif path == "/analyze/match/uploads/resume-upload/1" and request.method == "PUT":
+                    counters["puts"].append(1)
+                    route.fulfill(status=200, headers=headers, content_type="application/json",
+                                  body=json.dumps({"ok":True,"chunk_index":1}))
+                elif path == "/analyze/match/uploads/resume-upload/complete" and request.method == "POST":
+                    counters["completed"] += 1
+                    route.fulfill(status=202, headers=headers, content_type="application/json",
+                                  body=json.dumps({"ok":True,"job_id":"resume-job","status":"queued"}))
+                else:
+                    route.fulfill(status=404, headers=headers, content_type="application/json",
+                                  body=json.dumps({"detail":"unexpected request: "+path}))
+            page.route("**/*", mock_api)
+            result = page.evaluate("""async () => {
+                const stored = await getClipVideo('__pending_match_video__');
+                if (!stored || !(stored.blob instanceof Blob)) throw new Error('saved source video missing after reload');
+                const file = new File([stored.blob], stored.name, {type:stored.type, lastModified:stored.lastModified});
+                const response = await uploadMatchVideoInChunks(file, '10,74', document.getElementById('matchAiResult'));
+                return {jobId:response.job_id,size:file.size,pending:await getPendingMatchUpload()};
+            }""")
+            self.assertEqual(result["jobId"], "resume-job", result)
+            self.assertEqual(result["size"], original["size"], result)
+            self.assertIsNone(result["pending"], result)
+            self.assertEqual(counters, {"status":1,"created":0,"puts":[1],"completed":1})
+        finally:
+            context.close()
+            browser.close()
+
     def test_webkit_15_minute_match_upload_frontend_completion_flow(self):
         browser = self.playwright.webkit.launch(headless=True)
         context = browser.new_context(viewport={"width": 390, "height": 844}, service_workers="block")
