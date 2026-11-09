@@ -1,5 +1,7 @@
 import os
 import re
+import json
+import time
 import hashlib
 import subprocess
 import tempfile
@@ -26,9 +28,75 @@ MATCH_SAMPLE_RATE = float(os.getenv("MATCH_SAMPLE_RATE", "2.0"))
 MATCH_MAX_SAMPLES = int(os.getenv("MATCH_MAX_SAMPLES", "2400"))
 POSE_LANDMARKER_MODEL = os.getenv("POSE_LANDMARKER_MODEL", "/app/models/pose_landmarker_lite.task")
 match_jobs = {}
-match_uploads = {}
-completed_match_uploads = {}
 MATCH_UPLOAD_CHUNK_BYTES = 6 * 1024 * 1024
+MATCH_UPLOAD_SESSION_TTL_SECONDS = 24 * 60 * 60
+MATCH_UPLOAD_SESSION_DIR = Path(os.getenv(
+    "MATCH_UPLOAD_SESSION_DIR",
+    str(Path(tempfile.gettempdir()) / "riku-match-upload-sessions"),
+))
+MATCH_UPLOAD_SESSION_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def match_upload_manifest_path(upload_id):
+    return MATCH_UPLOAD_SESSION_DIR / (str(upload_id) + ".json")
+
+
+def persist_match_upload_state(upload_id, upload_state):
+    """Atomically persist upload metadata beside the temporary video bytes."""
+    manifest = {
+        key: upload_state[key]
+        for key in (
+            "path", "filename", "total_size", "duration_seconds", "chunk_size",
+            "total_chunks", "next_chunk", "received_bytes", "jersey_numbers",
+        )
+    }
+    manifest["chunk_hashes"] = {
+        str(index): digest for index, digest in upload_state.get("chunk_hashes", {}).items()
+    }
+    manifest["updated_at"] = time.time()
+    target = match_upload_manifest_path(upload_id)
+    temporary = target.with_suffix(".json.tmp")
+    temporary.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+    os.replace(temporary, target)
+
+
+def restore_match_upload_sessions():
+    """Restore valid, unexpired sessions after an app-process restart."""
+    restored = {}
+    now = time.time()
+    for manifest_path in MATCH_UPLOAD_SESSION_DIR.glob("*.json"):
+        upload_id = manifest_path.stem
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            path = Path(manifest["path"])
+            total_size = int(manifest["total_size"])
+            received_bytes = int(manifest["received_bytes"])
+            updated_at = float(manifest["updated_at"])
+            if (now - updated_at > MATCH_UPLOAD_SESSION_TTL_SECONDS
+                    or total_size <= 0 or total_size > MAX_MATCH_UPLOAD_MB * 1024 * 1024
+                    or received_bytes < 0 or received_bytes > total_size
+                    or not path.is_file() or path.stat().st_size < received_bytes):
+                raise ValueError("expired or incomplete upload session")
+            # A crash may occur after writing chunk bytes but before the manifest
+            # replacement. Discard that uncommitted tail so the client can retry it.
+            if path.stat().st_size > received_bytes:
+                with path.open("r+b") as video:
+                    video.truncate(received_bytes)
+            state = {
+                **manifest,
+                "chunk_hashes": {int(k): v for k, v in manifest.get("chunk_hashes", {}).items()},
+            }
+            restored[upload_id] = state
+        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+            try:
+                manifest_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+    return restored
+
+
+match_uploads = restore_match_upload_sessions()
+completed_match_uploads = {}
 highlight_collections = {}
 
 app = FastAPI(title=APP_NAME, version="0.1.0")
@@ -1434,9 +1502,25 @@ async def create_match_upload(payload: dict = Body(...)):
         "total_chunks": chunks, "next_chunk": 0, "received_bytes": 0,
         "chunk_hashes": {}, "jersey_numbers": str(payload.get("jersey_numbers") or "10,74"),
     }
+    persist_match_upload_state(upload_id, match_uploads[upload_id])
     return {"ok": True, "upload_id": upload_id, "chunk_size": MATCH_UPLOAD_CHUNK_BYTES,
             "total_chunks": chunks, "max_upload_mb": MAX_MATCH_UPLOAD_MB,
             "max_duration_seconds": MAX_MATCH_SECONDS}
+
+
+@app.get("/analyze/match/uploads/{upload_id}")
+def get_match_upload_status(upload_id: str):
+    upload_state = match_uploads.get(upload_id)
+    if upload_state is None:
+        raise HTTPException(status_code=404, detail="動画アップロードが見つかりません。最初から再試行してください。")
+    return {
+        "ok": True, "upload_id": upload_id,
+        "next_chunk": upload_state["next_chunk"],
+        "total_chunks": upload_state["total_chunks"],
+        "received_bytes": upload_state["received_bytes"],
+        "total_bytes": upload_state["total_size"],
+        "complete": upload_state["received_bytes"] == upload_state["total_size"],
+    }
 
 
 @app.put("/analyze/match/uploads/{upload_id}/{chunk_index}")
@@ -1451,8 +1535,12 @@ async def upload_match_chunk(upload_id: str, chunk_index: int, file: UploadFile 
         raise HTTPException(status_code=413, detail="分割データが上限を超えています。")
     try:
         added = append_match_upload_chunk(upload_state, chunk_index, data)
+        if added:
+            persist_match_upload_state(upload_id, upload_state)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+    except OSError as exc:
+        raise HTTPException(status_code=507, detail="アップロード状態を保存できません。空き容量を確認してください。")
     return {"ok": True, "chunk_index": chunk_index, "received_bytes": upload_state["received_bytes"],
             "total_bytes": upload_state["total_size"], "duplicate_retry": not added}
 
@@ -1483,6 +1571,7 @@ async def complete_match_upload(upload_id: str, background_tasks: BackgroundTask
     }
     jersey_numbers = upload_state["jersey_numbers"]
     del match_uploads[upload_id]
+    match_upload_manifest_path(upload_id).unlink(missing_ok=True)
     completed_match_uploads[upload_id] = job_id
     # Keep this in-memory retry cache bounded for the free single-instance service.
     while len(completed_match_uploads) > 256:
@@ -1495,6 +1584,7 @@ async def complete_match_upload(upload_id: str, background_tasks: BackgroundTask
 @app.delete("/analyze/match/uploads/{upload_id}")
 def cancel_match_upload(upload_id: str):
     upload_state = match_uploads.pop(upload_id, None)
+    match_upload_manifest_path(upload_id).unlink(missing_ok=True)
     if upload_state is None:
         return {"ok": True, "already_closed": True}
     try:
