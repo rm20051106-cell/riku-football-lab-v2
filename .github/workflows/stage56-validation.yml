@@ -60,3 +60,5 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Build backend Docker image
         run: docker build -t riku-football-lab-ai ./backend
+      - name: Verify 15 and 20 minute backend chunk receipt in Docker
+        run: docker run --rm -v "$PWD/tests/test_backend_match_upload_integration.py:/tmp/test_backend_match_upload_integration.py:ro" riku-football-lab-ai python /tmp/test_backend_match_upload_integration.py
