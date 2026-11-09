@@ -452,7 +452,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             try {
                 await new Promise((resolve, reject) => {
                     const tx = db.transaction('videoChunks', 'readwrite');
-                    tx.objectStore('videoChunks').put(new Uint8Array([7, 7]), 'gc-check|abandoned-generation|00000000');
+                    tx.objectStore('videoChunks').put(new Uint8Array([7, 7]), 'gc-check|00000000-abandoned-generation|00000000');
                     const pendingGeneration = Date.now().toString(36) + '-still-writing';
                     tx.objectStore('videoChunks').put(new Uint8Array([8, 8]), 'gc-check|' + pendingGeneration + '|00000000');
                     tx.oncomplete = resolve;
