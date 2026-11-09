@@ -62,6 +62,15 @@ class MatchUploadBackendIntegrationTest(unittest.TestCase):
             self.assertNotIn(upload_id, main.match_uploads)
             self.assertEqual(len(tasks.tasks), 1)
             self.assertEqual(main.match_jobs[completed["job_id"]]["size_bytes"], total_size)
+
+            # Simulate a lost completion response: retrying must return the
+            # same job and must not enqueue a second background analysis.
+            retry_tasks = BackgroundTasks()
+            retried = await main.complete_match_upload(upload_id, retry_tasks)
+            self.assertEqual(retried["job_id"], completed["job_id"])
+            self.assertEqual(retried["status"], "queued")
+            self.assertEqual(len(retry_tasks.tasks), 0)
+            self.assertEqual(len(tasks.tasks), 1)
             os.remove(state["path"])
 
         async def run():
