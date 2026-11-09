@@ -992,7 +992,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
 
     def test_webkit_15_minute_match_upload_frontend_completion_flow(self):
         browser = self.playwright.webkit.launch(headless=True)
-        context = browser.new_context(viewport={"width": 390, "height": 844})
+        context = browser.new_context(viewport={"width": 390, "height": 844}, service_workers="block")
         page = context.new_page()
         page.on("dialog", lambda dialog: dialog.accept())
         try:
