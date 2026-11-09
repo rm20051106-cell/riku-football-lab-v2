@@ -990,5 +990,86 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual(result["title"], "delayed-match.mp4", result)
 
 
+    def test_webkit_15_minute_match_upload_frontend_completion_flow(self):
+        browser = self.playwright.webkit.launch(headless=True)
+        context = browser.new_context(viewport={"width": 390, "height": 844})
+        page = context.new_page()
+        try:
+            page.goto(self.base_url, wait_until="load")
+            page.wait_for_function("typeof saveClip === 'function'")
+            page.locator('.nav button[data-view="video"]').click()
+            page.evaluate("""() => {
+                state.settings.apiBaseUrl = 'https://riku-webkit-mock.invalid';
+                persist();
+            }""")
+            counters = {"created": 0, "chunks": 0, "completed": 0, "status": 0}
+            def mock_api(route):
+                request = route.request
+                path = request.url.split("riku-webkit-mock.invalid", 1)[-1]
+                headers = {
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+                    "Access-Control-Allow-Headers": "*",
+                }
+                if request.method == "OPTIONS":
+                    route.fulfill(status=204, headers=headers)
+                elif path == "/health":
+                    route.fulfill(status=200, headers=headers, content_type="application/json",
+                                  body=json.dumps({"ok": True}))
+                elif path == "/analyze/match/uploads" and request.method == "POST":
+                    counters["created"] += 1
+                    size = request.post_data_json["size_bytes"]
+                    chunk_size = 6 * 1024 * 1024
+                    route.fulfill(status=201, headers=headers, content_type="application/json",
+                                  body=json.dumps({"ok": True, "upload_id": "webkit-upload",
+                                                   "chunk_size": chunk_size,
+                                                   "total_chunks": (size + chunk_size - 1) // chunk_size}))
+                elif path.startswith("/analyze/match/uploads/webkit-upload/") and request.method == "PUT":
+                    counters["chunks"] += 1
+                    route.fulfill(status=200, headers=headers, content_type="application/json",
+                                  body=json.dumps({"ok": True}))
+                elif path == "/analyze/match/uploads/webkit-upload/complete" and request.method == "POST":
+                    counters["completed"] += 1
+                    route.fulfill(status=202, headers=headers, content_type="application/json",
+                                  body=json.dumps({"ok": True, "job_id": "webkit-job", "status": "queued"}))
+                elif path == "/analyze/jobs/webkit-job":
+                    counters["status"] += 1
+                    route.fulfill(status=200, headers=headers, content_type="application/json",
+                                  body=json.dumps({"status": "completed", "progress": 100, "stage": "完了",
+                                                   "result": {"job_id": "webkit-job", "summary": {
+                                                       "duration_seconds": 900, "sampled_pose_frames": 0,
+                                                       "feedback": [], "candidate_events": [],
+                                                       "person_detection_summary": {},
+                                                       "person_track_summary": {},
+                                                       "jersey_ocr_summary": {},
+                                                   }}}))
+                else:
+                    route.fulfill(status=404, headers=headers, content_type="application/json",
+                                  body=json.dumps({"detail": "unexpected mock request: " + path}))
+            page.route("https://riku-webkit-mock.invalid/**", mock_api)
+            page.evaluate("""() => {
+                Object.defineProperty(document.getElementById('matchVideo'), 'duration',
+                                      {configurable: true, value: 900});
+            }""")
+            page.locator("#videoFile").set_input_files({
+                "name": "webkit-synthetic-15min.mp4",
+                "mimeType": "video/mp4",
+                "buffer": b"W" * (7 * 1024 * 1024 + 19),
+            })
+            page.get_by_role("button", name="AIサーバーで動画解析").click()
+            page.wait_for_function(
+                "() => document.getElementById('matchAiResult').textContent.includes('全編スキャンが完了しました')",
+                timeout=30000,
+            )
+            self.assertTrue(page.locator("#video").evaluate("(el) => el.classList.contains('active')"))
+            self.assertEqual(counters["created"], 1)
+            self.assertEqual(counters["completed"], 1)
+            self.assertEqual(counters["status"], 1)
+            self.assertGreaterEqual(counters["chunks"], 2)
+        finally:
+            context.close()
+            browser.close()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
