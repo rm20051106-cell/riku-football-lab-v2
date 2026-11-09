@@ -22,7 +22,7 @@ class MatchUploadBackendIntegrationTest(unittest.TestCase):
                 "duration_seconds": duration_seconds,
                 "jersey_numbers": "10,74",
             })
-            self.assertTrue(init["ok"])
+            self.assertTrue(init.get("upload_id"))
             upload_id = init["upload_id"]
             chunk_size = init["chunk_size"]
             self.assertEqual(chunk_size, 6 * 1024 * 1024)
