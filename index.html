@@ -1160,10 +1160,25 @@ async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
    resultElement.textContent='動画を分割送信中：'+Math.round(((i+1)/total)*100)+'%（'+(i+1)+'/'+total+'）｜画面を閉じずにお待ちください。';
   }
   resultElement.textContent='全データの送信が完了。サーバー側で受信内容を確認しています…';
-  const completed=await fetch(getApiUrl()+'/analyze/match/uploads/'+encodeURIComponent(session.upload_id)+'/complete',{method:'POST',credentials:'omit',cache:'no-store'});
-  const raw=await completed.text();let body;try{body=JSON.parse(raw)}catch(e){body=null}
-  if(!completed.ok||!body?.job_id)throw Error('動画受信の確定 HTTP '+completed.status+'：'+(body?.detail||raw.slice(0,180)));
-  return body;
+  let completed=null,body=null,lastCompleteError=null;
+  for(let attempt=1;attempt<=3;attempt++){
+   try{
+    completed=await fetch(getApiUrl()+'/analyze/match/uploads/'+encodeURIComponent(session.upload_id)+'/complete',{method:'POST',credentials:'omit',cache:'no-store'});
+    const raw=await completed.text();try{body=JSON.parse(raw)}catch(e){body=null}
+    if(completed.ok&&body?.job_id)return body;
+    const detail='動画受信の確定 HTTP '+completed.status+'：'+(body?.detail||raw.slice(0,180));
+    if(completed.status>=400&&completed.status<500)throw Error(detail);
+    lastCompleteError=Error(detail);
+   }catch(e){
+    lastCompleteError=e;
+    if(e.message&&e.message.startsWith('動画受信の確定 HTTP ')&&completed&&completed.status>=400&&completed.status<500)throw e;
+   }
+   if(attempt<3){
+    resultElement.textContent='受信完了の応答を確認中…（再確認 '+attempt+'/3）';
+    await new Promise(resolve=>setTimeout(resolve,1000*attempt));
+   }
+  }
+  throw lastCompleteError||Error('動画受信の確定応答を確認できませんでした');
  }catch(error){
   if(activeUploadId){try{await fetch(getApiUrl()+'/analyze/match/uploads/'+encodeURIComponent(activeUploadId),{method:'DELETE',credentials:'omit',cache:'no-store'})}catch(cleanupError){console.warn('中断した動画アップロードの一時データ削除に失敗',cleanupError)}}
   resultElement.textContent='分割送信が中断されました。元動画は端末に残っています。再試行できます。';
