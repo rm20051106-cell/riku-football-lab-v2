@@ -952,5 +952,43 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertGreaterEqual(counters["chunks"], 5)
 
 
+    def test_match_analysis_save_waits_for_pending_video_file(self):
+        page = self.page
+        self.accept_dialogs()
+        result = page.evaluate("""async () => {
+            state.matchAnalyses = [];
+            state.clips = [];
+            state.forms = [];
+            state.aiFormAnalyses = [];
+            const resultElement = document.getElementById('matchAiResult');
+            resultElement.dataset.result = JSON.stringify({
+                job_id: 'delayed-save-job',
+                requested_jersey_numbers: '10,74',
+                summary: {duration_seconds: 900, sampled_pose_frames: 0, frames: [],
+                          candidate_events: [], feedback: []}
+            });
+            document.getElementById('videoTitle').value = '';
+            let release;
+            pendingMatchSave = new Promise(resolve => { release = resolve; });
+            const file = new File([new Uint8Array([1, 2, 3])], 'delayed-match.mp4',
+                                  {type: 'video/mp4', lastModified: 1234});
+            const expectedKey = getVideoSourceKey(file);
+            const saving = saveMatchScanResult();
+            await new Promise(resolve => setTimeout(resolve, 0));
+            const countBeforePendingSave = state.matchAnalyses.length;
+            release(file);
+            await saving;
+            return {
+                countBeforePendingSave,
+                sourceVideoKey: state.matchAnalyses[0]?.sourceVideoKey || '',
+                title: state.matchAnalyses[0]?.title || '',
+                expectedKey
+            };
+        }""")
+        self.assertEqual(result["countBeforePendingSave"], 0, result)
+        self.assertEqual(result["sourceVideoKey"], result["expectedKey"], result)
+        self.assertEqual(result["title"], "delayed-match.mp4", result)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
