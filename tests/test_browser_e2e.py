@@ -255,14 +255,20 @@ class RikuBrowserE2ETests(unittest.TestCase):
 
     def test_match_upload_continues_when_indexeddb_quota_blocks_video_and_resume_saves(self):
         page = self.page
-        result = page.evaluate("""async () => {
-            const requests = [];
-            const originalStorage = Object.getOwnPropertyDescriptor(navigator, 'storage');
+        page.locator('.nav button[data-view="video"]').click()
+        page.evaluate("""() => {
             Object.defineProperty(navigator, 'storage', {
                 configurable: true,
                 value: { estimate: async () => ({ usage: 95, quota: 100 }) }
             });
-            const capacity = await preflightMatchVideoStorage(new Blob([new Uint8Array(32)]));
+        }""")
+        page.locator("#videoFile").set_input_files(str(self.video_path))
+        page.wait_for_function(
+            "document.getElementById('videoMeta').textContent.includes('自動再開はできません')",
+            timeout=10000,
+        )
+        result = page.evaluate("""async () => {
+            const requests = [];
             state.settings.apiBaseUrl = 'https://api.test';
             window.getPendingMatchUpload = async () => {
                 throw new DOMException('simulated IndexedDB unavailable', 'QuotaExceededError');
@@ -289,24 +295,18 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 return new Response('{}', {status: 404});
             };
             const output = document.createElement('div');
-            const file = new File([new Uint8Array(20)], 'quota-test.mp4', {
-                type: 'video/mp4', lastModified: 123
-            });
-            const completed = await uploadMatchVideoInChunks(file, '10,74', output);
-            if (originalStorage) Object.defineProperty(navigator, 'storage', originalStorage);
+            const completed = await uploadMatchVideoInChunks(videoFile.files[0], '10,74', output);
             return {
-                capacity,
                 jobId: completed.job_id,
                 putCount: requests.filter(x => x.method === 'PUT').length,
                 initCount: requests.filter(x => x.method === 'POST' && x.url.endsWith('/uploads')).length,
                 warning: output.textContent
             };
         }""")
-        self.assertFalse(result["capacity"]["ok"], result)
         self.assertEqual(result["jobId"], "quota-fallback-job", result)
         self.assertEqual(result["putCount"], 3, result)
         self.assertEqual(result["initCount"], 1, result)
-        self.assertIn("再読み込み後の再開はできません", result["warning"], result)
+        self.assertIn("再読み込み後は動画の再選択が必要", result["warning"], result)
 
     def test_indexeddb_quota_failure_does_not_create_false_video_record(self):
         page = self.page
