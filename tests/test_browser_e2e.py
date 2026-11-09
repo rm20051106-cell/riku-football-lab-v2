@@ -994,6 +994,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         browser = self.playwright.webkit.launch(headless=True)
         context = browser.new_context(viewport={"width": 390, "height": 844})
         page = context.new_page()
+        page.on("dialog", lambda dialog: dialog.accept())
         try:
             page.goto(self.base_url, wait_until="load")
             page.wait_for_function("typeof saveClip === 'function'")
@@ -1047,20 +1048,32 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     route.fulfill(status=404, headers=headers, content_type="application/json",
                                   body=json.dumps({"detail": "unexpected mock request: " + path}))
             page.route("https://riku-webkit-mock.invalid/**", mock_api)
-            page.evaluate("""() => {
-                Object.defineProperty(document.getElementById('matchVideo'), 'duration',
-                                      {configurable: true, value: 900});
-            }""")
             page.locator("#videoFile").set_input_files({
                 "name": "webkit-synthetic-15min.mp4",
                 "mimeType": "video/mp4",
                 "buffer": b"W" * (7 * 1024 * 1024 + 19),
             })
-            page.get_by_role("button", name="AIサーバーで動画解析").click()
             page.wait_for_function(
-                "() => document.getElementById('matchAiResult').textContent.includes('全編スキャンが完了しました')",
+                "() => document.getElementById('videoMeta').textContent.includes('動画保存準備OK')",
                 timeout=30000,
             )
+            page.evaluate("""() => {
+                Object.defineProperty(document.getElementById('matchVideo'), 'duration',
+                                      {configurable: true, value: 900});
+            }""")
+            page.get_by_role("button", name="AIサーバーで動画解析").click()
+            try:
+                page.wait_for_function(
+                    "() => document.getElementById('matchAiResult').textContent.includes('全編スキャンが完了しました')",
+                    timeout=30000,
+                )
+            except Exception as error:
+                diagnostic = page.evaluate("""() => ({
+                    result: document.getElementById('matchAiResult').textContent,
+                    videoMeta: document.getElementById('videoMeta').textContent,
+                    apiBaseUrl: state.settings.apiBaseUrl
+                })""")
+                raise AssertionError({"diagnostic": diagnostic, "counters": counters, "cause": str(error)})
             self.assertTrue(page.locator("#video").evaluate("(el) => el.classList.contains('active')"))
             self.assertEqual(counters["created"], 1)
             self.assertEqual(counters["completed"], 1)
@@ -1069,6 +1082,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         finally:
             context.close()
             browser.close()
+
 
 
 if __name__ == "__main__":
