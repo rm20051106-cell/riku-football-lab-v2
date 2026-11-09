@@ -814,57 +814,64 @@ class RikuBrowserE2ETests(unittest.TestCase):
         page = self.page
         result = page.evaluate("""async () => {
             state.settings.apiBaseUrl = 'https://upload.test';
-            Object.defineProperty(document.getElementById('matchVideo'), 'duration', {
-                configurable: true, value: 1200
-            });
             const received = [];
+            const initPayloads = [];
             let completed = 0;
+            let activeUploadId = '';
             window.fetch = async (url, options = {}) => {
                 const path = new URL(url).pathname;
                 if (path === '/analyze/match/uploads' && options.method === 'POST') {
                     const payload = JSON.parse(options.body);
-                    window.__uploadInit = payload;
+                    initPayloads.push(payload);
+                    activeUploadId = 'synthetic-' + initPayloads.length;
                     return new Response(JSON.stringify({
-                        ok: true, upload_id: 'synthetic-20min', chunk_size: 6 * 1024 * 1024,
+                        ok: true, upload_id: activeUploadId, chunk_size: 6 * 1024 * 1024,
                         total_chunks: Math.ceil(payload.size_bytes / (6 * 1024 * 1024))
                     }), {status: 201, headers: {'Content-Type': 'application/json'}});
                 }
-                const chunk = path.match(/\\/analyze\\/match\\/uploads\\/synthetic-20min\\/(\\d+)$/);
+                const chunk = path.match(/\/analyze\/match\/uploads\/(synthetic-\d+)\/(\d+)$/);
                 if (chunk && options.method === 'PUT') {
                     const part = options.body.get('file');
-                    received.push({index: Number(chunk[1]), size: part.size});
+                    received.push({upload: chunk[1], index: Number(chunk[2]), size: part.size});
                     return new Response(JSON.stringify({ok: true}), {
                         status: 200, headers: {'Content-Type': 'application/json'}
                     });
                 }
                 if (path.endsWith('/complete') && options.method === 'POST') {
                     completed++;
-                    return new Response(JSON.stringify({ok: true, job_id: 'synthetic-job'}),
+                    return new Response(JSON.stringify({ok: true, job_id: 'job-' + completed}),
                         {status: 202, headers: {'Content-Type': 'application/json'}});
                 }
                 throw new Error('Unexpected upload request: ' + options.method + ' ' + path);
             };
-            const bytes = new Uint8Array(13 * 1024 * 1024 + 123);
-            const file = new File([bytes], 'synthetic-20min.mp4', {type: 'video/mp4'});
-            const status = document.createElement('div');
-            const response = await uploadMatchVideoInChunks(file, ['10','74'], status);
-            return {
-                init: window.__uploadInit,
-                received,
-                completed,
-                response,
-                status: status.textContent,
-                fileSize: file.size
-            };
+            const cases = [
+                {duration: 900, bytes: 7 * 1024 * 1024 + 11, name: 'synthetic-15min.mp4'},
+                {duration: 1200, bytes: 13 * 1024 * 1024 + 123, name: 'synthetic-20min.mp4'}
+            ];
+            const results = [];
+            for (const item of cases) {
+                Object.defineProperty(document.getElementById('matchVideo'), 'duration', {
+                    configurable: true, value: item.duration
+                });
+                const file = new File([new Uint8Array(item.bytes)], item.name, {type: 'video/mp4'});
+                const status = document.createElement('div');
+                const response = await uploadMatchVideoInChunks(file, ['10','74'], status);
+                results.push({duration: item.duration, size: file.size, response, status: status.textContent});
+            }
+            return {initPayloads, received, completed, results};
         }""")
-        self.assertEqual(result["init"]["duration_seconds"], 1200, result)
-        self.assertEqual(result["init"]["size_bytes"], result["fileSize"], result)
-        self.assertEqual(len(result["received"]), 3, result)
-        self.assertEqual([x["index"] for x in result["received"]], [0, 1, 2], result)
-        self.assertEqual(sum(x["size"] for x in result["received"]), result["fileSize"], result)
+        self.assertEqual([x["duration_seconds"] for x in result["initPayloads"]], [900, 1200], result)
+        self.assertEqual([x["size_bytes"] for x in result["initPayloads"]],
+                         [7 * 1024 * 1024 + 11, 13 * 1024 * 1024 + 123], result)
+        self.assertEqual([x["index"] for x in result["received"]], [0, 1, 0, 1, 2], result)
+        self.assertEqual(
+            [sum(x["size"] for x in result["received"] if x["upload"] == upload)
+             for upload in ("synthetic-1", "synthetic-2")],
+            [7 * 1024 * 1024 + 11, 13 * 1024 * 1024 + 123], result
+        )
         self.assertTrue(all(x["size"] <= 6 * 1024 * 1024 for x in result["received"]), result)
-        self.assertEqual(result["completed"], 1, result)
-        self.assertEqual(result["response"]["job_id"], "synthetic-job", result)
+        self.assertEqual(result["completed"], 2, result)
+        self.assertEqual([x["response"]["job_id"] for x in result["results"]], ["job-1", "job-2"], result)
 
 
 
