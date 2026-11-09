@@ -875,5 +875,82 @@ class RikuBrowserE2ETests(unittest.TestCase):
 
 
 
+    def test_15_and_20_minute_match_upload_frontend_completion_flow(self):
+        page = self.page
+        self.accept_dialogs()
+        page.locator('.nav button[data-view="video"]').click()
+        page.evaluate("""() => {
+            state.settings.apiBaseUrl = 'https://riku-upload-mock.invalid';
+            persist();
+        }""")
+
+        counters = {"created": 0, "chunks": 0, "completed": 0, "status": 0}
+        def mock_api(route):
+            request = route.request
+            path = request.url.split("riku-upload-mock.invalid", 1)[-1]
+            headers = {
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+                "Access-Control-Allow-Headers": "*",
+            }
+            if request.method == "OPTIONS":
+                route.fulfill(status=204, headers=headers)
+            elif path == "/health":
+                route.fulfill(status=200, headers=headers, content_type="application/json",
+                              body=json.dumps({"ok": True}))
+            elif path == "/analyze/match/uploads" and request.method == "POST":
+                counters["created"] += 1
+                route.fulfill(status=200, headers=headers, content_type="application/json",
+                              body=json.dumps({"ok": True, "upload_id": "mock-upload",
+                                               "chunk_size": 6 * 1024 * 1024,
+                                               "total_chunks": request.post_data_json["size_bytes"] // (6 * 1024 * 1024) +
+                                               (1 if request.post_data_json["size_bytes"] % (6 * 1024 * 1024) else 0)}))
+            elif path.startswith("/analyze/match/uploads/mock-upload/") and request.method == "PUT":
+                counters["chunks"] += 1
+                route.fulfill(status=200, headers=headers, content_type="application/json",
+                              body=json.dumps({"ok": True}))
+            elif path == "/analyze/match/uploads/mock-upload/complete" and request.method == "POST":
+                counters["completed"] += 1
+                route.fulfill(status=202, headers=headers, content_type="application/json",
+                              body=json.dumps({"ok": True, "job_id": "mock-job", "status": "queued"}))
+            elif path == "/analyze/jobs/mock-job":
+                counters["status"] += 1
+                route.fulfill(status=200, headers=headers, content_type="application/json",
+                              body=json.dumps({"status": "completed", "progress": 100, "stage": "完了",
+                                               "result": {"job_id": "mock-job", "summary": {
+                                                   "duration_seconds": 900, "sampled_pose_frames": 0,
+                                                   "feedback": [], "candidate_events": [],
+                                                   "person_detection_summary": {},
+                                                   "person_track_summary": {},
+                                                   "jersey_ocr_summary": {},
+                                               }}}))
+            else:
+                route.fulfill(status=404, headers=headers, content_type="application/json",
+                              body=json.dumps({"detail": "unexpected mock request: " + path}))
+        page.route("https://riku-upload-mock.invalid/**", mock_api)
+
+        for duration, size in ((900, 7 * 1024 * 1024 + 11), (1200, 13 * 1024 * 1024 + 123)):
+            page.evaluate("""(seconds) => {
+                const video = document.getElementById('matchVideo');
+                Object.defineProperty(video, 'duration', {configurable: true, value: seconds});
+            }""", duration)
+            page.locator("#videoFile").set_input_files({
+                "name": f"synthetic-{duration}.mp4",
+                "mimeType": "video/mp4",
+                "buffer": b"R" * size,
+            })
+            page.get_by_role("button", name="AIサーバーで動画解析").click()
+            page.wait_for_function(
+                "() => document.getElementById('matchAiResult').textContent.includes('全編スキャンが完了しました')",
+                timeout=30000,
+            )
+            self.assertTrue(page.locator("#video").evaluate("(el) => el.classList.contains('active')"))
+            page.evaluate("() => { document.getElementById('videoFile').value = ''; }")
+        self.assertEqual(counters["created"], 2)
+        self.assertEqual(counters["completed"], 2)
+        self.assertEqual(counters["status"], 2)
+        self.assertGreaterEqual(counters["chunks"], 6)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
