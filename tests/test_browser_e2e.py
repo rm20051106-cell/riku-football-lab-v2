@@ -1006,11 +1006,15 @@ class RikuBrowserE2ETests(unittest.TestCase):
             counters = {"created": 0, "chunks": 0, "completed": 0, "status": 0}
             def mock_api(route):
                 request = route.request
+                if not request.url.startswith("https://riku-webkit-mock.invalid/"):
+                    route.continue_()
+                    return
                 path = request.url.split("riku-webkit-mock.invalid", 1)[-1]
                 headers = {
                     "Access-Control-Allow-Origin": "*",
                     "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Headers": "Content-Type, X-Requested-With",
+                    "Access-Control-Max-Age": "86400",
                 }
                 if request.method == "OPTIONS":
                     route.fulfill(status=204, headers=headers)
@@ -1047,7 +1051,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 else:
                     route.fulfill(status=404, headers=headers, content_type="application/json",
                                   body=json.dumps({"detail": "unexpected mock request: " + path}))
-            page.route("https://riku-webkit-mock.invalid/**", mock_api)
+            page.route("**/*", mock_api)
             page.locator("#videoFile").set_input_files({
                 "name": "webkit-synthetic-15min.mp4",
                 "mimeType": "video/mp4",
