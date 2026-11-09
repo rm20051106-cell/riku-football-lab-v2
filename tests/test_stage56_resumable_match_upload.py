@@ -109,6 +109,18 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn("persist_match_upload_state(upload_id, match_uploads[upload_id])", SOURCE)
         self.assertIn("match_upload_manifest_path(upload_id).unlink(missing_ok=True)", SOURCE)
 
+    def test_frontend_persists_upload_id_and_resumes_from_server_next_chunk(self):
+        self.assertIn('async function getPendingMatchUpload()', HTML)
+        self.assertIn('async function savePendingMatchUpload(record)', HTML)
+        self.assertIn('async function clearPendingMatchUpload()', HTML)
+        self.assertIn('saved.sourceKey===identity.sourceKey', HTML)
+        self.assertIn("method:'GET',credentials:'omit',cache:'no-store'", HTML)
+        self.assertIn('nextChunk=Number(status.next_chunk)', HTML)
+        self.assertIn('中断しても同じ動画を再選択すると続きから再開できます', HTML)
+        self.assertIn('await clearPendingMatchUpload();return body', HTML)
+        upload = HTML[HTML.index('async function uploadMatchVideoInChunks'):HTML.index('async function postMatchJobToAI')]
+        self.assertNotIn('method:\'DELETE\'', upload)
+
     def test_api_and_frontend_use_chunked_upload_not_single_large_post(self):
         self.assertIn("/analyze/match/uploads", SOURCE)
         self.assertIn("/analyze/match/uploads", HTML)
