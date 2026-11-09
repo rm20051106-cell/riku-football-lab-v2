@@ -51,10 +51,12 @@ class Stage63BlobStorageMemoryTests(unittest.TestCase):
                     [new Uint8Array(8 * 1024 * 1024)],
                     {type: 'video/mp4'}
                 );
-                let arrayBufferCalls = 0;
+                let arrayBufferCalls = 0, largestArrayBufferSource = 0;
                 Blob.prototype.arrayBuffer = function() {
                     arrayBufferCalls++;
-                    throw new Error('full-video ArrayBuffer conversion is forbidden');
+                    largestArrayBufferSource = Math.max(largestArrayBufferSource, this.size);
+                    if (this.size > 1024 * 1024) throw new Error('full-video ArrayBuffer conversion is forbidden');
+                    return originalArrayBuffer.call(this);
                 };
                 try {
                     await storeClipVideo('stage63-native-blob', largeVideo);
@@ -71,6 +73,12 @@ class Stage63BlobStorageMemoryTests(unittest.TestCase):
                     tx.onerror = () => reject(tx.error);
                 });
                 db.close();
+                const chunks = await new Promise((resolve, reject) => {
+                    const tx = db.transaction('videoChunks', 'readonly');
+                    const request = tx.objectStore('videoChunks').getAll();
+                    request.onsuccess = () => resolve(request.result.filter((_, i) => i < 8));
+                    request.onerror = () => reject(request.error);
+                });
                 const restored = await getClipVideo('stage63-native-blob');
 
                 // Older records used an ArrayBuffer named blobData. They must remain readable.
@@ -93,8 +101,11 @@ class Stage63BlobStorageMemoryTests(unittest.TestCase):
 
                 return {
                     arrayBufferCalls,
-                    rawIsBlob: raw.blob instanceof Blob,
-                    rawSize: raw.blob?.size ?? null,
+                    storageFormat: raw.storageFormat,
+                    chunkCount: raw.chunkCount,
+                    storedChunkCount: chunks.length,
+                    largestStoredChunkBytes: Math.max(...chunks.map(c => c.byteLength)),
+                    largestArrayBufferSource,
                     hasLegacyBlobData: Object.prototype.hasOwnProperty.call(raw, 'blobData'),
                     restoredSize: restored?.blob?.size ?? null,
                     restoredType: restored?.blob?.type ?? null,
@@ -102,9 +113,12 @@ class Stage63BlobStorageMemoryTests(unittest.TestCase):
                     legacyType: legacy?.blob?.type ?? null
                 };
             }""")
-            self.assertEqual(result["arrayBufferCalls"], 0, result)
-            self.assertTrue(result["rawIsBlob"], result)
-            self.assertEqual(result["rawSize"], 8 * 1024 * 1024, result)
+            self.assertEqual(result["arrayBufferCalls"], 8, result)
+            self.assertEqual(result["largestArrayBufferSource"], 1024 * 1024, result)
+            self.assertEqual(result["storageFormat"], "chunked-v1", result)
+            self.assertEqual(result["chunkCount"], 8, result)
+            self.assertEqual(result["storedChunkCount"], 8, result)
+            self.assertEqual(result["largestStoredChunkBytes"], 1024 * 1024, result)
             self.assertFalse(result["hasLegacyBlobData"], result)
             self.assertEqual(result["restoredSize"], 8 * 1024 * 1024, result)
             self.assertEqual(result["restoredType"], "video/mp4", result)
