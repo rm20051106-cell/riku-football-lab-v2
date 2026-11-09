@@ -1132,58 +1132,73 @@ async function postVideoToAI(file, endpoint, extra, resultElement){
   resultElement.textContent='解析に失敗：'+msg+'。設定画面の「接続テスト」も確認してください。';
  }
 }
+async function getPendingMatchUpload(){const db=await openVideoDB();try{return await new Promise((resolve,reject)=>{const tx=db.transaction('videos','readonly'),req=tx.objectStore('videos').get('__pending_match_upload__');req.onsuccess=()=>resolve(req.result||null);req.onerror=()=>reject(req.error||new Error('再開情報を読み込めません'));tx.onabort=()=>reject(tx.error||new Error('再開情報の読み込みが中断されました'))})}finally{db.close()}}
+async function savePendingMatchUpload(record){const db=await openVideoDB();try{await new Promise((resolve,reject)=>{const tx=db.transaction('videos','readwrite');tx.objectStore('videos').put(record,'__pending_match_upload__');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||new Error('再開情報を保存できません'));tx.onabort=()=>reject(tx.error||new Error('再開情報の保存が中断されました'))})}finally{db.close()}}
+async function clearPendingMatchUpload(){const db=await openVideoDB();try{await new Promise((resolve,reject)=>{const tx=db.transaction('videos','readwrite');tx.objectStore('videos').delete('__pending_match_upload__');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||new Error('再開情報を削除できません'));tx.onabort=()=>reject(tx.error||new Error('再開情報の削除が中断されました'))})}finally{db.close()}}
 async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
- let activeUploadId=null;
- const chunkSize=6*1024*1024;
- const duration=Number(matchVideo.duration||0);
- const init=await fetch(getApiUrl()+'/analyze/match/uploads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:file.name||'match-video.mp4',size_bytes:file.size,duration_seconds:Number.isFinite(duration)&&duration>0?duration:null,jersey_numbers:jerseyNumbers}),credentials:'omit',cache:'no-store'});
- const initRaw=await init.text();let session;try{session=JSON.parse(initRaw)}catch(e){session=null}
- if(!init.ok||!session?.upload_id)throw Error('分割アップロード開始 HTTP '+init.status+'：'+(session?.detail||initRaw.slice(0,180)));
- activeUploadId=session.upload_id;
- const total=session.total_chunks||Math.ceil(file.size/(session.chunk_size||chunkSize));
- try{
-  for(let i=0;i<total;i++){
-   const start=i*(session.chunk_size||chunkSize),part=file.slice(start,Math.min(file.size,start+(session.chunk_size||chunkSize)));
-   let succeeded=false,lastError=null;
-   for(let attempt=1;attempt<=3&&!succeeded;attempt++){
-    const fd=new FormData();fd.append('file',part,'chunk-'+i+'.bin');
-    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),120000);
-    try{
-     const response=await fetch(getApiUrl()+'/analyze/match/uploads/'+encodeURIComponent(session.upload_id)+'/'+i,{method:'PUT',body:fd,signal:controller.signal,credentials:'omit',cache:'no-store'});
-     const raw=await response.text();let body;try{body=JSON.parse(raw)}catch(e){body=null}
-     if(!response.ok)throw Error('分割 '+(i+1)+'/'+total+' HTTP '+response.status+'：'+(body?.detail||raw.slice(0,160)));
-     succeeded=true;
-    }catch(e){lastError=e;if(attempt<3){resultElement.textContent='通信を再試行しています… '+(i+1)+'/'+total+'（'+attempt+'/3）';await new Promise(resolve=>setTimeout(resolve,1200*attempt));}}
-    finally{clearTimeout(timer)}
-   }
-   if(!succeeded)throw lastError||Error('動画の分割送信に失敗しました');
-   resultElement.textContent='動画を分割送信中：'+Math.round(((i+1)/total)*100)+'%（'+(i+1)+'/'+total+'）｜画面を閉じずにお待ちください。';
-  }
-  resultElement.textContent='全データの送信が完了。サーバー側で受信内容を確認しています…';
-  let completed=null,body=null,lastCompleteError=null;
-  for(let attempt=1;attempt<=3;attempt++){
-   try{
-    completed=await fetch(getApiUrl()+'/analyze/match/uploads/'+encodeURIComponent(session.upload_id)+'/complete',{method:'POST',credentials:'omit',cache:'no-store'});
-    const raw=await completed.text();try{body=JSON.parse(raw)}catch(e){body=null}
-    if(completed.ok&&body?.job_id)return body;
-    const detail='動画受信の確定 HTTP '+completed.status+'：'+(body?.detail||raw.slice(0,180));
-    if(completed.status>=400&&completed.status<500)throw Error(detail);
-    lastCompleteError=Error(detail);
-   }catch(e){
-    lastCompleteError=e;
-    if(e.message&&e.message.startsWith('動画受信の確定 HTTP ')&&completed&&completed.status>=400&&completed.status<500)throw e;
-   }
-   if(attempt<3){
-    resultElement.textContent='受信完了の応答を確認中…（再確認 '+attempt+'/3）';
-    await new Promise(resolve=>setTimeout(resolve,1000*attempt));
-   }
-  }
-  throw lastCompleteError||Error('動画受信の確定応答を確認できませんでした');
- }catch(error){
-  if(activeUploadId){try{await fetch(getApiUrl()+'/analyze/match/uploads/'+encodeURIComponent(activeUploadId),{method:'DELETE',credentials:'omit',cache:'no-store'})}catch(cleanupError){console.warn('中断した動画アップロードの一時データ削除に失敗',cleanupError)}}
-  resultElement.textContent='分割送信が中断されました。元動画は端末に残っています。再試行できます。';
-  throw error;
+ const chunkSizeDefault=6*1024*1024,sourceKey=getVideoSourceKey(file),duration=Number(matchVideo.duration||0),api=getApiUrl();
+ const identity={sourceKey,size:file.size,name:file.name||'match-video.mp4',lastModified:Number(file.lastModified||0),jerseyNumbers};
+ let saved=await getPendingMatchUpload(),session=null,chunkSize=chunkSizeDefault,total=0,nextChunk=0;
+ if(saved&&saved.sourceKey===identity.sourceKey&&saved.size===identity.size&&saved.jerseyNumbers===identity.jerseyNumbers){
+  resultElement.textContent='前回のアップロード状態を確認しています…';
+  let statusResponse;
+  try{statusResponse=await fetch(api+'/analyze/match/uploads/'+encodeURIComponent(saved.uploadId),{method:'GET',credentials:'omit',cache:'no-store'})}
+  catch(error){throw Error('前回のアップロード状態を確認できません。通信を確認して同じ動画を再選択してください。再開情報は端末に保持しています。')}
+  if(statusResponse.ok){
+   const raw=await statusResponse.text();let status;try{status=JSON.parse(raw)}catch(e){status=null}
+   if(!status||status.upload_id!==saved.uploadId||Number(status.total_bytes)!==file.size||!Number.isInteger(Number(status.next_chunk)))throw Error('サーバーの再開情報が一致しません。元動画を変更せず再試行してください。');
+   session={upload_id:saved.uploadId,total_chunks:Number(status.total_chunks)};
+   chunkSize=Number(saved.chunkSize)||chunkSizeDefault;total=Number(status.total_chunks);nextChunk=Number(status.next_chunk);
+   resultElement.textContent='前回の続きから再開します：'+Math.round((nextChunk/Math.max(1,total))*100)+'%（'+nextChunk+'/'+total+'）';
+  }else if(statusResponse.status===404){await clearPendingMatchUpload();saved=null}
+  else throw Error('前回のアップロード状態を取得できません HTTP '+statusResponse.status+'。再開情報は保持しています。');
+ }else if(saved){await clearPendingMatchUpload();saved=null}
+ if(!session){
+  const init=await fetch(api+'/analyze/match/uploads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:identity.name,size_bytes:file.size,duration_seconds:Number.isFinite(duration)&&duration>0?duration:null,jersey_numbers:jerseyNumbers}),credentials:'omit',cache:'no-store'});
+  const initRaw=await init.text();let created;try{created=JSON.parse(initRaw)}catch(e){created=null}
+  if(!init.ok||!created?.upload_id)throw Error('分割アップロード開始 HTTP '+init.status+'：'+(created?.detail||initRaw.slice(0,180)));
+  session=created;chunkSize=Number(created.chunk_size)||chunkSizeDefault;total=Number(created.total_chunks)||Math.ceil(file.size/chunkSize);nextChunk=0;
+  await savePendingMatchUpload({...identity,uploadId:session.upload_id,chunkSize,totalChunks:total,nextChunk,createdAt:Date.now()});
  }
+ for(let i=nextChunk;i<total;i++){
+  const part=file.slice(i*chunkSize,Math.min(file.size,(i+1)*chunkSize));let succeeded=false,lastError=null;
+  for(let attempt=1;attempt<=3&&!succeeded;attempt++){
+   const fd=new FormData();fd.append('file',part,'chunk-'+i+'.bin');
+   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),120000);
+   try{
+    const response=await fetch(api+'/analyze/match/uploads/'+encodeURIComponent(session.upload_id)+'/'+i,{method:'PUT',body:fd,signal:controller.signal,credentials:'omit',cache:'no-store'});
+    const raw=await response.text();let body;try{body=JSON.parse(raw)}catch(e){body=null}
+    if(!response.ok)throw Error('分割 '+(i+1)+'/'+total+' HTTP '+response.status+'：'+(body?.detail||raw.slice(0,160)));
+    succeeded=true;
+   }catch(e){
+    lastError=e;
+    try{
+     const check=await fetch(api+'/analyze/match/uploads/'+encodeURIComponent(session.upload_id),{method:'GET',credentials:'omit',cache:'no-store'});
+     if(check.ok){const current=await check.json();if(Number(current.total_bytes)===file.size&&Number.isInteger(Number(current.next_chunk))){nextChunk=Number(current.next_chunk);await savePendingMatchUpload({...identity,uploadId:session.upload_id,chunkSize,totalChunks:total,nextChunk,createdAt:saved?.createdAt||Date.now()});if(nextChunk>i)succeeded=true;}}
+     else if(check.status===404)throw Error('サーバー側のアップロード情報が消失しました。元動画から新規送信が必要です。');
+    }catch(statusError){if(statusError.message&&statusError.message.includes('消失しました'))throw statusError}
+    if(!succeeded&&attempt<3){resultElement.textContent='通信状態を確認して再試行しています… '+(i+1)+'/'+total+'（'+attempt+'/3）';await new Promise(resolve=>setTimeout(resolve,1200*attempt));}
+   }finally{clearTimeout(timer)}
+  }
+  if(!succeeded)throw lastError||Error('動画の分割送信に失敗しました');
+  nextChunk=Math.max(nextChunk,i+1);
+  await savePendingMatchUpload({...identity,uploadId:session.upload_id,chunkSize,totalChunks:total,nextChunk,createdAt:saved?.createdAt||Date.now()});
+  resultElement.textContent='動画を分割送信中：'+Math.round((nextChunk/total)*100)+'%（'+nextChunk+'/'+total+'）｜中断しても同じ動画を再選択すると続きから再開できます。';
+ }
+ resultElement.textContent='全データの送信が完了。サーバー側で受信内容を確認しています…';
+ let completed=null,body=null,lastCompleteError=null;
+ for(let attempt=1;attempt<=3;attempt++){
+  try{
+   completed=await fetch(api+'/analyze/match/uploads/'+encodeURIComponent(session.upload_id)+'/complete',{method:'POST',credentials:'omit',cache:'no-store'});
+   const raw=await completed.text();try{body=JSON.parse(raw)}catch(e){body=null}
+   if(completed.ok&&body?.job_id){await clearPendingMatchUpload();return body}
+   const detail='動画受信の確定 HTTP '+completed.status+'：'+(body?.detail||raw.slice(0,180));
+   if(completed.status>=400&&completed.status<500)throw Error(detail);
+   lastCompleteError=Error(detail);
+  }catch(e){lastCompleteError=e;if(e.message&&e.message.startsWith('動画受信の確定 HTTP ')&&completed&&completed.status>=400&&completed.status<500)throw e}
+  if(attempt<3){resultElement.textContent='受信完了の応答を確認中…（再確認 '+attempt+'/3）';await new Promise(resolve=>setTimeout(resolve,1000*attempt))}
+ }
+ throw lastCompleteError||Error('動画受信の確定応答を確認できませんでした。再開情報は端末に保持しています。');
 }
 async function postMatchJobToAI(file,resultElement){
  const u=getApiUrl();
