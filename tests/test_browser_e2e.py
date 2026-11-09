@@ -397,6 +397,53 @@ class RikuBrowserE2ETests(unittest.TestCase):
 
 
 
+    def test_video_chunk_write_failure_rolls_back_partial_chunks_and_preserves_previous_video(self):
+        page = self.page
+        result = page.evaluate("""async () => {
+            const originalBlob = new Blob([new Uint8Array([1, 2, 3, 4])], {type: 'video/mp4'});
+            await storeClipVideo('rollback-test', originalBlob);
+            const originalPut = IDBObjectStore.prototype.put;
+            let injected = false;
+            IDBObjectStore.prototype.put = function(value, key) {
+                if (this.name === 'videoChunks' && String(key || '').startsWith('rollback-test|') && !injected) {
+                    injected = true;
+                    return originalPut.call(this, value, key);
+                }
+                if (this.name === 'videoChunks' && String(key || '').startsWith('rollback-test|') && injected) {
+                    IDBObjectStore.prototype.put = originalPut;
+                    throw new DOMException('simulated quota during second chunk', 'QuotaExceededError');
+                }
+                return originalPut.call(this, value, key);
+            };
+            let errorName = '';
+            try {
+                await storeClipVideo('rollback-test', new Blob([
+                    new Uint8Array(1024 * 1024 + 32).fill(9)
+                ], {type: 'video/mp4'}));
+            } catch (error) { errorName = error.name; }
+            finally { IDBObjectStore.prototype.put = originalPut; }
+            const restored = await getClipVideo('rollback-test');
+            const db = await openVideoDB();
+            let keys = [];
+            try {
+                keys = await new Promise((resolve, reject) => {
+                    const tx = db.transaction('videoChunks', 'readonly');
+                    const req = tx.objectStore('videoChunks').getAllKeys();
+                    req.onsuccess = () => resolve(req.result || []);
+                    req.onerror = () => reject(req.error);
+                });
+            } finally { db.close(); }
+            return {
+                errorName, oldVideoBytes: restored?.blob?.size || 0,
+                oldVideoFirstByte: restored?.blob ? new Uint8Array(await restored.blob.arrayBuffer())[0] : null,
+                rollbackChunks: keys.filter(key => String(key).startsWith('rollback-test|')).length
+            };
+        }""")
+        self.assertEqual(result["errorName"], "QuotaExceededError", result)
+        self.assertEqual(result["oldVideoBytes"], 4, result)
+        self.assertEqual(result["oldVideoFirstByte"], 1, result)
+        self.assertEqual(result["rollbackChunks"], 1, result)
+
     def test_video_storage_serialization_and_legacy_blob_compatibility(self):
         page = self.page
         result = page.evaluate("""async () => {
