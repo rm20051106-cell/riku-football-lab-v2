@@ -27,6 +27,7 @@ MATCH_MAX_SAMPLES = int(os.getenv("MATCH_MAX_SAMPLES", "2400"))
 POSE_LANDMARKER_MODEL = os.getenv("POSE_LANDMARKER_MODEL", "/app/models/pose_landmarker_lite.task")
 match_jobs = {}
 match_uploads = {}
+completed_match_uploads = {}
 MATCH_UPLOAD_CHUNK_BYTES = 6 * 1024 * 1024
 highlight_collections = {}
 
@@ -1458,6 +1459,15 @@ async def upload_match_chunk(upload_id: str, chunk_index: int, file: UploadFile 
 
 @app.post("/analyze/match/uploads/{upload_id}/complete", status_code=202)
 async def complete_match_upload(upload_id: str, background_tasks: BackgroundTasks):
+    # A client may lose the HTTP response after the job was queued. Return the
+    # original job on retry instead of creating duplicate analysis work.
+    completed_job_id = completed_match_uploads.get(upload_id)
+    if completed_job_id:
+        job = match_jobs.get(completed_job_id)
+        if job:
+            return {"ok": True, "job_id": completed_job_id, "status": job.get("status", "queued"),
+                    "status_url": f"/analyze/jobs/{completed_job_id}"}
+        completed_match_uploads.pop(upload_id, None)
     upload_state = match_uploads.get(upload_id)
     if upload_state is None:
         raise HTTPException(status_code=404, detail="動画アップロードが見つかりません。最初から再試行してください。")
@@ -1473,6 +1483,10 @@ async def complete_match_upload(upload_id: str, background_tasks: BackgroundTask
     }
     jersey_numbers = upload_state["jersey_numbers"]
     del match_uploads[upload_id]
+    completed_match_uploads[upload_id] = job_id
+    # Keep this in-memory retry cache bounded for the free single-instance service.
+    while len(completed_match_uploads) > 256:
+        completed_match_uploads.pop(next(iter(completed_match_uploads)))
     background_tasks.add_task(run_match_job, job_id, temp_path, jersey_numbers)
     return {"ok": True, "job_id": job_id, "status": "queued",
             "status_url": f"/analyze/jobs/{job_id}"}
