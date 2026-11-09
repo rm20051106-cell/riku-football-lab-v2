@@ -72,13 +72,13 @@ class Stage63BlobStorageMemoryTests(unittest.TestCase):
                     request.onerror = () => reject(request.error);
                     tx.onerror = () => reject(tx.error);
                 });
-                db.close();
                 const chunks = await new Promise((resolve, reject) => {
                     const tx = db.transaction('videoChunks', 'readonly');
                     const request = tx.objectStore('videoChunks').getAll();
                     request.onsuccess = () => resolve(request.result.filter((_, i) => i < 8));
                     request.onerror = () => reject(request.error);
                 });
+                db.close();
                 const restored = await getClipVideo('stage63-native-blob');
 
                 // Older records used an ArrayBuffer named blobData. They must remain readable.
