@@ -1145,14 +1145,14 @@ async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
   catch(error){
    resumeStorageAvailable=false;
    console.warn('アップロード再開情報を端末に保存できません',error);
-   resultElement.textContent='端末への再開情報保存ができません。アップロードは継続しますが、再読み込み後の再開はできません。';
+   resultElement.textContent='端末への再開情報保存ができません。アップロードは継続しますが、再読み込み後は動画の再選択が必要で、自動再開はできません。';
    return false;
   }
  };
  try{saved=await getPendingMatchUpload()}catch(error){
   resumeStorageAvailable=false;
   console.warn('保存済みアップロード再開情報を読み込めません',error);
-  resultElement.textContent='端末の保存領域を利用できないため、今回の動画はこの画面を開いている間だけアップロードできます。再読み込み後の再開はできません。';
+  resultElement.textContent='端末の保存領域を利用できないため、今回の動画はこの画面を開いている間だけアップロードできます。再読み込み後は動画の再選択が必要で、自動再開はできません。';
  }
  if(saved&&saved.sourceKey===identity.sourceKey&&saved.size===identity.size&&saved.jerseyNumbers===identity.jerseyNumbers){
   resultElement.textContent='前回のアップロード状態を確認しています…';
@@ -1198,7 +1198,7 @@ async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
   if(!succeeded)throw lastError||Error('動画の分割送信に失敗しました');
   nextChunk=Math.max(nextChunk,i+1);
   await persistResume({...identity,uploadId:session.upload_id,chunkSize,totalChunks:total,nextChunk,createdAt:saved?.createdAt||Date.now()});
-  resultElement.textContent='動画を分割送信中：'+Math.round((nextChunk/total)*100)+'%（'+nextChunk+'/'+total+'）'+(resumeStorageAvailable?'｜中断しても同じ動画を再選択すると続きから再開できます。':'｜端末保存不可。アップロードは継続中ですが、再読み込み後の再開はできません。');
+  resultElement.textContent='動画を分割送信中：'+Math.round((nextChunk/total)*100)+'%（'+nextChunk+'/'+total+'）'+(resumeStorageAvailable?'｜中断しても同じ動画を再選択すると続きから再開できます。':'｜端末保存不可。アップロードは継続中ですが、再読み込み後は動画の再選択が必要で、自動再開はできません。');
  }
  resultElement.textContent='全データの送信が完了。サーバー側で受信内容を確認しています…';
  let completed=null,body=null,lastCompleteError=null;
@@ -4363,7 +4363,7 @@ videoFile.addEventListener('change',()=>{
   const capacity=await preflightMatchVideoStorage(f);
   if(!capacity.ok){
    window.__matchVideoLocalSaveAvailable=false;
-   const warning='端末の空き容量が不足する可能性があるため動画を仮保存しません。今選択中の動画のアップロードは続けられますが、再読み込み後の再開はできません。';
+   const warning='端末の空き容量が不足する可能性があるため動画を仮保存しません。今選択中の動画のアップロードは続けられますが、再読み込み後は動画の再選択が必要で、自動再開はできません。';
    videoMeta.textContent+='・'+warning;
    return null;
   }
@@ -4375,7 +4375,7 @@ videoFile.addEventListener('change',()=>{
   }catch(error){
    console.error('動画の仮保存に失敗',error);
    window.__matchVideoLocalSaveAvailable=false;
-   videoMeta.textContent+='・端末保存不可（'+(error.name==='QuotaExceededError'?'容量不足':'保存エラー')+'）。選択中の動画のアップロードは続けられますが、再読み込み後の再開はできません。';
+   videoMeta.textContent+='・端末保存不可（'+(error.name==='QuotaExceededError'?'容量不足':'保存エラー')+'）。選択中の動画のアップロードは続けられますが、再読み込み後は動画の再選択が必要で、自動再開はできません。';
    return null;
   }
  })();
