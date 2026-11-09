@@ -3,15 +3,18 @@ import io
 import os
 import sys
 import unittest
-
-sys.path.insert(0, "/app")
-import main
-from fastapi import BackgroundTasks
-from starlette.datastructures import UploadFile
+from pathlib import Path
 
 
 class MatchUploadBackendIntegrationTest(unittest.TestCase):
     def test_15_and_20_minute_chunk_receipt_and_completion(self):
+        if not Path("/app/main.py").exists():
+            self.skipTest("Run this integration test inside the backend Docker image")
+        sys.path.insert(0, "/app")
+        import main
+        from fastapi import BackgroundTasks
+        from starlette.datastructures import UploadFile
+
         async def exercise(duration_seconds, total_size, filename):
             init = await main.create_match_upload({
                 "filename": filename,
