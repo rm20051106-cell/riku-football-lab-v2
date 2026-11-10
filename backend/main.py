@@ -1700,6 +1700,7 @@ async def complete_match_upload(upload_id: str, background_tasks: BackgroundTask
         raise HTTPException(status_code=409, detail="動画の受信が完了していません。未送信の分割データがあります。")
     job_id = uuid.uuid4().hex
     temp_path = upload_state["path"]
+    jersey_numbers = upload_state["jersey_numbers"]
     match_jobs[job_id] = {
         "job_id": job_id, "status": "queued", "progress": 0,
         "stage": "解析待ち", "filename": upload_state["filename"],
@@ -1707,7 +1708,6 @@ async def complete_match_upload(upload_id: str, background_tasks: BackgroundTask
         "source_path": temp_path, "upload_id": upload_id, "jersey_numbers": jersey_numbers,
     }
     persist_match_job_state(job_id, match_jobs[job_id])
-    jersey_numbers = upload_state["jersey_numbers"]
     del match_uploads[upload_id]
     match_upload_manifest_path(upload_id).unlink(missing_ok=True)
     completed_match_uploads[upload_id] = job_id
