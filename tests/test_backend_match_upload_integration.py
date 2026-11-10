@@ -15,7 +15,7 @@ class MatchUploadBackendIntegrationTest(unittest.TestCase):
         import main
         from fastapi import HTTPException
         before = set(main.match_uploads)
-        with unittest.mock.patch.object(
+        with mock.patch.object(
             main, "match_upload_disk_capacity",
             return_value={"ok": False, "free_bytes": 10, "required_bytes": 100},
         ):
@@ -37,7 +37,7 @@ class MatchUploadBackendIntegrationTest(unittest.TestCase):
         from starlette.datastructures import UploadFile
 
         async def run():
-            with unittest.mock.patch.object(
+            with mock.patch.object(
                 main, "match_upload_disk_capacity",
                 return_value={"ok": True, "free_bytes": 10**9, "required_bytes": 1},
             ):
@@ -47,7 +47,7 @@ class MatchUploadBackendIntegrationTest(unittest.TestCase):
             upload_id = created["upload_id"]
             state = main.match_uploads[upload_id]
             try:
-                with unittest.mock.patch.object(
+                with mock.patch.object(
                     main, "match_upload_disk_capacity",
                     return_value={"ok": False, "free_bytes": 10, "required_bytes": 100},
                 ):
