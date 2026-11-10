@@ -58,7 +58,7 @@ class MatchUploadBackendIntegrationTest(unittest.TestCase):
                 self.assertEqual(state["received_bytes"], 0)
                 self.assertEqual(os.path.getsize(state["path"]), 0)
             finally:
-                await main.cancel_match_upload(upload_id)
+                main.cancel_match_upload(upload_id)
 
         asyncio.run(run())
 
@@ -118,8 +118,6 @@ class MatchUploadBackendIntegrationTest(unittest.TestCase):
             self.assertEqual(len(tasks.tasks), 1)
             self.assertEqual(main.match_jobs[completed["job_id"]]["size_bytes"], total_size)
 
-            # Simulate a lost completion response: retrying must return the
-            # same job and must not enqueue a second background analysis.
             retry_tasks = BackgroundTasks()
             retried = await main.complete_match_upload(upload_id, retry_tasks)
             self.assertEqual(retried["job_id"], completed["job_id"])
