@@ -3,10 +3,65 @@ import io
 import os
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
 class MatchUploadBackendIntegrationTest(unittest.TestCase):
+    def test_upload_creation_rejects_insufficient_disk_space_before_creating_session(self):
+        if not Path("/app/main.py").exists():
+            self.skipTest("Run this integration test inside the backend Docker image")
+        sys.path.insert(0, "/app")
+        import main
+        from fastapi import HTTPException
+        before = set(main.match_uploads)
+        with unittest.mock.patch.object(
+            main, "match_upload_disk_capacity",
+            return_value={"ok": False, "free_bytes": 10, "required_bytes": 100},
+        ):
+            with self.assertRaises(HTTPException) as raised:
+                asyncio.run(main.create_match_upload({
+                    "filename": "too-large-for-free-space.mp4",
+                    "size_bytes": 1024,
+                    "duration_seconds": 60,
+                }))
+        self.assertEqual(raised.exception.status_code, 507)
+        self.assertEqual(set(main.match_uploads), before)
+
+    def test_chunk_preflight_stops_without_writing_when_space_runs_out(self):
+        if not Path("/app/main.py").exists():
+            self.skipTest("Run this integration test inside the backend Docker image")
+        sys.path.insert(0, "/app")
+        import main
+        from fastapi import HTTPException
+        from starlette.datastructures import UploadFile
+
+        async def run():
+            with unittest.mock.patch.object(
+                main, "match_upload_disk_capacity",
+                return_value={"ok": True, "free_bytes": 10**9, "required_bytes": 1},
+            ):
+                created = await main.create_match_upload({
+                    "filename": "capacity-check.mp4", "size_bytes": 1024, "duration_seconds": 60,
+                })
+            upload_id = created["upload_id"]
+            state = main.match_uploads[upload_id]
+            try:
+                with unittest.mock.patch.object(
+                    main, "match_upload_disk_capacity",
+                    return_value={"ok": False, "free_bytes": 10, "required_bytes": 100},
+                ):
+                    upload = UploadFile(filename="chunk.bin", file=io.BytesIO(b"x" * 1024))
+                    with self.assertRaises(HTTPException) as raised:
+                        await main.upload_match_chunk(upload_id, 0, upload)
+                self.assertEqual(raised.exception.status_code, 507)
+                self.assertEqual(state["received_bytes"], 0)
+                self.assertEqual(os.path.getsize(state["path"]), 0)
+            finally:
+                await main.cancel_match_upload(upload_id)
+
+        asyncio.run(run())
+
     def test_15_and_20_minute_chunk_receipt_and_completion(self):
         if not Path("/app/main.py").exists():
             self.skipTest("Run this integration test inside the backend Docker image")
