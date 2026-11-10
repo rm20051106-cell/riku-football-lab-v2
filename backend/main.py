@@ -1469,12 +1469,28 @@ def _set_match_job(job_id: str, **updates):
         persist_match_job_state(job_id, job)
 
 
+def can_decode_video_first_frame(path: str) -> bool:
+    """Check whether OpenCV can decode the source before paying for a full FFmpeg re-encode."""
+    capture = cv2.VideoCapture(path)
+    try:
+        if not capture.isOpened():
+            return False
+        ok, frame = capture.read()
+        return bool(ok and frame is not None)
+    except Exception:
+        return False
+    finally:
+        capture.release()
+
+
 def run_match_job(job_id: str, source_path: str, jersey_numbers: str):
     converted_path = None
+    analysis_path = source_path
     job_started_at = time.monotonic()
     conversion_seconds = 0.0
     pose_scan_seconds = 0.0
     candidate_seconds = 0.0
+    conversion_skipped = False
     try:
         source_size = os.path.getsize(source_path)
         capacity = match_upload_disk_capacity(source_size + MATCH_UPLOAD_DISK_RESERVE_BYTES)
@@ -1484,31 +1500,36 @@ def run_match_job(job_id: str, source_path: str, jersey_numbers: str):
                 f" 空き容量: {capacity['free_bytes']} bytes / "
                 f"必要目安: {capacity['required_bytes']} bytes"
             )
-        _set_match_job(job_id, status="processing", progress=5, stage="動画を解析用MP4に変換中")
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as converted:
-            converted_path = converted.name
-        command = [
-            "ffmpeg", "-y", "-i", source_path, "-map", "0:v:0", "-an",
-            "-vf", "scale='min(960,iw)':-2", "-c:v", "libx264",
-            "-preset", "ultrafast", "-crf", "30", "-pix_fmt", "yuv420p",
-            "-movflags", "+faststart", converted_path,
-        ]
-        conversion_started_at = time.monotonic()
-        converted_result = subprocess.run(command, capture_output=True, text=True, timeout=900)
-        conversion_seconds = time.monotonic() - conversion_started_at
-        if converted_result.returncode != 0:
-            raise RuntimeError("動画を解析用MP4に変換できませんでした。")
+        if can_decode_video_first_frame(source_path):
+            conversion_skipped = True
+            _set_match_job(job_id, status="processing", progress=15, stage="元動画を直接スキャン中（変換を省略）")
+        else:
+            _set_match_job(job_id, status="processing", progress=5, stage="動画を解析用MP4に変換中")
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as converted:
+                converted_path = converted.name
+            command = [
+                "ffmpeg", "-y", "-i", source_path, "-map", "0:v:0", "-an",
+                "-vf", "scale='min(960,iw)':-2", "-c:v", "libx264",
+                "-preset", "ultrafast", "-crf", "30", "-pix_fmt", "yuv420p",
+                "-movflags", "+faststart", converted_path,
+            ]
+            conversion_started_at = time.monotonic()
+            converted_result = subprocess.run(command, capture_output=True, text=True, timeout=900)
+            conversion_seconds = time.monotonic() - conversion_started_at
+            if converted_result.returncode != 0:
+                raise RuntimeError("動画を解析用MP4に変換できませんでした。")
+            analysis_path = converted_path
         _set_match_job(job_id, progress=15, stage="動画全体をスキャン中")
         def progress(value):
             _set_match_job(job_id, progress=value, stage="動画全体をスキャン中")
         pose_scan_started_at = time.monotonic()
-        result = process_video(converted_path, "match", progress_callback=progress, jersey_numbers=jersey_numbers)
+        result = process_video(analysis_path, "match", progress_callback=progress, jersey_numbers=jersey_numbers)
         pose_scan_seconds = time.monotonic() - pose_scan_started_at
         summary = result.get("summary", {})
         candidates = build_movement_candidates(summary)
         _set_match_job(job_id, progress=92, stage="動きの候補場面を短い動画に切り出し中")
         candidate_started_at = time.monotonic()
-        clips = extract_candidate_clips(converted_path, job_id, candidates, float(summary.get("duration_seconds", 0)))
+        clips = extract_candidate_clips(analysis_path, job_id, candidates, float(summary.get("duration_seconds", 0)))
         for event in candidates:
             matching_clip = next((x for x in clips if x["id"] == event["id"]), None)
             event["clip_available"] = matching_clip is not None
@@ -1533,7 +1554,9 @@ def run_match_job(job_id: str, source_path: str, jersey_numbers: str):
             "sampled_frames": sampled_frames,
             "candidate_count": len(candidates),
             "clip_count": len(clips),
-            "note": "次の速度改善でボトルネックを特定するための処理時間計測です。"
+            "conversion_skipped": conversion_skipped,
+            "input_decode_preflight": "first_frame_decodable" if conversion_skipped else "fallback_conversion",
+            "note": "入力動画を直接デコードできる場合は全編再エンコードを省略します。各工程の秒数で速度改善の効果を比較します。"
         }
         summary["candidate_events"] = candidates
         summary["candidate_event_count"] = len(candidates)
