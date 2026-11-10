@@ -130,6 +130,9 @@ def restore_match_upload_sessions():
     restored = {}
     now = time.time()
     for manifest_path in MATCH_UPLOAD_SESSION_DIR.glob("*.json"):
+        # Job manifests share this directory but are restored by restore_match_jobs().
+        if manifest_path.name.endswith(".job.json"):
+            continue
         upload_id = manifest_path.stem
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
