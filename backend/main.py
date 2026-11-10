@@ -1571,21 +1571,22 @@ async def upload_match_chunk(upload_id: str, chunk_index: int, file: UploadFile 
     if len(data) > MATCH_UPLOAD_CHUNK_BYTES:
         raise HTTPException(status_code=413, detail="分割データが上限を超えています。")
     try:
-        remaining_after_chunk = max(
-            0, int(upload_state["total_size"]) - int(upload_state["received_bytes"]) - len(data)
-        )
-        processing_headroom = int(upload_state["total_size"]) + MATCH_UPLOAD_DISK_RESERVE_BYTES
-        capacity = match_upload_disk_capacity(remaining_after_chunk + processing_headroom)
-        if not capacity["ok"]:
-            raise HTTPException(
-                status_code=507,
-                detail={
-                    "code": "insufficient_server_disk_space",
-                    "message": "サーバーの空き容量が不足したため、次の分割データを保存できません。容量を確保してから再試行してください。",
-                    "free_bytes": capacity["free_bytes"],
-                    "required_bytes": capacity["required_bytes"],
-                },
+        if chunk_index == int(upload_state.get("next_chunk", 0)):
+            remaining_after_chunk = max(
+                0, int(upload_state["total_size"]) - int(upload_state["received_bytes"]) - len(data)
             )
+            processing_headroom = int(upload_state["total_size"]) + MATCH_UPLOAD_DISK_RESERVE_BYTES
+            capacity = match_upload_disk_capacity(remaining_after_chunk + processing_headroom)
+            if not capacity["ok"]:
+                raise HTTPException(
+                    status_code=507,
+                    detail={
+                        "code": "insufficient_server_disk_space",
+                        "message": "サーバーの空き容量が不足したため、次の分割データを保存できません。容量を確保してから再試行してください。",
+                        "free_bytes": capacity["free_bytes"],
+                        "required_bytes": capacity["required_bytes"],
+                    },
+                )
         added = append_match_upload_chunk(upload_state, chunk_index, data)
         if added:
             persist_match_upload_state(upload_id, upload_state)
