@@ -6,6 +6,7 @@ import hashlib
 import subprocess
 import shutil
 import tempfile
+import threading
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -54,6 +55,55 @@ def match_upload_disk_capacity(required_bytes):
 
 def match_upload_manifest_path(upload_id):
     return MATCH_UPLOAD_SESSION_DIR / (str(upload_id) + ".json")
+
+
+def match_job_manifest_path(job_id):
+    return MATCH_UPLOAD_SESSION_DIR / (str(job_id) + ".job.json")
+
+
+def persist_match_job_state(job_id, job):
+    """Atomically persist job progress and result for same-filesystem process restarts."""
+    if not isinstance(job, dict):
+        return
+    target = match_job_manifest_path(job_id)
+    temporary = target.with_suffix(".job.json.tmp")
+    payload = dict(job)
+    payload["updated_at"] = time.time()
+    try:
+        temporary.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        os.replace(temporary, target)
+    except (OSError, TypeError, ValueError):
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def restore_match_jobs():
+    restored = {}
+    for manifest_path in MATCH_UPLOAD_SESSION_DIR.glob("*.job.json"):
+        job_id = manifest_path.name[:-len(".job.json")]
+        try:
+            job = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if not isinstance(job, dict) or job.get("job_id") != job_id:
+                raise ValueError("invalid job manifest")
+            status = str(job.get("status") or "")
+            source_path = job.get("source_path")
+            if status in {"queued", "processing"}:
+                if source_path and os.path.isfile(source_path):
+                    job.update(status="queued", progress=0, stage="再起動後の解析再開待ち")
+                else:
+                    job.update(
+                        status="failed", progress=100, stage="解析を再開できません",
+                        error="サーバー再起動後に元動画の一時ファイルが見つかりません。動画を再送信してください。",
+                    )
+            restored[job_id] = job
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            try:
+                manifest_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+    return restored
 
 
 def persist_match_upload_state(upload_id, upload_state):
@@ -111,7 +161,12 @@ def restore_match_upload_sessions():
 
 
 match_uploads = restore_match_upload_sessions()
-completed_match_uploads = {}
+match_jobs = restore_match_jobs()
+completed_match_uploads = {
+    str(job["upload_id"]): job_id
+    for job_id, job in match_jobs.items()
+    if job.get("upload_id")
+}
 highlight_collections = {}
 
 app = FastAPI(title=APP_NAME, version="0.1.0")
@@ -1408,6 +1463,7 @@ def _set_match_job(job_id: str, **updates):
     job = match_jobs.get(job_id)
     if job is not None:
         job.update(updates)
+        persist_match_job_state(job_id, job)
 
 
 def run_match_job(job_id: str, source_path: str, jersey_numbers: str):
@@ -1469,7 +1525,34 @@ def run_match_job(job_id: str, source_path: str, jersey_numbers: str):
                     os.remove(path)
                 except OSError:
                     pass
+        if job_id in match_jobs:
+            persist_match_job_state(job_id, match_jobs[job_id])
 
+
+def resume_interrupted_match_jobs():
+    """Resume queued jobs only when their original temporary video still exists."""
+    for job_id, job in list(match_jobs.items()):
+        if job.get("status") != "queued":
+            continue
+        source_path = job.get("source_path")
+        if not source_path or not os.path.isfile(source_path):
+            job.update(
+                status="failed", progress=100, stage="解析を再開できません",
+                error="サーバー再起動後に元動画の一時ファイルが見つかりません。動画を再送信してください。",
+            )
+            persist_match_job_state(job_id, job)
+            continue
+        worker = threading.Thread(
+            target=run_match_job,
+            args=(job_id, source_path, str(job.get("jersey_numbers") or "10,74")),
+            daemon=True,
+        )
+        worker.start()
+
+
+@app.on_event("startup")
+def resume_saved_match_jobs_on_startup():
+    resume_interrupted_match_jobs()
 
 
 def append_match_upload_chunk(upload_state, chunk_index, data):
@@ -1621,7 +1704,9 @@ async def complete_match_upload(upload_id: str, background_tasks: BackgroundTask
         "job_id": job_id, "status": "queued", "progress": 0,
         "stage": "解析待ち", "filename": upload_state["filename"],
         "size_bytes": upload_state["total_size"], "result": None, "error": None,
+        "source_path": temp_path, "upload_id": upload_id, "jersey_numbers": jersey_numbers,
     }
+    persist_match_job_state(job_id, match_jobs[job_id])
     jersey_numbers = upload_state["jersey_numbers"]
     del match_uploads[upload_id]
     match_upload_manifest_path(upload_id).unlink(missing_ok=True)
@@ -1675,7 +1760,9 @@ async def create_match_job(background_tasks: BackgroundTasks, file: UploadFile =
             "job_id": job_id, "status": "queued", "progress": 0,
             "stage": "解析待ち", "filename": file.filename,
             "size_bytes": size, "result": None, "error": None,
+            "source_path": temp_path, "jersey_numbers": jersey_numbers,
         }
+        persist_match_job_state(job_id, match_jobs[job_id])
         background_tasks.add_task(run_match_job, job_id, temp_path, jersey_numbers)
         return {"ok": True, "job_id": job_id, "status": "queued",
                 "status_url": f"/analyze/jobs/{job_id}"}
