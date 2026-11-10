@@ -8,6 +8,32 @@ from pathlib import Path
 
 
 class MatchUploadBackendIntegrationTest(unittest.TestCase):
+    def test_decode_preflight_accepts_readable_video_and_releases_capture(self):
+        if not Path("/app/main.py").exists():
+            self.skipTest("Run this integration test inside the backend Docker image")
+        sys.path.insert(0, "/app")
+        import main
+
+        readable = mock.Mock()
+        readable.isOpened.return_value = True
+        readable.read.return_value = (True, object())
+        with mock.patch.object(main.cv2, "VideoCapture", return_value=readable):
+            self.assertTrue(main.can_decode_video_first_frame("readable.mp4"))
+        readable.release.assert_called_once()
+
+        unreadable = mock.Mock()
+        unreadable.isOpened.return_value = True
+        unreadable.read.return_value = (False, None)
+        with mock.patch.object(main.cv2, "VideoCapture", return_value=unreadable):
+            self.assertFalse(main.can_decode_video_first_frame("unreadable.mov"))
+        unreadable.release.assert_called_once()
+
+        unopened = mock.Mock()
+        unopened.isOpened.return_value = False
+        with mock.patch.object(main.cv2, "VideoCapture", return_value=unopened):
+            self.assertFalse(main.can_decode_video_first_frame("unsupported.mov"))
+        unopened.release.assert_called_once()
+
     def test_upload_creation_rejects_insufficient_disk_space_before_creating_session(self):
         if not Path("/app/main.py").exists():
             self.skipTest("Run this integration test inside the backend Docker image")
