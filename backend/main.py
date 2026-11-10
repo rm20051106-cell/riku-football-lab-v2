@@ -4,6 +4,7 @@ import json
 import time
 import hashlib
 import subprocess
+import shutil
 import tempfile
 import uuid
 from pathlib import Path
@@ -35,6 +36,20 @@ MATCH_UPLOAD_SESSION_DIR = Path(os.getenv(
     str(Path(tempfile.gettempdir()) / "riku-match-upload-sessions"),
 ))
 MATCH_UPLOAD_SESSION_DIR.mkdir(parents=True, exist_ok=True)
+MATCH_UPLOAD_DISK_RESERVE_BYTES = int(os.getenv("MATCH_UPLOAD_DISK_RESERVE_MB", "256")) * 1024 * 1024
+
+
+def match_upload_disk_capacity(required_bytes):
+    """Check free space on the same filesystem used for upload and FFmpeg temp files."""
+    try:
+        free_bytes = shutil.disk_usage(MATCH_UPLOAD_SESSION_DIR).free
+    except OSError:
+        return {"ok": False, "free_bytes": None, "required_bytes": required_bytes}
+    return {
+        "ok": free_bytes >= required_bytes,
+        "free_bytes": free_bytes,
+        "required_bytes": required_bytes,
+    }
 
 
 def match_upload_manifest_path(upload_id):
@@ -1398,6 +1413,14 @@ def _set_match_job(job_id: str, **updates):
 def run_match_job(job_id: str, source_path: str, jersey_numbers: str):
     converted_path = None
     try:
+        source_size = os.path.getsize(source_path)
+        capacity = match_upload_disk_capacity(source_size + MATCH_UPLOAD_DISK_RESERVE_BYTES)
+        if not capacity["ok"]:
+            raise RuntimeError(
+                "解析用の一時ファイルを作る空き容量がありません。"
+                f" 空き容量: {capacity['free_bytes']} bytes / "
+                f"必要目安: {capacity['required_bytes']} bytes"
+            )
         _set_match_job(job_id, status="processing", progress=5, stage="動画を解析用MP4に変換中")
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as converted:
             converted_path = converted.name
@@ -1486,6 +1509,20 @@ async def create_match_upload(payload: dict = Body(...)):
         raise HTTPException(status_code=400, detail="動画ファイルのサイズを確認できません。")
     if total_size > MAX_MATCH_UPLOAD_MB * 1024 * 1024:
         raise HTTPException(status_code=413, detail=f"試合動画は{MAX_MATCH_UPLOAD_MB}MB以内にしてください。")
+    # Keep room for the uploaded source, a similarly-sized FFmpeg output, and a safety reserve.
+    required_disk_bytes = (total_size * 2) + MATCH_UPLOAD_DISK_RESERVE_BYTES
+    capacity = match_upload_disk_capacity(required_disk_bytes)
+    if not capacity["ok"]:
+        raise HTTPException(
+            status_code=507,
+            detail={
+                "code": "insufficient_server_disk_space",
+                "message": "サーバーの空き容量が不足しているため、動画のアップロードを開始できません。",
+                "free_bytes": capacity["free_bytes"],
+                "required_bytes": capacity["required_bytes"],
+                "reserve_mb": MATCH_UPLOAD_DISK_RESERVE_BYTES // (1024 * 1024),
+            },
+        )
     try:
         duration_value = float(duration) if duration is not None else None
     except (TypeError, ValueError, OverflowError):
@@ -1534,6 +1571,21 @@ async def upload_match_chunk(upload_id: str, chunk_index: int, file: UploadFile 
     if len(data) > MATCH_UPLOAD_CHUNK_BYTES:
         raise HTTPException(status_code=413, detail="分割データが上限を超えています。")
     try:
+        remaining_after_chunk = max(
+            0, int(upload_state["total_size"]) - int(upload_state["received_bytes"]) - len(data)
+        )
+        processing_headroom = int(upload_state["total_size"]) + MATCH_UPLOAD_DISK_RESERVE_BYTES
+        capacity = match_upload_disk_capacity(remaining_after_chunk + processing_headroom)
+        if not capacity["ok"]:
+            raise HTTPException(
+                status_code=507,
+                detail={
+                    "code": "insufficient_server_disk_space",
+                    "message": "サーバーの空き容量が不足したため、次の分割データを保存できません。容量を確保してから再試行してください。",
+                    "free_bytes": capacity["free_bytes"],
+                    "required_bytes": capacity["required_bytes"],
+                },
+            )
         added = append_match_upload_chunk(upload_state, chunk_index, data)
         if added:
             persist_match_upload_state(upload_id, upload_state)
