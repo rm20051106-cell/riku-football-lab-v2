@@ -1471,6 +1471,10 @@ def _set_match_job(job_id: str, **updates):
 
 def run_match_job(job_id: str, source_path: str, jersey_numbers: str):
     converted_path = None
+    job_started_at = time.monotonic()
+    conversion_seconds = 0.0
+    pose_scan_seconds = 0.0
+    candidate_seconds = 0.0
     try:
         source_size = os.path.getsize(source_path)
         capacity = match_upload_disk_capacity(source_size + MATCH_UPLOAD_DISK_RESERVE_BYTES)
@@ -1489,16 +1493,21 @@ def run_match_job(job_id: str, source_path: str, jersey_numbers: str):
             "-preset", "ultrafast", "-crf", "30", "-pix_fmt", "yuv420p",
             "-movflags", "+faststart", converted_path,
         ]
+        conversion_started_at = time.monotonic()
         converted_result = subprocess.run(command, capture_output=True, text=True, timeout=900)
+        conversion_seconds = time.monotonic() - conversion_started_at
         if converted_result.returncode != 0:
             raise RuntimeError("動画を解析用MP4に変換できませんでした。")
         _set_match_job(job_id, progress=15, stage="動画全体をスキャン中")
         def progress(value):
             _set_match_job(job_id, progress=value, stage="動画全体をスキャン中")
+        pose_scan_started_at = time.monotonic()
         result = process_video(converted_path, "match", progress_callback=progress, jersey_numbers=jersey_numbers)
+        pose_scan_seconds = time.monotonic() - pose_scan_started_at
         summary = result.get("summary", {})
         candidates = build_movement_candidates(summary)
         _set_match_job(job_id, progress=92, stage="動きの候補場面を短い動画に切り出し中")
+        candidate_started_at = time.monotonic()
         clips = extract_candidate_clips(converted_path, job_id, candidates, float(summary.get("duration_seconds", 0)))
         for event in candidates:
             matching_clip = next((x for x in clips if x["id"] == event["id"]), None)
@@ -1512,6 +1521,20 @@ def run_match_job(job_id: str, source_path: str, jersey_numbers: str):
                     )
                 except Exception as clip_exc:
                     event["dense_analysis"] = {"error": str(clip_exc), "note": "候補動画の詳細再解析は完了しませんでした。"}
+        candidate_seconds = time.monotonic() - candidate_started_at
+        total_processing_seconds = time.monotonic() - job_started_at
+        sampled_frames = int(summary.get("video_scan_quality", {}).get("sampled_video_frames") or 0)
+        summary["performance_metrics"] = {
+            "conversion_seconds": round(conversion_seconds, 2),
+            "pose_scan_seconds": round(pose_scan_seconds, 2),
+            "candidate_and_clip_seconds": round(candidate_seconds, 2),
+            "total_processing_seconds": round(total_processing_seconds, 2),
+            "pose_samples_per_second": round(sampled_frames / pose_scan_seconds, 2) if pose_scan_seconds > 0 else None,
+            "sampled_frames": sampled_frames,
+            "candidate_count": len(candidates),
+            "clip_count": len(clips),
+            "note": "次の速度改善でボトルネックを特定するための処理時間計測です。"
+        }
         summary["candidate_events"] = candidates
         summary["candidate_event_count"] = len(candidates)
         summary["candidate_event_note"] = "足先の画像上の動きから抽出した確認候補です。候補動画は約1.5fpsで追加解析しますが、サッカーのプレーや陸玖本人の動きと確認されたものではありません。"
