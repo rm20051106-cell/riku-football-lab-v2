@@ -755,6 +755,7 @@ def build_match_sampling_plan(fps, total_frames, target_rate=None, max_samples=N
 
 
 def iter_sampled_video_frames(capture, frame_interval, max_samples, timing_stats=None):
+    import time  # Keep this function self-contained for extracted iterator tests.
     """Yield evenly spaced frames and optionally measure decode versus skipped-frame costs."""
     interval = max(1, int(frame_interval)) if not isinstance(frame_interval, bool) else 1
     limit = max(0, int(max_samples)) if not isinstance(max_samples, bool) else 0
