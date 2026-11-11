@@ -1476,7 +1476,13 @@ def can_decode_video_first_frame(path: str) -> bool:
         if not capture.isOpened():
             return False
         ok, frame = capture.read()
-        return bool(ok and frame is not None)
+        if not ok or frame is None:
+            return False
+        height, width = frame.shape[:2]
+        # Keep the existing 960px normalization for larger inputs. Decoding
+        # full-resolution phone footage repeatedly can cost more than the
+        # one-time conversion we are trying to avoid.
+        return width <= 960
     except Exception:
         return False
     finally:
