@@ -16,10 +16,17 @@ class MatchUploadBackendIntegrationTest(unittest.TestCase):
 
         readable = mock.Mock()
         readable.isOpened.return_value = True
-        readable.read.return_value = (True, object())
+        readable.read.return_value = (True, mock.Mock(shape=(540, 960, 3)))
         with mock.patch.object(main.cv2, "VideoCapture", return_value=readable):
             self.assertTrue(main.can_decode_video_first_frame("readable.mp4"))
         readable.release.assert_called_once()
+
+        high_resolution = mock.Mock()
+        high_resolution.isOpened.return_value = True
+        high_resolution.read.return_value = (True, mock.Mock(shape=(1080, 1920, 3)))
+        with mock.patch.object(main.cv2, "VideoCapture", return_value=high_resolution):
+            self.assertFalse(main.can_decode_video_first_frame("high-resolution.mp4"))
+        high_resolution.release.assert_called_once()
 
         unreadable = mock.Mock()
         unreadable.isOpened.return_value = True
