@@ -1535,12 +1535,16 @@ def run_match_job(job_id: str, source_path: str, jersey_numbers: str):
         candidates = build_movement_candidates(summary)
         _set_match_job(job_id, progress=92, stage="動きの候補場面を短い動画に切り出し中")
         candidate_started_at = time.monotonic()
+        clip_extraction_started_at = time.monotonic()
         clips = extract_candidate_clips(analysis_path, job_id, candidates, float(summary.get("duration_seconds", 0)))
+        clip_extraction_seconds = time.monotonic() - clip_extraction_started_at
+        dense_analysis_seconds = 0.0
         for event in candidates:
             matching_clip = next((x for x in clips if x["id"] == event["id"]), None)
             event["clip_available"] = matching_clip is not None
             if matching_clip:
                 event["clip_url"] = f"/analyze/jobs/{job_id}/clips/{event['id']}"
+                dense_started_at = time.monotonic()
                 try:
                     event["dense_analysis"] = analyze_candidate_clip_dense(
                         matching_clip["path"], jersey_numbers=jersey_numbers,
@@ -1548,6 +1552,10 @@ def run_match_job(job_id: str, source_path: str, jersey_numbers: str):
                     )
                 except Exception as clip_exc:
                     event["dense_analysis"] = {"error": str(clip_exc), "note": "候補動画の詳細再解析は完了しませんでした。"}
+                finally:
+                    elapsed = time.monotonic() - dense_started_at
+                    matching_clip["dense_analysis_seconds"] = round(elapsed, 2)
+                    dense_analysis_seconds += elapsed
         candidate_seconds = time.monotonic() - candidate_started_at
         total_processing_seconds = time.monotonic() - job_started_at
         sampled_frames = int(summary.get("video_scan_quality", {}).get("sampled_video_frames") or 0)
@@ -1555,6 +1563,8 @@ def run_match_job(job_id: str, source_path: str, jersey_numbers: str):
             "conversion_seconds": round(conversion_seconds, 2),
             "pose_scan_seconds": round(pose_scan_seconds, 2),
             "candidate_and_clip_seconds": round(candidate_seconds, 2),
+            "clip_extraction_seconds": round(clip_extraction_seconds, 2),
+            "dense_candidate_analysis_seconds": round(dense_analysis_seconds, 2),
             "total_processing_seconds": round(total_processing_seconds, 2),
             "pose_samples_per_second": round(sampled_frames / pose_scan_seconds, 2) if pose_scan_seconds > 0 else None,
             "sampled_frames": sampled_frames,
