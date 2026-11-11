@@ -754,20 +754,29 @@ def build_match_sampling_plan(fps, total_frames, target_rate=None, max_samples=N
     }
 
 
-def iter_sampled_video_frames(capture, frame_interval, max_samples):
-    """Yield evenly spaced decoded frames while reading the source sequentially to EOF."""
+def iter_sampled_video_frames(capture, frame_interval, max_samples, timing_stats=None):
+    """Yield evenly spaced frames and optionally measure decode versus skipped-frame costs."""
     interval = max(1, int(frame_interval)) if not isinstance(frame_interval, bool) else 1
     limit = max(0, int(max_samples)) if not isinstance(max_samples, bool) else 0
     sample_index = 0
     while sample_index < limit:
+        started = time.monotonic()
         ok, frame = capture.read()
+        if timing_stats is not None:
+            timing_stats["sampled_frame_decode_seconds"] += time.monotonic() - started
         if not ok:
             return
         frame_index = sample_index * interval
         sample_index += 1
         yield frame_index, frame
         for _ in range(interval - 1):
-            if not capture.grab():
+            started = time.monotonic()
+            grabbed = capture.grab()
+            if timing_stats is not None:
+                timing_stats["skipped_frame_grab_seconds"] += time.monotonic() - started
+                if grabbed:
+                    timing_stats["skipped_frames_decoded"] += 1
+            if not grabbed:
                 return
 
 
@@ -800,6 +809,15 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
     sample_limit = sampling_plan["sample_limit"]
     targets = [x.strip() for x in (jersey_numbers or "10,74").replace("；", ",").split(",") if x.strip()]
     frames, people_per_frame, jersey_counts = [], [], {}
+    scan_timing = {
+        "sampled_frame_decode_seconds": 0.0,
+        "skipped_frame_grab_seconds": 0.0,
+        "skipped_frames_decoded": 0,
+        "resize_seconds": 0.0,
+        "image_preparation_seconds": 0.0,
+        "pose_inference_seconds": 0.0,
+        "landmark_postprocess_seconds": 0.0,
+    }
     sample_index = 0
     options = mp_vision.PoseLandmarkerOptions(
         base_options=mp_python.BaseOptions(model_asset_path=POSE_LANDMARKER_MODEL),
@@ -811,15 +829,22 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
     )
     try:
         with mp_vision.PoseLandmarker.create_from_options(options) as landmarker:
-            for current_frame_idx, frame in iter_sampled_video_frames(cap, interval, sample_limit):
+            for current_frame_idx, frame in iter_sampled_video_frames(cap, interval, sample_limit, scan_timing):
                 sample_index += 1
+                stage_started = time.monotonic()
                 h, w = frame.shape[:2]
                 if w > 960:
                     frame = cv2.resize(frame, (960, max(1, int(round(h * 960 / w)))), interpolation=cv2.INTER_AREA)
+                scan_timing["resize_seconds"] += time.monotonic() - stage_started
+                stage_started = time.monotonic()
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+                scan_timing["image_preparation_seconds"] += time.monotonic() - stage_started
                 timestamp_ms = int((current_frame_idx / fps if fps > 0 else sample_index * actual_interval) * 1000)
+                stage_started = time.monotonic()
                 detected = landmarker.detect_for_video(mp_image, timestamp_ms)
+                scan_timing["pose_inference_seconds"] += time.monotonic() - stage_started
+                stage_started = time.monotonic()
                 people = []
                 person_metrics = []
                 time_seconds = round(current_frame_idx / fps, 2) if fps > 0 else round(sample_index * actual_interval, 2)
@@ -851,6 +876,7 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
                     metrics["detected_people_in_frame"] = detected_count
                     person_metrics.append(metrics)
                 people_per_frame.append(detected_count)
+                scan_timing["landmark_postprocess_seconds"] += time.monotonic() - stage_started
                 if person_metrics:
                     primary = max(person_metrics, key=lambda x: x["visible_landmarks"])
                     primary["detected_people"] = people
@@ -895,6 +921,10 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
         "average_left_right_hip_angle_deg": round(float(np.mean(hips)), 1) if hips else None,
         "sampling_interval_seconds": round(actual_interval, 3),
         "sampling_rate_fps": round(1 / actual_interval, 2) if actual_interval > 0 else None,
+        "scan_timing": {
+            key: round(value, 2) if key != "skipped_frames_decoded" else value
+            for key, value in scan_timing.items()
+        },
         "frames": frames,
         "person_track_summary": track_summary,
         "person_detection_summary": {
@@ -1568,6 +1598,7 @@ def run_match_job(job_id: str, source_path: str, jersey_numbers: str):
             "total_processing_seconds": round(total_processing_seconds, 2),
             "pose_samples_per_second": round(sampled_frames / pose_scan_seconds, 2) if pose_scan_seconds > 0 else None,
             "sampled_frames": sampled_frames,
+            "pose_scan_breakdown": summary.get("scan_timing", {}),
             "candidate_count": len(candidates),
             "clip_count": len(clips),
             "conversion_skipped": conversion_skipped,
