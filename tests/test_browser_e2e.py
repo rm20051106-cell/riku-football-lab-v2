@@ -1320,12 +1320,12 @@ class RikuBrowserE2ETests(unittest.TestCase):
 
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
 
 
     def test_match_scan_history_restores_performance_and_candidate_clip_metadata(self):
         page = self.page
+        page.route("**/analyze/jobs/job-test/clips/**", lambda route: route.fulfill(status=200, content_type="video/webm", body=self.video_path.read_bytes()))
+        page.evaluate("""() => { state.settings.apiBaseUrl = window.location.origin; persist(); }""")
         page.locator('.nav button[data-view="video"]').click()
         page.locator("#videoTitle").fill("実動画履歴復元メタデータ")
         page.locator("#videoFile").set_input_files(str(self.video_path))
@@ -1342,11 +1342,11 @@ if __name__ == "__main__":
                     person_detection_summary: {average_people_per_sample: 1.05, max_people_in_one_frame: 4},
                     person_track_summary: {provisional_tracks: 125},
                     jersey_ocr_summary: {candidate_detection_counts: {}},
-                    candidate_events: [{id: "scene-14", time_seconds: 14, label: "動きの変化", clip_available: true, clip_url: "/analyze/jobs/job-test/clips/scene-14", dense_analysis: {sampled_frames: 15}}]
+                    candidate_events: Array.from({length: 8}, (_, i) => ({id: "scene-" + (i + 1), time_seconds: 14 + i * 60, label: "動きの変化", clip_available: true, clip_url: "/analyze/jobs/job-test/clips/scene-" + (i + 1), dense_analysis: {sampled_frames: 15}}))
                 }
             };
             document.getElementById("matchAiResult").dataset.result = JSON.stringify(result);
-            saveMatchScanResult();
+            return saveMatchScanResult();
         }""")
         saved = page.evaluate("""() => {
             const m = state.matchAnalyses[0];
@@ -1357,7 +1357,8 @@ if __name__ == "__main__":
                 personDetection: m.personDetection,
                 personTrackSummary: m.personTrackSummary,
                 jerseyOcrSummary: m.jerseyOcrSummary,
-                candidate: m.candidateEvents[0]
+                candidateCount: m.candidateEvents.length,
+                candidates: m.candidateEvents.map(ev => ({id: ev.id, clipUrl: ev.clipUrl, clipAvailable: ev.clipAvailable}))
             };
         }""")
         self.assertEqual(saved["samplingRate"], 2)
@@ -1366,13 +1367,30 @@ if __name__ == "__main__":
         self.assertEqual(saved["performanceMetrics"]["total_processing_seconds"], 871.84)
         self.assertEqual(saved["personDetection"]["max_people_in_one_frame"], 4)
         self.assertEqual(saved["personTrackSummary"]["provisional_tracks"], 125)
-        self.assertEqual(saved["candidate"]["clipUrl"], "/analyze/jobs/job-test/clips/scene-14")
-        self.assertTrue(saved["candidate"]["clipAvailable"])
+        self.assertEqual(saved["candidateCount"], 8)
+        self.assertEqual([x["clipUrl"] for x in saved["candidates"]], [f"/analyze/jobs/job-test/clips/scene-{i}" for i in range(1, 9)])
+        self.assertTrue(all(x["clipAvailable"] for x in saved["candidates"]))
         page.reload()
         restored = page.evaluate("""() => {
             const m = state.matchAnalyses[0];
-            return {metrics: m.performanceMetrics, scan: m.scanTiming, candidate: m.candidateEvents[0]};
+            return {metrics: m.performanceMetrics, scan: m.scanTiming, candidates: m.candidateEvents.map(ev => ({id: ev.id, clipUrl: ev.clipUrl, clipAvailable: ev.clipAvailable}))};
         }""")
         self.assertEqual(restored["metrics"]["total_processing_seconds"], 871.84)
         self.assertEqual(restored["scan"]["pose_inference_p95_seconds"], 0.4)
-        self.assertEqual(restored["candidate"]["clipUrl"], "/analyze/jobs/job-test/clips/scene-14")
+        self.assertEqual(len(restored["candidates"]), 8)
+        self.assertEqual([x["clipUrl"] for x in restored["candidates"]], [f"/analyze/jobs/job-test/clips/scene-{i}" for i in range(1, 9)])
+        self.assertTrue(all(x["clipAvailable"] for x in restored["candidates"]))
+        saved_id = page.evaluate("state.matchAnalyses[0].id")
+        page.locator(f'button[onclick="toggleMatchScanDetail({saved_id})"]').click()
+        clips = page.locator(f"#match-scan-detail-{saved_id} video")
+        self.assertEqual(clips.count(), 8)
+        for index in range(8):
+            clip = clips.nth(index)
+            clip.evaluate("(el) => { el.preload = 'auto'; el.load(); }")
+            selector = f"#match-scan-detail-{saved_id} video:nth-of-type({index + 1})"
+            page.wait_for_function("selector => { const el = document.querySelector(selector); return !!el && el.readyState >= 1; }", arg=selector, timeout=10000)
+            clip.evaluate("(el) => el.play()")
+            page.wait_for_function("selector => { const el = document.querySelector(selector); return !!el && el.currentTime > 0.05; }", arg=selector, timeout=10000)
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
