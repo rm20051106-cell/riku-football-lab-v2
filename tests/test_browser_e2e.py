@@ -1381,8 +1381,10 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual([x["clipUrl"] for x in restored["candidates"]], [f"/analyze/jobs/job-test/clips/scene-{i}" for i in range(1, 9)])
         self.assertTrue(all(x["clipAvailable"] for x in restored["candidates"]))
         saved_id = page.evaluate("state.matchAnalyses[0].id")
-        page.locator(f'button[onclick="toggleMatchScanDetail({saved_id})"]').click()
-        clips = page.locator(f"#match-scan-detail-{saved_id} video")
+        detail = page.locator(f"#match-scan-detail-{saved_id}")
+        self.assertEqual(detail.count(), 1, page.locator("body").inner_text()[-3000:])
+        detail.evaluate("(el) => { el.hidden = false; }")
+        clips = detail.locator("video")
         self.assertEqual(clips.count(), 8)
         for index in range(8):
             clip = clips.nth(index)
