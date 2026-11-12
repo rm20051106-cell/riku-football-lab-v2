@@ -1493,7 +1493,84 @@ def analyze_candidate_clip_dense(clip_path, jersey_numbers=None, sample_rate=1.5
     }
 
 
-def _set_match_job(job_id: str, **updates):
+
+
+def summarize_candidate_from_full_scan(summary, center_time, clip_duration=8.0):
+    """Reuse the full-match pose detections for a candidate instead of running MediaPipe twice."""
+    if not isinstance(summary, dict):
+        return {"sampled_frames": 0, "track_summary": {"provisional_track_count": 0, "tracks": []}}
+    try:
+        center = float(center_time)
+        video_duration = float(summary.get("duration_seconds") or 0)
+        requested_length = max(0.5, float(clip_duration))
+    except (TypeError, ValueError, OverflowError):
+        return {"sampled_frames": 0, "track_summary": {"provisional_track_count": 0, "tracks": []}}
+    if not np.isfinite(center) or not np.isfinite(video_duration) or not np.isfinite(requested_length):
+        return {"sampled_frames": 0, "track_summary": {"provisional_track_count": 0, "tracks": []}}
+    start = max(0.0, center - 4.0)
+    length = min(requested_length, max(0.5, video_duration - start)) if video_duration > 0 else requested_length
+    end = start + length
+    try:
+        interval = float(summary.get("sampling_interval_seconds") or 0.5)
+    except (TypeError, ValueError, OverflowError):
+        interval = 0.5
+    if not np.isfinite(interval) or interval <= 0:
+        interval = 0.5
+
+    candidate_frames = []
+    jersey_counts = {}
+    people_counts = []
+    for source_frame in summary.get("frames", []):
+        if not isinstance(source_frame, dict):
+            continue
+        try:
+            timestamp = float(source_frame.get("time_seconds"))
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if not np.isfinite(timestamp) or timestamp < start - 1e-6 or timestamp > end + 1e-6:
+            continue
+        source_people = source_frame.get("detected_people")
+        if not isinstance(source_people, list):
+            source_people = []
+            if source_frame.get("bbox"):
+                source_people.append({
+                    "person_index": source_frame.get("person_index", 0),
+                    "bbox": source_frame.get("bbox"),
+                    "jersey_ocr_candidates": source_frame.get("jersey_ocr_candidates", []),
+                })
+        people = [dict(person) for person in source_people
+                  if isinstance(person, dict) and isinstance(person.get("bbox"), (list, tuple))
+                  and len(person.get("bbox")) == 4]
+        for person in people:
+            for item in person.get("jersey_ocr_candidates", []):
+                if isinstance(item, dict) and item.get("number") is not None:
+                    number = str(item["number"])
+                    jersey_counts[number] = jersey_counts.get(number, 0) + 1
+        if people:
+            candidate_frames.append({
+                "time_seconds": round(timestamp, 2),
+                "detected_people": people,
+                "detected_people_in_frame": len(people),
+            })
+            people_counts.append(len(people))
+
+    actual_rate = 1.0 / interval
+    tracks = associate_person_tracks(
+        candidate_frames,
+        max_gap_seconds=max(1.5, interval * 2.2),
+    )
+    return {
+        "sampled_frames": len(candidate_frames),
+        "sampling_rate_fps": round(actual_rate, 2),
+        "duration_seconds": round(length, 2),
+        "max_people_in_one_frame": max(people_counts) if people_counts else 0,
+        "jersey_candidate_detection_counts": jersey_counts,
+        "track_summary": tracks,
+        "reused_full_scan": True,
+        "note": "全編スキャンで取得済みの約2fps姿勢データを再利用しています。候補場面のためのMediaPipe再推定は行っていません。トラックID・背番号候補は本人確認ではありません。",
+    }
+
+\ndef _set_match_job(job_id: str, **updates):
     job = match_jobs.get(job_id)
     if job is not None:
         job.update(updates)
@@ -1575,16 +1652,15 @@ def run_match_job(job_id: str, source_path: str, jersey_numbers: str):
             event["clip_available"] = matching_clip is not None
             if matching_clip:
                 event["clip_url"] = f"/analyze/jobs/{job_id}/clips/{event['id']}"
-                dense_started_at = time.monotonic()
+                summary_started_at = time.monotonic()
                 try:
-                    event["dense_analysis"] = analyze_candidate_clip_dense(
-                        matching_clip["path"], jersey_numbers=jersey_numbers,
-                        sample_rate=1.5, max_samples=16
+                    event["dense_analysis"] = summarize_candidate_from_full_scan(
+                        summary, event["time_seconds"], clip_duration=8.0
                     )
                 except Exception as clip_exc:
-                    event["dense_analysis"] = {"error": str(clip_exc), "note": "候補動画の詳細再解析は完了しませんでした。"}
+                    event["dense_analysis"] = {"error": str(clip_exc), "note": "全編スキャンデータから候補トラックを整理できませんでした。"}
                 finally:
-                    elapsed = time.monotonic() - dense_started_at
+                    elapsed = time.monotonic() - summary_started_at
                     matching_clip["dense_analysis_seconds"] = round(elapsed, 2)
                     dense_analysis_seconds += elapsed
         candidate_seconds = time.monotonic() - candidate_started_at
@@ -1595,7 +1671,7 @@ def run_match_job(job_id: str, source_path: str, jersey_numbers: str):
             "pose_scan_seconds": round(pose_scan_seconds, 2),
             "candidate_and_clip_seconds": round(candidate_seconds, 2),
             "clip_extraction_seconds": round(clip_extraction_seconds, 2),
-            "dense_candidate_analysis_seconds": round(dense_analysis_seconds, 2),
+            "candidate_track_summary_seconds": round(dense_analysis_seconds, 2),\n            "dense_candidate_analysis_seconds": round(dense_analysis_seconds, 2),
             "total_processing_seconds": round(total_processing_seconds, 2),
             "pose_samples_per_second": round(sampled_frames / pose_scan_seconds, 2) if pose_scan_seconds > 0 else None,
             "sampled_frames": sampled_frames,
@@ -1604,7 +1680,7 @@ def run_match_job(job_id: str, source_path: str, jersey_numbers: str):
             "clip_count": len(clips),
             "conversion_skipped": conversion_skipped,
             "input_decode_preflight": "first_frame_decodable" if conversion_skipped else "fallback_conversion",
-            "note": "入力動画を直接デコードできる場合は全編再エンコードを省略します。各工程の秒数で速度改善の効果を比較します。"
+            "note": "入力動画の直接デコードで再エンコードを省略し、候補場面の追跡整理には全編スキャン済みの姿勢データを再利用します。"
         }
         summary["candidate_events"] = candidates
         summary["candidate_event_count"] = len(candidates)
