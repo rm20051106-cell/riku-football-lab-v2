@@ -10,11 +10,20 @@ NODES = [
     next(n for n in TREE.body if isinstance(n, ast.FunctionDef) and n.name == name)
     for name in ("associate_person_tracks", "summarize_candidate_from_full_scan")
 ]
-# These functions only need array construction and a Euclidean norm. Keep this
-# focused unit test independent of NumPy so the lightweight CI runner can run it.
-euclidean_norm = lambda values: math.sqrt(sum(value * value for value in values))
+
+
+class TestVector(tuple):
+    def __sub__(self, other):
+        return TestVector(a - b for a, b in zip(self, other))
+
+
+def euclidean_norm(values):
+    return math.sqrt(sum(value * value for value in values))
+
+
+# Minimal NumPy-compatible vector operations used by these two functions.
 test_np = types.SimpleNamespace(
-    array=lambda values: values,
+    array=lambda values: TestVector(values),
     norm=euclidean_norm,
     linalg=types.SimpleNamespace(norm=euclidean_norm),
     isfinite=math.isfinite,
