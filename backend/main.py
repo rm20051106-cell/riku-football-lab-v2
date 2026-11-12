@@ -819,6 +819,7 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
         "pose_inference_seconds": 0.0,
         "landmark_postprocess_seconds": 0.0,
     }
+    pose_inference_latencies = []
     sample_index = 0
     options = mp_vision.PoseLandmarkerOptions(
         base_options=mp_python.BaseOptions(model_asset_path=POSE_LANDMARKER_MODEL),
@@ -844,7 +845,9 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
                 timestamp_ms = int((current_frame_idx / fps if fps > 0 else sample_index * actual_interval) * 1000)
                 stage_started = time.monotonic()
                 detected = landmarker.detect_for_video(mp_image, timestamp_ms)
-                scan_timing["pose_inference_seconds"] += time.monotonic() - stage_started
+                inference_elapsed = time.monotonic() - stage_started
+                scan_timing["pose_inference_seconds"] += inference_elapsed
+                pose_inference_latencies.append(inference_elapsed)
                 stage_started = time.monotonic()
                 people = []
                 person_metrics = []
@@ -909,6 +912,11 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
                 current[side + "_foot_image_motion_per_sec"] = image_motion_per_width_per_second(a, b, dt, frame.shape[1], frame.shape[0])
             else:
                 current[side + "_foot_image_motion_per_sec"] = None
+    if pose_inference_latencies:
+        scan_timing["pose_inference_sample_count"] = len(pose_inference_latencies)
+        scan_timing["pose_inference_p50_seconds"] = round(float(np.percentile(pose_inference_latencies, 50)), 4)
+        scan_timing["pose_inference_p95_seconds"] = round(float(np.percentile(pose_inference_latencies, 95)), 4)
+        scan_timing["pose_inference_max_seconds"] = round(float(max(pose_inference_latencies)), 4)
     track_summary = associate_person_tracks(frames, max_gap_seconds=max(9.0, actual_interval * 2.1))
     knees = [x[k] for x in frames for k in ("left_knee_angle_deg", "right_knee_angle_deg") if x.get(k) is not None]
     hips = [x[k] for x in frames for k in ("left_hip_angle_deg", "right_hip_angle_deg") if x.get(k) is not None]
