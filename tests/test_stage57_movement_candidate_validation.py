@@ -1,11 +1,12 @@
 import ast
+import bisect
 import pathlib
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 TREE = ast.parse((ROOT / "backend" / "main.py").read_text(encoding="utf-8"))
 NODE = next(n for n in TREE.body if isinstance(n, ast.FunctionDef) and n.name == "build_movement_candidates")
-NS = {}
+NS = {"bisect": bisect}
 exec(compile(ast.Module(body=[NODE], type_ignores=[]), "<stage57-movement>", "exec"), NS)
 build = NS["build_movement_candidates"]
 
