@@ -1570,7 +1570,8 @@ def summarize_candidate_from_full_scan(summary, center_time, clip_duration=8.0):
         "note": "全編スキャンで取得済みの約2fps姿勢データを再利用しています。候補場面のためのMediaPipe再推定は行っていません。トラックID・背番号候補は本人確認ではありません。",
     }
 
-\ndef _set_match_job(job_id: str, **updates):
+
+def _set_match_job(job_id: str, **updates):
     job = match_jobs.get(job_id)
     if job is not None:
         job.update(updates)
