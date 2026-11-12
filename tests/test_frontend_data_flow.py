@@ -525,3 +525,16 @@ class FrontendDataFlowContracts(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_match_analysis_displays_all_detailed_postprocess_timings(self):
+        for metric in (
+            "pose_geometry_seconds",
+            "jersey_ocr_seconds",
+            "jersey_ocr_calls",
+            "person_track_association_seconds",
+            "foot_motion_feature_seconds",
+            "pose_person_count",
+        ):
+            self.assertIn("scanPerf." + metric, HTML)
+        self.assertIn("追加計測（秒）", HTML)
+
