@@ -1064,6 +1064,21 @@ class RikuBrowserE2ETests(unittest.TestCase):
                                                    "person_detection_summary": {},
                                                    "person_track_summary": {},
                                                    "jersey_ocr_summary": {},
+                                                   "performance_metrics": {
+                                                       "conversion_seconds": 0.12,
+                                                       "pose_scan_seconds": 12.34,
+                                                       "candidate_and_clip_seconds": 2.5,
+                                                       "total_processing_seconds": 15.0,
+                                                       "sampled_frames": 1829,
+                                                       "pose_scan_breakdown": {
+                                                           "pose_inference_seconds": 434.85,
+                                                           "landmark_postprocess_seconds": 83.02
+                                                       },
+                                                       "pose_inference_sample_count": 1829,
+                                                       "pose_inference_p50_seconds": 0.2314,
+                                                       "pose_inference_p95_seconds": 0.4123,
+                                                       "pose_inference_max_seconds": 0.6891
+                                                   }
                                                }}}))
             else:
                 route.fulfill(status=404, headers=headers, content_type="application/json",
@@ -1086,6 +1101,9 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 timeout=30000,
             )
             self.assertTrue(page.locator("#video").evaluate("(el) => el.classList.contains('active')"))
+            displayed = page.locator("#matchAiResult").inner_text()
+            for expected in ("測定 1829件", "中央値 0.2314秒", "95%点 0.4123秒", "最大 0.6891秒"):
+                self.assertIn(expected, displayed, displayed)
             page.evaluate("() => { document.getElementById('videoFile').value = ''; }")
         self.assertEqual(counters["created"], 2)
         self.assertEqual(counters["completed"], 2)
