@@ -1584,7 +1584,7 @@ def summarize_candidate_from_full_scan(summary, center_time, clip_duration=8.0,
     candidate_frames = []
     jersey_counts = {}
     people_counts = []
-    filter_started = time.perf_counter()
+    filter_started = time.perf_counter() if timing_metrics is not None else None
     all_frames = summary.get("frames", [])
     if (isinstance(frame_index, dict)
             and isinstance(frame_index.get("timestamps"), list)
@@ -1630,14 +1630,14 @@ def summarize_candidate_from_full_scan(summary, center_time, clip_duration=8.0,
             })
             people_counts.append(len(people))
 
-    frame_filter_seconds = time.perf_counter() - filter_started
-    association_started = time.perf_counter()
+    frame_filter_seconds = time.perf_counter() - filter_started if filter_started is not None else 0.0
+    association_started = time.perf_counter() if timing_metrics is not None else None
     actual_rate = 1.0 / interval
     tracks = associate_person_tracks(
         candidate_frames,
         max_gap_seconds=max(1.5, interval * 2.2),
     )
-    association_seconds = time.perf_counter() - association_started
+    association_seconds = time.perf_counter() - association_started if association_started is not None else 0.0
     if timing_metrics is not None:
         timing_metrics["frame_filter_seconds"] = round(frame_filter_seconds, 4)
         timing_metrics["track_association_seconds"] = round(association_seconds, 4)
