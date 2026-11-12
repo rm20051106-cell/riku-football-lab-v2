@@ -1371,6 +1371,8 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual([x["clipUrl"] for x in saved["candidates"]], [f"/analyze/jobs/job-test/clips/scene-{i}" for i in range(1, 9)])
         self.assertTrue(all(x["clipAvailable"] for x in saved["candidates"]))
         page.reload()
+        page.evaluate("renderAll()")
+        page.locator('.nav button[data-view="video"]').click()
         restored = page.evaluate("""() => {
             const m = state.matchAnalyses[0];
             return {metrics: m.performanceMetrics, scan: m.scanTiming, candidates: m.candidateEvents.map(ev => ({id: ev.id, clipUrl: ev.clipUrl, clipAvailable: ev.clipAvailable}))};
