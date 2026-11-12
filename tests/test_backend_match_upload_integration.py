@@ -42,6 +42,26 @@ class MatchUploadBackendIntegrationTest(unittest.TestCase):
             self.assertFalse(main.can_decode_video_first_frame("unsupported.mov"))
         unopened.release.assert_called_once()
 
+    def test_upload_creation_rejects_files_over_500mb_before_disk_preflight(self):
+        if not Path("/app/main.py").exists():
+            self.skipTest("Run this integration test inside the backend Docker image")
+        sys.path.insert(0, "/app")
+        import main
+        from fastapi import HTTPException
+
+        before = set(main.match_uploads)
+        with mock.patch.object(main, "match_upload_disk_capacity") as capacity:
+            with self.assertRaises(HTTPException) as raised:
+                asyncio.run(main.create_match_upload({
+                    "filename": "oversized-15min.mp4",
+                    "size_bytes": 500 * 1024 * 1024 + 1,
+                    "duration_seconds": 900,
+                }))
+        self.assertEqual(raised.exception.status_code, 413)
+        capacity.assert_not_called()
+        self.assertEqual(set(main.match_uploads), before)
+
+
     def test_upload_creation_rejects_insufficient_disk_space_before_creating_session(self):
         if not Path("/app/main.py").exists():
             self.skipTest("Run this integration test inside the backend Docker image")
