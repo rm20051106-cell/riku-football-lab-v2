@@ -113,7 +113,7 @@ class MatchUploadBackendIntegrationTest(unittest.TestCase):
             self.assertTrue(init.get("upload_id"))
             upload_id = init["upload_id"]
             chunk_size = init["chunk_size"]
-            self.assertEqual(chunk_size, 6 * 1024 * 1024)
+            self.assertEqual(chunk_size, 12 * 1024 * 1024)
             self.assertEqual(init["total_chunks"], (total_size + chunk_size - 1) // chunk_size)
 
             offset = 0
