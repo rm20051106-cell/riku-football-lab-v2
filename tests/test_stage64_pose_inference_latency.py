@@ -11,7 +11,7 @@ SW = (ROOT / "sw.js").read_text(encoding="utf-8")
 class Stage64PoseInferenceLatencyTests(unittest.TestCase):
     def test_backend_records_per_sample_latency_percentiles(self):
         tree = ast.parse(BACKEND)
-        source = ast.get_source_segment(BACKEND, tree)
+        source = BACKEND
         for key in (
             "pose_inference_sample_count",
             "pose_inference_p50_seconds",
