@@ -50,6 +50,9 @@ class Stage64PoseInferenceLatencyTests(unittest.TestCase):
         self.assertIn("測定 ", HTML)
         self.assertIn("中央値 ", HTML)
         self.assertIn("95%点 ", HTML)
+        self.assertIn("const j=status.result||{},sm=j.summary||{};", HTML)
+        self.assertIn("const perf=sm.performance_metrics||null;", HTML)
+        self.assertIn("const scanPerf=perf?.pose_scan_breakdown||sm.scan_timing||{};", HTML)
 
     def test_service_worker_cache_is_bumped_to_refresh_stale_app_shell(self):
         self.assertIn('riku-football-lab-shell-v5', SW)
