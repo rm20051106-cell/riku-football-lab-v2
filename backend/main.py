@@ -577,6 +577,11 @@ def associate_person_tracks(frames, max_gap_seconds=9.0):
     """
     tracks = []
     next_track_id = 1
+    # For chronological scans, avoid revisiting tracks that have irreversibly
+    # exceeded max_gap_seconds. Keep original track-index order for stable ties.
+    active_track_indices = []
+    last_frame_time = None
+    monotonic_timestamps = True
 
     def iou(a, b):
         if not a or not b:
@@ -599,13 +604,26 @@ def associate_person_tracks(frames, max_gap_seconds=9.0):
     for frame in frames:
         now = float(frame.get("time_seconds", 0))
         people = frame.get("detected_people", [])
+        if last_frame_time is not None and now < last_frame_time:
+            # Preserve the original all-track scan for unusual non-chronological input.
+            monotonic_timestamps = False
+        last_frame_time = now
+        if monotonic_timestamps:
+            active_track_indices = [
+                index for index in active_track_indices
+                if now - tracks[index]["last_time"] <= max_gap_seconds
+            ]
+            candidate_track_indices = active_track_indices
+        else:
+            candidate_track_indices = range(len(tracks))
         pairs = []
         for person_index, person in enumerate(people):
             box = person.get("bbox")
             if not box:
                 continue
             pc = center(box)
-            for track_index, track in enumerate(tracks):
+            for track_index in candidate_track_indices:
+                track = tracks[track_index]
                 gap = now - track["last_time"]
                 if gap <= 0 or gap > max_gap_seconds:
                     continue
@@ -659,6 +677,8 @@ def associate_person_tracks(frames, max_gap_seconds=9.0):
                     "confidence_sum": 0.0,
                 }
                 tracks.append(track)
+                if monotonic_timestamps:
+                    active_track_indices.append(len(tracks) - 1)
                 next_track_id += 1
                 confidence, method = 0.35, "新規検出"
             track["last_time"] = now
@@ -827,6 +847,12 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
         "image_preparation_seconds": 0.0,
         "pose_inference_seconds": 0.0,
         "landmark_postprocess_seconds": 0.0,
+        "pose_geometry_seconds": 0.0,
+        "jersey_ocr_seconds": 0.0,
+        "jersey_ocr_calls": 0,
+        "pose_person_count": 0,
+        "person_track_association_seconds": 0.0,
+        "foot_motion_feature_seconds": 0.0,
     }
     pose_inference_latencies = []
     sample_index = 0
@@ -863,8 +889,16 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
                 time_seconds = round(current_frame_idx / fps, 2) if fps > 0 else round(sample_index * actual_interval, 2)
                 detected_count = len(detected.pose_landmarks or [])
                 for person_index, pose_lm in enumerate(detected.pose_landmarks or []):
+                    geometry_started = time.monotonic()
                     metrics = analyze_task_pose(pose_lm, frame.shape[1], frame.shape[0])
-                    ocr = read_jersey_number(frame, metrics["landmarks"], targets) if should_run_match_jersey_ocr(sample_index) else []
+                    scan_timing["pose_geometry_seconds"] += time.monotonic() - geometry_started
+                    ocr = []
+                    if should_run_match_jersey_ocr(sample_index):
+                        ocr_started = time.monotonic()
+                        ocr = read_jersey_number(frame, metrics["landmarks"], targets)
+                        scan_timing["jersey_ocr_seconds"] += time.monotonic() - ocr_started
+                        scan_timing["jersey_ocr_calls"] += 1
+                    scan_timing["pose_person_count"] += 1
                     for item in ocr:
                         jersey_counts[item["number"]] = jersey_counts.get(item["number"], 0) + 1
                     people.append({
@@ -906,6 +940,7 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
         raise HTTPException(status_code=422, detail="複数選手の姿勢を検出できませんでした。人物全身が見える明るい動画で再試行してください。")
     # Motion candidates are calculated only when a single person was detected in adjacent samples;
     # this avoids pretending that different players are one continuous track.
+    motion_started = time.monotonic()
     for i, current in enumerate(frames):
         for side in ("left", "right"):
             key = side + "_foot_index"
@@ -921,12 +956,15 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
                 current[side + "_foot_image_motion_per_sec"] = image_motion_per_width_per_second(a, b, dt, frame.shape[1], frame.shape[0])
             else:
                 current[side + "_foot_image_motion_per_sec"] = None
+    scan_timing["foot_motion_feature_seconds"] = time.monotonic() - motion_started
+    track_started = time.monotonic()
+    track_summary = associate_person_tracks(frames, max_gap_seconds=max(9.0, actual_interval * 2.1))
+    scan_timing["person_track_association_seconds"] = time.monotonic() - track_started
     if pose_inference_latencies:
         scan_timing["pose_inference_sample_count"] = len(pose_inference_latencies)
         scan_timing["pose_inference_p50_seconds"] = round(float(np.percentile(pose_inference_latencies, 50)), 4)
         scan_timing["pose_inference_p95_seconds"] = round(float(np.percentile(pose_inference_latencies, 95)), 4)
         scan_timing["pose_inference_max_seconds"] = round(float(max(pose_inference_latencies)), 4)
-    track_summary = associate_person_tracks(frames, max_gap_seconds=max(9.0, actual_interval * 2.1))
     knees = [x[k] for x in frames for k in ("left_knee_angle_deg", "right_knee_angle_deg") if x.get(k) is not None]
     hips = [x[k] for x in frames for k in ("left_hip_angle_deg", "right_hip_angle_deg") if x.get(k) is not None]
     trunks = [x["trunk_lean_image_angle_deg"] for x in frames if x.get("trunk_lean_image_angle_deg") is not None]
