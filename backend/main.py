@@ -581,7 +581,7 @@ def associate_person_tracks(frames, max_gap_seconds=9.0):
     # exceeded max_gap_seconds. Keep original track-index order for stable ties.
     active_track_indices = []
     last_frame_time = None
-    monotonic_timestamps = True
+    monotonic_timestamps = max_gap_seconds == max_gap_seconds
 
     def iou(a, b):
         if not a or not b:
@@ -604,8 +604,8 @@ def associate_person_tracks(frames, max_gap_seconds=9.0):
     for frame in frames:
         now = float(frame.get("time_seconds", 0))
         people = frame.get("detected_people", [])
-        if last_frame_time is not None and now < last_frame_time:
-            # Preserve the original all-track scan for unusual non-chronological input.
+        if now != now or (last_frame_time is not None and now < last_frame_time):
+            # Preserve the original all-track scan for unusual/non-finite timestamps.
             monotonic_timestamps = False
         last_frame_time = now
         if monotonic_timestamps:
@@ -984,6 +984,10 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
                     "pose_inference_p50_seconds",
                     "pose_inference_p95_seconds",
                     "pose_inference_max_seconds",
+                    "pose_geometry_seconds",
+                    "jersey_ocr_seconds",
+                    "person_track_association_seconds",
+                    "foot_motion_feature_seconds",
                 }
                 else round(value, 2) if isinstance(value, float) else value
             )
