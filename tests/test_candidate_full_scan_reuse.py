@@ -15,6 +15,7 @@ NODES = [
 test_np = types.SimpleNamespace(
     array=lambda values: values,
     norm=lambda values: math.sqrt(sum(value * value for value in values)),
+    isfinite=math.isfinite,
 )
 NS = {"np": test_np}
 exec(compile(ast.Module(body=NODES, type_ignores=[]), "<candidate-reuse>", "exec"), NS)
