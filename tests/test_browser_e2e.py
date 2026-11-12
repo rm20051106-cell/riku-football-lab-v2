@@ -1322,3 +1322,57 @@ class RikuBrowserE2ETests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+    def test_match_scan_history_restores_performance_and_candidate_clip_metadata(self):
+        page = self.page
+        page.locator('.nav button[data-view="video"]').click()
+        page.locator("#videoTitle").fill("実動画履歴復元メタデータ")
+        page.locator("#videoFile").set_input_files(str(self.video_path))
+        page.evaluate("""() => {
+            window.alert = () => {};
+            const result = {
+                requested_jersey_numbers: "10,74",
+                summary: {
+                    duration_seconds: 914.33, sampled_pose_frames: 1829,
+                    sampling_interval_seconds: 0.5, sampling_rate_fps: 2,
+                    video_scan_quality: {status: "usable_for_review", sampled_video_frames: 1829, detected_pose_frames: 1384, detection_rate: 76},
+                    scan_timing: {pose_inference_seconds: 470.73, pose_inference_sample_count: 1829, pose_inference_p50_seconds: 0.21, pose_inference_p95_seconds: 0.4, pose_inference_max_seconds: 0.7},
+                    performance_metrics: {pose_scan_seconds: 802.67, candidate_and_clip_seconds: 68.8, total_processing_seconds: 871.84},
+                    person_detection_summary: {average_people_per_sample: 1.05, max_people_in_one_frame: 4},
+                    person_track_summary: {provisional_tracks: 125},
+                    jersey_ocr_summary: {candidate_detection_counts: {}},
+                    candidate_events: [{id: "scene-14", time_seconds: 14, label: "動きの変化", clip_available: true, clip_url: "/analyze/jobs/job-test/clips/scene-14", dense_analysis: {sampled_frames: 15}}]
+                }
+            };
+            document.getElementById("matchAiResult").dataset.result = JSON.stringify(result);
+            saveMatchScanResult();
+        }""")
+        saved = page.evaluate("""() => {
+            const m = state.matchAnalyses[0];
+            return {
+                samplingRate: m.samplingRate,
+                scanTiming: m.scanTiming,
+                performanceMetrics: m.performanceMetrics,
+                personDetection: m.personDetection,
+                personTrackSummary: m.personTrackSummary,
+                jerseyOcrSummary: m.jerseyOcrSummary,
+                candidate: m.candidateEvents[0]
+            };
+        }""")
+        self.assertEqual(saved["samplingRate"], 2)
+        self.assertEqual(saved["scanTiming"]["pose_inference_sample_count"], 1829)
+        self.assertEqual(saved["scanTiming"]["pose_inference_p95_seconds"], 0.4)
+        self.assertEqual(saved["performanceMetrics"]["total_processing_seconds"], 871.84)
+        self.assertEqual(saved["personDetection"]["max_people_in_one_frame"], 4)
+        self.assertEqual(saved["personTrackSummary"]["provisional_tracks"], 125)
+        self.assertEqual(saved["candidate"]["clipUrl"], "/analyze/jobs/job-test/clips/scene-14")
+        self.assertTrue(saved["candidate"]["clipAvailable"])
+        page.reload()
+        restored = page.evaluate("""() => {
+            const m = state.matchAnalyses[0];
+            return {metrics: m.performanceMetrics, scan: m.scanTiming, candidate: m.candidateEvents[0]};
+        }""")
+        self.assertEqual(restored["metrics"]["total_processing_seconds"], 871.84)
+        self.assertEqual(restored["scan"]["pose_inference_p95_seconds"], 0.4)
+        self.assertEqual(restored["candidate"]["clipUrl"], "/analyze/jobs/job-test/clips/scene-14")
