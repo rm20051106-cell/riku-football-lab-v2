@@ -523,9 +523,6 @@ class FrontendDataFlowContracts(unittest.TestCase):
         self.assertIn("ev.assessmentSource==='manual'", fn)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
     def test_match_analysis_displays_all_detailed_postprocess_timings(self):
         for metric in (
             "pose_geometry_seconds",
@@ -538,3 +535,6 @@ if __name__ == "__main__":
             self.assertIn("scanPerf." + metric, HTML)
         self.assertIn("追加計測（秒）", HTML)
 
+
+if __name__ == "__main__":
+    unittest.main()
