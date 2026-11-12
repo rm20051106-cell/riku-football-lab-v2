@@ -62,6 +62,8 @@ jobs:
         run: docker build -t riku-football-lab-ai ./backend
       - name: Benchmark legacy and cached pose postprocessing in Docker
         run: docker run --rm -e PYTHONPATH=/app -v "$PWD/tests/benchmark_pose_postprocess.py:/tmp/benchmark_pose_postprocess.py:ro" riku-football-lab-ai python /tmp/benchmark_pose_postprocess.py
+      - name: Benchmark legacy and indexed candidate summaries in Docker
+        run: docker run --rm -e PYTHONPATH=/app -v "$PWD/tests/benchmark_candidate_pipeline.py:/tmp/benchmark_candidate_pipeline.py:ro" riku-football-lab-ai python /tmp/benchmark_candidate_pipeline.py
       - name: Compare FFmpeg and OpenCV sampled frames in Docker
         run: docker run --rm -v "$PWD/tests/test_video_decode_benchmark.py:/tmp/test_video_decode_benchmark.py:ro" riku-football-lab-ai python /tmp/test_video_decode_benchmark.py
       - name: Verify 15 and 20 minute backend chunk receipt in Docker
