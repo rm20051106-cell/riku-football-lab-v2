@@ -12,9 +12,11 @@ NODES = [
 ]
 # These functions only need array construction and a Euclidean norm. Keep this
 # focused unit test independent of NumPy so the lightweight CI runner can run it.
+euclidean_norm = lambda values: math.sqrt(sum(value * value for value in values))
 test_np = types.SimpleNamespace(
     array=lambda values: values,
-    norm=lambda values: math.sqrt(sum(value * value for value in values)),
+    norm=euclidean_norm,
+    linalg=types.SimpleNamespace(norm=euclidean_norm),
     isfinite=math.isfinite,
 )
 NS = {"np": test_np}
