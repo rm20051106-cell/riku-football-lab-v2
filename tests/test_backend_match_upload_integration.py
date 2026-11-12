@@ -127,11 +127,22 @@ class MatchUploadBackendIntegrationTest(unittest.TestCase):
                 self.assertEqual(response["total_bytes"], total_size)
                 self.assertFalse(response["duplicate_retry"])
 
+                # Verify the GET status API, not only the PUT response, tracks
+                # acknowledged chunks and reports completion accurately.
+                status = main.get_match_upload_status(upload_id)
+                self.assertEqual(status["next_chunk"], index + 1)
+                self.assertEqual(status["received_bytes"], offset + expected_size)
+                self.assertEqual(status["total_bytes"], total_size)
+                self.assertEqual(status["complete"], offset + expected_size == total_size)
+
                 if index == 0:
                     retry = UploadFile(filename="chunk-0-retry.bin", file=io.BytesIO(payload))
                     duplicate = await main.upload_match_chunk(upload_id, index, retry)
                     self.assertTrue(duplicate["duplicate_retry"])
                     self.assertEqual(duplicate["received_bytes"], expected_size)
+                    retry_status = main.get_match_upload_status(upload_id)
+                    self.assertEqual(retry_status["next_chunk"], 1)
+                    self.assertEqual(retry_status["received_bytes"], expected_size)
 
                 offset += expected_size
 
