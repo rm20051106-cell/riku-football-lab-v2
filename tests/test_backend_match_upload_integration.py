@@ -166,5 +166,59 @@ class MatchUploadBackendIntegrationTest(unittest.TestCase):
         asyncio.run(run())
 
 
+
+    def test_completed_job_api_returns_pose_inference_latency_metrics(self):
+        if not Path("/app/main.py").exists():
+            self.skipTest("Run this integration test inside the backend Docker image")
+        sys.path.insert(0, "/app")
+        import main
+
+        job_id = "latency-api-contract-test"
+        source = Path("/tmp") / (job_id + ".mp4")
+        source.write_bytes(b"synthetic-video-placeholder")
+        original_job = main.match_jobs.get(job_id)
+        main.match_jobs[job_id] = {
+            "job_id": job_id, "status": "queued", "progress": 0,
+            "stage": "解析待ち", "result": None, "clips": [],
+        }
+        scan_timing = {
+            "pose_inference_sample_count": 1829,
+            "pose_inference_p50_seconds": 0.2314,
+            "pose_inference_p95_seconds": 0.4123,
+            "pose_inference_max_seconds": 0.6891,
+            "pose_inference_seconds": 434.85,
+        }
+        result = {
+            "summary": {
+                "scan_timing": scan_timing,
+                "video_scan_quality": {"sampled_video_frames": 1829},
+                "duration_seconds": 900,
+            }
+        }
+        try:
+            with mock.patch.object(main, "match_upload_disk_capacity", return_value={"ok": True}), \
+                 mock.patch.object(main, "can_decode_video_first_frame", return_value=True), \
+                 mock.patch.object(main, "process_video", return_value=result), \
+                 mock.patch.object(main, "build_movement_candidates", return_value=[]), \
+                 mock.patch.object(main, "extract_candidate_clips", return_value=[]), \
+                 mock.patch.object(main, "persist_match_job_state"):
+                main.run_match_job(job_id, str(source), "10,74")
+
+            payload = main.get_match_job(job_id)
+            self.assertEqual(payload["status"], "completed")
+            api_summary = payload["result"]["summary"]
+            metrics = api_summary["performance_metrics"]
+            self.assertEqual(metrics["pose_scan_breakdown"], scan_timing)
+            self.assertEqual(metrics["pose_inference_sample_count"], 1829)
+            self.assertEqual(metrics["pose_inference_p50_seconds"], 0.2314)
+            self.assertEqual(metrics["pose_inference_p95_seconds"], 0.4123)
+            self.assertEqual(metrics["pose_inference_max_seconds"], 0.6891)
+        finally:
+            source.unlink(missing_ok=True)
+            if original_job is None:
+                main.match_jobs.pop(job_id, None)
+            else:
+                main.match_jobs[job_id] = original_job
+
 if __name__ == "__main__":
     unittest.main()
