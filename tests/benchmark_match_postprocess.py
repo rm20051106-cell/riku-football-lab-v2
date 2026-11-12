@@ -1,5 +1,7 @@
 """Exact-output benchmark for chronological active-window track association."""
 import random
+
+import numpy as np
 import statistics
 import time
 
