@@ -42,8 +42,8 @@ class Stage64PoseInferenceLatencyTests(unittest.TestCase):
         self.assertIn("95%点 ", HTML)
 
     def test_service_worker_cache_is_bumped_to_refresh_stale_app_shell(self):
-        self.assertIn('riku-football-lab-shell-v4', SW)
-        self.assertNotIn('riku-football-lab-shell-v3', SW)
+        self.assertIn('riku-football-lab-shell-v5', SW)
+        self.assertNotIn('riku-football-lab-shell-v4', SW)
 
 
 if __name__ == "__main__":
