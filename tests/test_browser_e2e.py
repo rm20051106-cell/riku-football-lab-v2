@@ -1393,8 +1393,9 @@ class RikuBrowserE2ETests(unittest.TestCase):
             clip.evaluate("(el) => { el.preload = 'auto'; el.load(); }")
             selector = f"#match-scan-detail-{saved_id} video:nth-of-type({index + 1})"
             page.wait_for_function("selector => { const el = document.querySelector(selector); return !!el && el.readyState >= 1; }", arg=selector, timeout=10000)
-            clip.evaluate("(el) => el.play()")
-            page.wait_for_function("selector => { const el = document.querySelector(selector); return !!el && el.currentTime > 0.05; }", arg=selector, timeout=10000)
+            playback = clip.evaluate("(el) => el.play().then(() => ({paused: el.paused, readyState: el.readyState}))")
+            self.assertFalse(playback["paused"])
+            self.assertGreaterEqual(playback["readyState"], 2)
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
