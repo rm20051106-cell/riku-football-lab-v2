@@ -47,10 +47,10 @@ jobs:
           import re
           from pathlib import Path
           html = Path("index.html").read_text(encoding="utf-8")
-          scripts = re.findall(r"<script\b[^>]*>([\s\S]*?)</script>", html, re.I)
+          scripts = re.findall(r"<script\\b[^>]*>([\\s\\S]*?)</script>", html, re.I)
           if not scripts:
               raise SystemExit("No inline scripts found")
-          Path("/tmp/riku-inline.js").write_text("\n".join(scripts), encoding="utf-8")
+          Path("/tmp/riku-inline.js").write_text("\\n".join(scripts), encoding="utf-8")
           PY
           node --check /tmp/riku-inline.js
           node --check stage47-video-recovery.js
@@ -60,5 +60,7 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Build backend Docker image
         run: docker build -t riku-football-lab-ai ./backend
+      - name: Compare FFmpeg and OpenCV sampled frames in Docker
+        run: docker run --rm -v "$PWD/tests/test_video_decode_benchmark.py:/tmp/test_video_decode_benchmark.py:ro" riku-football-lab-ai python /tmp/test_video_decode_benchmark.py
       - name: Verify 15 and 20 minute backend chunk receipt in Docker
         run: docker run --rm -v "$PWD/tests/test_backend_match_upload_integration.py:/tmp/test_backend_match_upload_integration.py:ro" riku-football-lab-ai python /tmp/test_backend_match_upload_integration.py
