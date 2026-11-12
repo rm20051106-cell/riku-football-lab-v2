@@ -1,8 +1,8 @@
 import ast
+import math
 import pathlib
+import types
 import unittest
-
-import numpy as np
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 TREE = ast.parse((ROOT / "backend" / "main.py").read_text(encoding="utf-8"))
@@ -10,7 +10,13 @@ NODES = [
     next(n for n in TREE.body if isinstance(n, ast.FunctionDef) and n.name == name)
     for name in ("associate_person_tracks", "summarize_candidate_from_full_scan")
 ]
-NS = {"np": np}
+# These functions only need array construction and a Euclidean norm. Keep this
+# focused unit test independent of NumPy so the lightweight CI runner can run it.
+test_np = types.SimpleNamespace(
+    array=lambda values: values,
+    norm=lambda values: math.sqrt(sum(value * value for value in values)),
+)
+NS = {"np": test_np}
 exec(compile(ast.Module(body=NODES, type_ignores=[]), "<candidate-reuse>", "exec"), NS)
 summarize = NS["summarize_candidate_from_full_scan"]
 
