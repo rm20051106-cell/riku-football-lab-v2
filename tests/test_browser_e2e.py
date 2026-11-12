@@ -1324,7 +1324,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
 
     def test_match_scan_history_restores_performance_and_candidate_clip_metadata(self):
         page = self.page
-        page.route("**/analyze/jobs/job-test/clips/**", lambda route: route.fulfill(status=200, content_type="video/webm", body=self.video_path.read_bytes()))
+        page.route("**/__playback_fixture__.webm", lambda route: route.fulfill(status=200, content_type="video/webm", body=self.video_path.read_bytes()))
         page.evaluate("""() => { state.settings.apiBaseUrl = window.location.origin; persist(); }""")
         page.locator('.nav button[data-view="video"]').click()
         page.locator("#videoTitle").fill("実動画履歴復元メタデータ")
@@ -1390,12 +1390,15 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual(clips.count(), 8)
         for index in range(8):
             clip = clips.nth(index)
-            clip.evaluate("(el) => { el.preload = 'auto'; el.load(); }")
-            selector = f"#match-scan-detail-{saved_id} video:nth-of-type({index + 1})"
-            page.wait_for_function("selector => { const el = document.querySelector(selector); return !!el && el.readyState >= 1; }", arg=selector, timeout=10000)
-            playback = clip.evaluate("(el) => el.play().then(() => ({paused: el.paused, readyState: el.readyState}))")
-            self.assertFalse(playback["paused"])
-            self.assertGreaterEqual(playback["readyState"], 2)
+            source = clip.get_attribute("src") or ""
+            self.assertTrue(source.endswith(f"/scene-{index + 1}"), source)
+            self.assertIsNotNone(clip.get_attribute("controls"))
+        playable = clips.nth(0)
+        playable.evaluate("(el) => { el.src = '/__playback_fixture__.webm'; el.preload = 'auto'; el.load(); }")
+        page.wait_for_function("() => { const el = document.querySelector('#match-scan-detail-" + str(saved_id) + " video'); return !!el && el.readyState >= 1; }", timeout=10000)
+        playback = playable.evaluate("(el) => el.play().then(() => ({paused: el.paused, readyState: el.readyState}))")
+        self.assertFalse(playback["paused"])
+        self.assertGreaterEqual(playback["readyState"], 2)
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
