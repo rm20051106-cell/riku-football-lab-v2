@@ -2,6 +2,7 @@ import asyncio
 import io
 import os
 import sys
+import time
 import unittest
 from unittest import mock
 from pathlib import Path
@@ -209,6 +210,7 @@ class MatchUploadBackendIntegrationTest(unittest.TestCase):
                 return False
 
             def detect_for_video(self, image, timestamp_ms):
+                time.sleep(0.002)
                 return SimpleNamespace(pose_landmarks=[object()])
 
         capture = FakeCapture()
