@@ -1387,11 +1387,19 @@ def build_movement_candidates(summary, max_events=8):
             return []
     max_adjacent_gap = max(interval * 1.75, interval + 0.1)
 
+    # scored is already time-sorted. Bound each neighbor scan to the temporal
+    # window with bisect, then retain the original predicate verbatim so the
+    # support count and all downstream candidate decisions remain unchanged.
+    scored_times = [item["time_seconds"] for item in scored]
+
     def neighbor_support_count(item):
+        item_time = item["time_seconds"]
+        left = max(0, bisect.bisect_left(scored_times, item_time - max_adjacent_gap) - 1)
+        right = min(len(scored), bisect.bisect_right(scored_times, item_time + max_adjacent_gap) + 1)
         return sum(
-            1 for other in scored
+            1 for other in scored[left:right]
             if (other is not item
-                and 0 < abs(item["time_seconds"] - other["time_seconds"]) <= max_adjacent_gap
+                and 0 < abs(item_time - other["time_seconds"]) <= max_adjacent_gap
                 and other["score"] >= item["score"] * 0.35)
         )
 
