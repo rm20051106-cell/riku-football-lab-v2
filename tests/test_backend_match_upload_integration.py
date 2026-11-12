@@ -167,6 +167,79 @@ class MatchUploadBackendIntegrationTest(unittest.TestCase):
 
 
 
+    def test_process_match_video_measures_pose_inference_latency_at_runtime(self):
+        if not Path("/app/main.py").exists():
+            self.skipTest("Run this integration test inside the backend Docker image")
+        sys.path.insert(0, "/app")
+        import main
+        import numpy as np
+        from types import SimpleNamespace
+
+        class FakeCapture:
+            def __init__(self):
+                self.frames = [np.zeros((90, 160, 3), dtype=np.uint8) for _ in range(2)]
+                self.released = False
+
+            def isOpened(self):
+                return True
+
+            def get(self, prop):
+                if prop == main.cv2.CAP_PROP_FPS:
+                    return 2.0
+                if prop == main.cv2.CAP_PROP_FRAME_COUNT:
+                    return 2
+                return 0
+
+            def read(self):
+                if self.frames:
+                    return True, self.frames.pop(0)
+                return False, None
+
+            def grab(self):
+                return False
+
+            def release(self):
+                self.released = True
+
+        class FakeLandmarker:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def detect_for_video(self, image, timestamp_ms):
+                return SimpleNamespace(pose_landmarks=[object()])
+
+        capture = FakeCapture()
+        landmarker = FakeLandmarker()
+        measured_pose = {
+            "visible_landmarks": 33,
+            "bbox": [0.1, 0.1, 0.5, 0.9],
+            "landmarks": {},
+            "left_knee_angle_deg": None,
+            "right_knee_angle_deg": None,
+            "left_hip_angle_deg": None,
+            "right_hip_angle_deg": None,
+            "trunk_lean_image_angle_deg": None,
+            "metric_quality": {},
+        }
+        with mock.patch.object(main.cv2, "VideoCapture", return_value=capture), \\
+             mock.patch.object(main.mp_vision.PoseLandmarker, "create_from_options", return_value=landmarker), \\
+             mock.patch.object(main, "analyze_task_pose", return_value=measured_pose), \\
+             mock.patch.object(main, "read_jersey_number", return_value=[]):
+            result = main.process_match_video("synthetic-runtime-fixture.mp4", jersey_numbers="10,74")
+
+        timing = result["summary"]["scan_timing"]
+        self.assertEqual(timing["pose_inference_sample_count"], 2)
+        self.assertGreater(timing["pose_inference_p50_seconds"], 0)
+        self.assertGreaterEqual(timing["pose_inference_p95_seconds"], timing["pose_inference_p50_seconds"])
+        self.assertLessEqual(timing["pose_inference_p95_seconds"], timing["pose_inference_max_seconds"])
+        self.assertGreater(timing["pose_inference_max_seconds"], 0)
+        self.assertEqual(result["summary"]["sampling_rate_fps"], 2.0)
+        self.assertTrue(capture.released)
+
+
     def test_completed_job_api_returns_pose_inference_latency_metrics(self):
         if not Path("/app/main.py").exists():
             self.skipTest("Run this integration test inside the backend Docker image")
