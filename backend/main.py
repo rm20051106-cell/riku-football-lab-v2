@@ -1,5 +1,6 @@
 import os
 import re
+import bisect
 import json
 import time
 import hashlib
@@ -1424,9 +1425,12 @@ def build_movement_candidates(summary, max_events=8):
         for index, item in enumerate(chosen)
     ]
 
-def extract_candidate_clips(video_path, job_id, candidates, duration):
+def extract_candidate_clips(video_path, job_id, candidates, duration, timing_metrics=None):
     clips = []
+    per_clip_timings = []
+    extraction_started = time.perf_counter()
     for event in candidates:
+        clip_started = time.perf_counter()
         center = float(event['time_seconds'])
         start = max(0.0, center - 4.0)
         length = min(8.0, max(0.5, duration - start))
@@ -1438,12 +1442,23 @@ def extract_candidate_clips(video_path, job_id, candidates, duration):
                    '-map', '0:v:0', '-an', '-c:v', 'libx264', '-preset', 'ultrafast',
                    '-crf', '28', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', clip_path]
         proc = subprocess.run(command, capture_output=True, text=True, timeout=120)
+        clip_size = 0
         if proc.returncode == 0 and os.path.exists(clip_path) and os.path.getsize(clip_path) > 0:
+            clip_size = os.path.getsize(clip_path)
             clips.append({'id': event['id'], 'time_seconds': event['time_seconds'],
                           'label': event['label'], 'reason': event['reason'], 'path': clip_path})
         else:
             if os.path.exists(clip_path):
                 os.remove(clip_path)
+        per_clip_timings.append({
+            "candidate_id": str(event.get("id", "")),
+            "elapsed_seconds": round(time.perf_counter() - clip_started, 4),
+            "output_size_bytes": clip_size,
+            "succeeded": clip_size > 0,
+        })
+    if timing_metrics is not None:
+        timing_metrics["clip_extraction_seconds"] = round(time.perf_counter() - extraction_started, 4)
+        timing_metrics["clip_extraction_per_clip"] = per_clip_timings
     return clips
 
 
@@ -1519,8 +1534,33 @@ def analyze_candidate_clip_dense(clip_path, jersey_numbers=None, sample_rate=1.5
 
 
 
-def summarize_candidate_from_full_scan(summary, center_time, clip_duration=8.0):
-    """Reuse the full-match pose detections for a candidate instead of running MediaPipe twice."""
+def build_candidate_frame_time_index(summary):
+    """Build a reusable time index; return None for non-monotonic input to preserve fallback semantics."""
+    frames = summary.get("frames", []) if isinstance(summary, dict) else []
+    indexed_frames = []
+    previous_time = None
+    for source_frame in frames if isinstance(frames, list) else []:
+        if not isinstance(source_frame, dict):
+            continue
+        try:
+            timestamp = float(source_frame.get("time_seconds"))
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if not np.isfinite(timestamp):
+            continue
+        if previous_time is not None and timestamp < previous_time:
+            return None
+        indexed_frames.append((timestamp, source_frame))
+        previous_time = timestamp
+    return {
+        "timestamps": [item[0] for item in indexed_frames],
+        "frames": [item[1] for item in indexed_frames],
+    }
+
+
+def summarize_candidate_from_full_scan(summary, center_time, clip_duration=8.0,
+                                       frame_index=None, timing_metrics=None):
+    """Reuse indexed full-match pose detections without changing the selected time window."""
     if not isinstance(summary, dict):
         return {"sampled_frames": 0, "track_summary": {"provisional_track_count": 0, "tracks": []}}
     try:
@@ -1544,7 +1584,19 @@ def summarize_candidate_from_full_scan(summary, center_time, clip_duration=8.0):
     candidate_frames = []
     jersey_counts = {}
     people_counts = []
-    for source_frame in summary.get("frames", []):
+    filter_started = time.perf_counter()
+    all_frames = summary.get("frames", [])
+    if (isinstance(frame_index, dict)
+            and isinstance(frame_index.get("timestamps"), list)
+            and isinstance(frame_index.get("frames"), list)
+            and len(frame_index["timestamps"]) == len(frame_index["frames"])):
+        timestamps = frame_index["timestamps"]
+        left = bisect.bisect_left(timestamps, start - 1e-6)
+        right = bisect.bisect_right(timestamps, end + 1e-6)
+        source_frames = frame_index["frames"][left:right]
+    else:
+        source_frames = all_frames
+    for source_frame in source_frames:
         if not isinstance(source_frame, dict):
             continue
         try:
@@ -1578,11 +1630,18 @@ def summarize_candidate_from_full_scan(summary, center_time, clip_duration=8.0):
             })
             people_counts.append(len(people))
 
+    frame_filter_seconds = time.perf_counter() - filter_started
+    association_started = time.perf_counter()
     actual_rate = 1.0 / interval
     tracks = associate_person_tracks(
         candidate_frames,
         max_gap_seconds=max(1.5, interval * 2.2),
     )
+    association_seconds = time.perf_counter() - association_started
+    if timing_metrics is not None:
+        timing_metrics["frame_filter_seconds"] = round(frame_filter_seconds, 4)
+        timing_metrics["track_association_seconds"] = round(association_seconds, 4)
+        timing_metrics["candidate_frames_selected"] = len(candidate_frames)
     return {
         "sampled_frames": len(candidate_frames),
         "sampling_rate_fps": round(actual_rate, 2),
@@ -1665,39 +1724,63 @@ def run_match_job(job_id: str, source_path: str, jersey_numbers: str):
         result = process_video(analysis_path, "match", progress_callback=progress, jersey_numbers=jersey_numbers)
         pose_scan_seconds = time.monotonic() - pose_scan_started_at
         summary = result.get("summary", {})
+        candidate_pipeline_started_at = time.perf_counter()
+        candidate_selection_started_at = time.perf_counter()
         candidates = build_movement_candidates(summary)
+        candidate_selection_seconds = time.perf_counter() - candidate_selection_started_at
+        frame_index_started_at = time.perf_counter()
+        candidate_frame_index = build_candidate_frame_time_index(summary)
+        candidate_frame_index_seconds = time.perf_counter() - frame_index_started_at
         _set_match_job(job_id, progress=92, stage="動きの候補場面を短い動画に切り出し中")
-        candidate_started_at = time.monotonic()
-        clip_extraction_started_at = time.monotonic()
-        clips = extract_candidate_clips(analysis_path, job_id, candidates, float(summary.get("duration_seconds", 0)))
-        clip_extraction_seconds = time.monotonic() - clip_extraction_started_at
+        clip_timing_metrics = {}
+        clips = extract_candidate_clips(
+            analysis_path, job_id, candidates,
+            float(summary.get("duration_seconds", 0)),
+            timing_metrics=clip_timing_metrics,
+        )
+        clip_extraction_seconds = clip_timing_metrics.get("clip_extraction_seconds", 0.0)
         dense_analysis_seconds = 0.0
+        candidate_summary_timings = []
+        clip_by_id = {str(clip["id"]): clip for clip in clips}
         for event in candidates:
-            matching_clip = next((x for x in clips if x["id"] == event["id"]), None)
+            matching_clip = clip_by_id.get(str(event["id"]))
             event["clip_available"] = matching_clip is not None
             if matching_clip:
                 event["clip_url"] = f"/analyze/jobs/{job_id}/clips/{event['id']}"
-                summary_started_at = time.monotonic()
+                summary_started_at = time.perf_counter()
+                summary_timing = {}
                 try:
                     event["dense_analysis"] = summarize_candidate_from_full_scan(
-                        summary, event["time_seconds"], clip_duration=8.0
+                        summary, event["time_seconds"], clip_duration=8.0,
+                        frame_index=candidate_frame_index, timing_metrics=summary_timing,
                     )
                 except Exception as clip_exc:
                     event["dense_analysis"] = {"error": str(clip_exc), "note": "全編スキャンデータから候補トラックを整理できませんでした。"}
                 finally:
-                    elapsed = time.monotonic() - summary_started_at
-                    matching_clip["dense_analysis_seconds"] = round(elapsed, 2)
+                    elapsed = time.perf_counter() - summary_started_at
+                    matching_clip["dense_analysis_seconds"] = round(elapsed, 4)
                     dense_analysis_seconds += elapsed
-        candidate_seconds = time.monotonic() - candidate_started_at
+                    candidate_summary_timings.append({
+                        "candidate_id": str(event["id"]),
+                        "total_seconds": round(elapsed, 4),
+                        **summary_timing,
+                    })
+        candidate_seconds = time.perf_counter() - candidate_pipeline_started_at
         total_processing_seconds = time.monotonic() - job_started_at
         sampled_frames = int(summary.get("video_scan_quality", {}).get("sampled_video_frames") or 0)
         summary["performance_metrics"] = {
             "conversion_seconds": round(conversion_seconds, 2),
             "pose_scan_seconds": round(pose_scan_seconds, 2),
             "candidate_and_clip_seconds": round(candidate_seconds, 2),
-            "clip_extraction_seconds": round(clip_extraction_seconds, 2),
-            "candidate_track_summary_seconds": round(dense_analysis_seconds, 2),
-            "dense_candidate_analysis_seconds": round(dense_analysis_seconds, 2),
+            "candidate_selection_seconds": round(candidate_selection_seconds, 4),
+            "candidate_frame_index_seconds": round(candidate_frame_index_seconds, 4),
+            "clip_extraction_seconds": round(clip_extraction_seconds, 4),
+            "clip_extraction_per_clip": clip_timing_metrics.get("clip_extraction_per_clip", []),
+            "candidate_track_summary_seconds": round(dense_analysis_seconds, 4),
+            "candidate_track_summary_per_candidate": candidate_summary_timings,
+            "candidate_frame_filter_seconds": round(sum(x.get("frame_filter_seconds", 0) for x in candidate_summary_timings), 4),
+            "candidate_track_association_seconds": round(sum(x.get("track_association_seconds", 0) for x in candidate_summary_timings), 4),
+            "dense_candidate_analysis_seconds": round(dense_analysis_seconds, 4),
             "total_processing_seconds": round(total_processing_seconds, 2),
             "pose_samples_per_second": round(sampled_frames / pose_scan_seconds, 2) if pose_scan_seconds > 0 else None,
             "sampled_frames": sampled_frames,
