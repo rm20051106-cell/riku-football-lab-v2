@@ -1,16 +1,18 @@
-import os
 import subprocess
 import tempfile
 import time
 import unittest
 from pathlib import Path
 
-import cv2
-import numpy as np
-
 
 class VideoDecodeSamplingBenchmark(unittest.TestCase):
     def test_ffmpeg_select_matches_opencv_grab_sample_frames(self):
+        try:
+            import cv2
+            import numpy as np
+        except ImportError as exc:
+            self.skipTest(f"OpenCV/NumPy are provided by the backend Docker image: {exc}")
+
         # Short deterministic clip: 30 fps source, sample every 15 frames (2 fps).
         # This is a correctness/performance comparison, not a timing threshold test.
         with tempfile.TemporaryDirectory(prefix="riku-decode-bench-") as directory:
@@ -50,7 +52,7 @@ class VideoDecodeSamplingBenchmark(unittest.TestCase):
             extracted = subprocess.run(
                 [
                     "ffmpeg", "-hide_banner", "-loglevel", "error", "-i", video_path,
-                    "-vf", r"select=not(mod(n\\,15))",
+                    "-vf", r"select=not(mod(n\,15))",
                     "-fps_mode", "passthrough", "-f", "rawvideo",
                     "-pix_fmt", "bgr24", "pipe:1",
                 ],
