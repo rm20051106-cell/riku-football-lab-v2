@@ -1,4 +1,4 @@
-const CACHE_NAME = "riku-football-lab-shell-v3";
+const CACHE_NAME = "riku-football-lab-shell-v4";
 const APP_SHELL = new URL("./index.html", self.registration.scope).href;
 const STATIC_ASSETS = [
   APP_SHELL,
