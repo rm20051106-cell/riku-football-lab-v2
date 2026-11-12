@@ -269,6 +269,17 @@ class MatchUploadBackendIntegrationTest(unittest.TestCase):
         self.assertGreaterEqual(timing["pose_inference_p95_seconds"], timing["pose_inference_p50_seconds"])
         self.assertLessEqual(timing["pose_inference_p95_seconds"], timing["pose_inference_max_seconds"])
         self.assertGreater(timing["pose_inference_max_seconds"], 0)
+        for field in (
+            "pose_geometry_seconds",
+            "jersey_ocr_seconds",
+            "person_track_association_seconds",
+            "foot_motion_feature_seconds",
+        ):
+            self.assertIn(field, timing)
+            self.assertGreaterEqual(timing[field], 0)
+        self.assertEqual(timing["pose_person_count"], 2)
+        self.assertIn("jersey_ocr_calls", timing)
+        self.assertGreaterEqual(timing["jersey_ocr_calls"], 0)
         self.assertEqual(result["summary"]["sampling_rate_fps"], 2.0)
         self.assertTrue(capture.released)
 
@@ -293,6 +304,12 @@ class MatchUploadBackendIntegrationTest(unittest.TestCase):
             "pose_inference_p95_seconds": 0.4123,
             "pose_inference_max_seconds": 0.6891,
             "pose_inference_seconds": 434.85,
+            "pose_geometry_seconds": 13.25,
+            "jersey_ocr_seconds": 0.84,
+            "jersey_ocr_calls": 366,
+            "pose_person_count": 712,
+            "person_track_association_seconds": 0.0482,
+            "foot_motion_feature_seconds": 0.0317,
         }
         result = {
             "summary": {
@@ -319,6 +336,13 @@ class MatchUploadBackendIntegrationTest(unittest.TestCase):
             self.assertEqual(metrics["pose_inference_p50_seconds"], 0.2314)
             self.assertEqual(metrics["pose_inference_p95_seconds"], 0.4123)
             self.assertEqual(metrics["pose_inference_max_seconds"], 0.6891)
+            for field in (
+                "pose_geometry_seconds",
+                "jersey_ocr_seconds",
+                "person_track_association_seconds",
+                "foot_motion_feature_seconds",
+            ):
+                self.assertEqual(metrics["pose_scan_breakdown"][field], scan_timing[field])
         finally:
             source.unlink(missing_ok=True)
             if original_job is None:
