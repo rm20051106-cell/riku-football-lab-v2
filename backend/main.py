@@ -931,7 +931,15 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
         "sampling_interval_seconds": round(actual_interval, 3),
         "sampling_rate_fps": round(1 / actual_interval, 2) if actual_interval > 0 else None,
         "scan_timing": {
-            key: round(value, 2) if key != "skipped_frames_decoded" else value
+            key: (
+                round(value, 4)
+                if key in {
+                    "pose_inference_p50_seconds",
+                    "pose_inference_p95_seconds",
+                    "pose_inference_max_seconds",
+                }
+                else round(value, 2) if isinstance(value, float) else value
+            )
             for key, value in scan_timing.items()
         },
         "frames": frames,
