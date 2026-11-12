@@ -224,9 +224,9 @@ class MatchUploadBackendIntegrationTest(unittest.TestCase):
             "trunk_lean_image_angle_deg": None,
             "metric_quality": {},
         }
-        with mock.patch.object(main.cv2, "VideoCapture", return_value=capture), \\
-             mock.patch.object(main.mp_vision.PoseLandmarker, "create_from_options", return_value=landmarker), \\
-             mock.patch.object(main, "analyze_task_pose", return_value=measured_pose), \\
+        with mock.patch.object(main.cv2, "VideoCapture", return_value=capture), \
+             mock.patch.object(main.mp_vision.PoseLandmarker, "create_from_options", return_value=landmarker), \
+             mock.patch.object(main, "analyze_task_pose", return_value=measured_pose), \
              mock.patch.object(main, "read_jersey_number", return_value=[]):
             result = main.process_match_video("synthetic-runtime-fixture.mp4", jersey_numbers="10,74")
 
