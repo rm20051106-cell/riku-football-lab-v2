@@ -66,6 +66,8 @@ jobs:
         run: docker run --rm -e PYTHONPATH=/app -v "$PWD/tests/benchmark_candidate_pipeline.py:/tmp/benchmark_candidate_pipeline.py:ro" riku-football-lab-ai python /tmp/benchmark_candidate_pipeline.py
       - name: Benchmark legacy and time-window movement candidate support in Docker
         run: docker run --rm -e PYTHONPATH=/app -v "$PWD/tests/benchmark_movement_candidate_support.py:/tmp/benchmark_movement_candidate_support.py:ro" riku-football-lab-ai python /tmp/benchmark_movement_candidate_support.py
+      - name: Benchmark exact-output match track association in Docker
+        run: docker run --rm -e PYTHONPATH=/app -v "$PWD/tests/benchmark_match_postprocess.py:/tmp/benchmark_match_postprocess.py:ro" riku-football-lab-ai python /tmp/benchmark_match_postprocess.py
       - name: Compare FFmpeg and OpenCV sampled frames in Docker
         run: docker run --rm -v "$PWD/tests/test_video_decode_benchmark.py:/tmp/test_video_decode_benchmark.py:ro" riku-football-lab-ai python /tmp/test_video_decode_benchmark.py
       - name: Verify 15 and 20 minute backend chunk receipt in Docker
