@@ -182,6 +182,54 @@ def main():
     if new_median >= old_median:
         raise AssertionError("Time-window implementation did not improve median runtime")
 
+    benchmark_scalability()
+
+
+def benchmark_scalability():
+    """Measure optimized support at 10k/20k; measure legacy once at 10k only.
+
+    The 20k legacy comparison is an explicitly labelled O(n^2) projection from
+    the measured 10k legacy median, avoiding a very expensive quadratic run.
+    """
+    print("Movement candidate scalability benchmark: deterministic 10k/20k datasets")
+    scale_results = {}
+    for frame_count, repeats in ((10_000, 9), (20_000, 9)):
+        sample = make_summary(frame_count, SEED + frame_count, 0.5)
+        actual, durations = measure(backend.build_movement_candidates, sample, repeats)
+        median = statistics.median(durations)
+        scale_results[frame_count] = {"summary": sample, "output": actual, "durations": durations, "median": median}
+        report(f"Optimized bisect {frame_count:,} samples ({repeats} repeats)", durations)
+        print(
+            f"  raw_records={len(sample['frames'])} candidates={len(actual)} "
+            f"max_time={max(durations):.6f}s"
+        )
+
+    # A three-run legacy measurement at 10k gives a direct scale comparison.
+    ten_k = scale_results[10_000]
+    legacy_output, legacy_times = measure(legacy_build_movement_candidates, ten_k["summary"], 3)
+    if legacy_output != ten_k["output"]:
+        raise AssertionError("10k scalability output differs from legacy reference")
+    legacy_median = statistics.median(legacy_times)
+    direct_speedup = legacy_median / ten_k["median"] if ten_k["median"] else float("inf")
+    direct_reduction = (1 - ten_k["median"] / legacy_median) * 100 if legacy_median else 0.0
+    report("Legacy O(n^2) 10,000 samples (3 repeats)", legacy_times)
+    print(
+        f"10k direct speedup: {direct_speedup:.3f}x; "
+        f"median time reduction: {direct_reduction:.2f}%"
+    )
+
+    # Project legacy 20k runtime from the measured 10k result using its
+    # quadratic comparison-count growth (4x); this is not a measured run.
+    projected_legacy_20k = legacy_median * 4
+    projected_speedup_20k = projected_legacy_20k / scale_results[20_000]["median"]
+    projected_reduction_20k = (1 - scale_results[20_000]["median"] / projected_legacy_20k) * 100
+    print(
+        f"20k legacy O(n^2) projection (not measured): median~{projected_legacy_20k:.6f}s "
+        f"(4x measured 10k); projected speedup~{projected_speedup_20k:.3f}x; "
+        f"projected reduction~{projected_reduction_20k:.2f}%"
+    )
+    print("Scalability output contract: small datasets exact old/new equivalence retained; 10k legacy/new output identical.")
+
 
 if __name__ == "__main__":
     main()
