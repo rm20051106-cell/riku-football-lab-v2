@@ -513,11 +513,19 @@ def camera_angle_guidance(camera_angle: str):
     ])
 
 def analyze_task_pose(lm, image_width=1, image_height=1):
+    landmark_data = [
+        (float(item.x), float(item.y), float(getattr(item, "visibility", 1.0)))
+        for item in lm
+    ]
+    point_cache = {}
+
     def p(name):
-        item = lm[mp_pose.PoseLandmark[name].value]
-        visibility = float(getattr(item, "visibility", 1.0))
-        return [float(item.x), float(item.y), visibility]
-    visible = sum(1 for item in lm if float(getattr(item, "visibility", 1.0)) >= 0.5)
+        if name not in point_cache:
+            point_index = mp_pose.PoseLandmark[name].value
+            point_cache[name] = landmark_data[point_index]
+        return point_cache[name]
+
+    visible = sum(1 for _, _, visibility in landmark_data if visibility >= 0.5)
     def visible_points(*names):
         return all(p(name)[2] >= 0.5 for name in names)
     left_knee = angle(p("LEFT_HIP")[:2], p("LEFT_KNEE")[:2], p("LEFT_ANKLE")[:2], image_width, image_height) if visible_points("LEFT_HIP", "LEFT_KNEE", "LEFT_ANKLE") else None
@@ -544,8 +552,8 @@ def analyze_task_pose(lm, image_width=1, image_height=1):
              "LEFT_HEEL", "RIGHT_HEEL", "LEFT_FOOT_INDEX", "RIGHT_FOOT_INDEX"]
     landmarks = {name.lower(): [round(p(name)[0], 5), round(p(name)[1], 5), round(p(name)[2], 4)]
                  for name in names}
-    xs = [float(item.x) for item in lm if 0 <= float(item.x) <= 1]
-    ys = [float(item.y) for item in lm if 0 <= float(item.y) <= 1]
+    xs = [x for x, _, _ in landmark_data if 0 <= x <= 1]
+    ys = [y for _, y, _ in landmark_data if 0 <= y <= 1]
     bbox = [round(min(xs), 4), round(min(ys), 4), round(max(xs), 4), round(max(ys), 4)] if xs and ys else None
     return {
         "visible_landmarks": visible,
