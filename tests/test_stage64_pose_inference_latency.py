@@ -56,6 +56,15 @@ class Stage64PoseInferenceLatencyTests(unittest.TestCase):
         self.assertIn("const perf=sm.performance_metrics||null;", HTML)
         self.assertIn("const scanPerf=perf?.pose_scan_breakdown||sm.scan_timing||{};", HTML)
 
+    def test_match_pose_count_override_keeps_default_unchanged(self):
+        tree = ast.parse(BACKEND)
+        function = next(node for node in tree.body
+                        if isinstance(node, ast.FunctionDef) and node.name == "process_match_video")
+        self.assertEqual(function.args.defaults[-1].value, ast.Constant(value=8))
+        source = ast.get_source_segment(BACKEND, function)
+        self.assertIn("num_poses=max(1, min(8, int(max_poses)))", source)
+        self.assertIn("max_poses=8", source)
+
     def test_service_worker_cache_is_bumped_to_refresh_stale_app_shell(self):
         self.assertIn('riku-football-lab-shell-v5', SW)
         self.assertNotIn('riku-football-lab-shell-v4', SW)
