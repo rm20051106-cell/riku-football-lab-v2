@@ -41,7 +41,7 @@ class MatchTrackContinuityTests(unittest.TestCase):
         frames = [
             {"time_seconds": 0.0, "detected_people": [self.person(0.10), self.person(0.82)]},
             {"time_seconds": 0.5, "detected_people": [self.person(0.30), self.person(0.62)]},
-            {"time_seconds": 1.0, "detected_people": [self.person(0.50), self.person(0.42)]},
+            {"time_seconds": 1.0, "detected_people": [self.person(0.55), self.person(0.37)]},
         ]
         result = associate(frames, max_gap_seconds=2.0)
         a_ids = [frame["detected_people"][0]["track_id"] for frame in frames]
