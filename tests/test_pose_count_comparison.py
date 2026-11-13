@@ -110,9 +110,6 @@ class PoseCountComparisonReportTests(unittest.TestCase):
         self.assertEqual(function.args.defaults[-1].value, 8)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class PoseCountComparisonFixtureTests(unittest.TestCase):
     @staticmethod
