@@ -52,7 +52,7 @@ class Stage64PoseInferenceLatencyTests(unittest.TestCase):
         self.assertIn("測定 ", HTML)
         self.assertIn("中央値 ", HTML)
         self.assertIn("95%点 ", HTML)
-        self.assertIn("const j=status.result||{},sm=j.summary||{};", HTML)
+        self.assertIn("const j=status.result||{};if(!j.job_id)j.job_id=jobId;const sm=j.summary||{};", HTML)
         self.assertIn("const perf=sm.performance_metrics||null;", HTML)
         self.assertIn("const scanPerf=perf?.pose_scan_breakdown||sm.scan_timing||{};", HTML)
 
