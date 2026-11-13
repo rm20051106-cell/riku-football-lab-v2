@@ -1,4 +1,4 @@
-"""Exact-output benchmark for chronological active-window track association."""
+"""Runtime benchmark for motion-aware chronological player-track association."""
 import copy
 import random
 
