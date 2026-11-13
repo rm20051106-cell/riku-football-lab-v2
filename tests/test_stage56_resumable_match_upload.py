@@ -144,6 +144,11 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn("postMatchJobToAI(null,resultElement,{...pending,apiBaseUrl:savedBase})", HTML)
         self.assertIn("existingJob?.apiBaseUrl||getApiUrl()", HTML)
         self.assertIn("await clearPendingMatchJob()", HTML)
+        completed_branch = HTML.split("if(status.status==='completed'){", 1)[1].split("return;", 1)[0]
+        self.assertNotIn("clearPendingMatchJob()", completed_branch)
+        saved_result = HTML.split("async function saveMatchScanResult()", 1)[1].split("function formatMatchTime", 1)[0]
+        self.assertIn("if(!persist())", saved_result)
+        self.assertIn("await clearPendingMatchJob()", saved_result)
 
 
 if __name__ == "__main__":
