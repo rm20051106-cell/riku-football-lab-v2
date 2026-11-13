@@ -21,6 +21,7 @@ def euclidean_norm(values):
 test_np = types.SimpleNamespace(
     array=lambda values: TestVector(values),
     norm=euclidean_norm,
+    linalg=types.SimpleNamespace(norm=euclidean_norm),
 )
 NS = {"np": test_np}
 exec(compile(ast.Module(body=[NODE], type_ignores=[]), "<track-continuity>", "exec"), NS)
