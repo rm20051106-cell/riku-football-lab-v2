@@ -572,13 +572,14 @@ def analyze_task_pose(lm, image_width=1, image_height=1):
 
 
 def associate_person_tracks(frames, max_gap_seconds=9.0):
-    """Create provisional short-term tracks from sparse pose detections.
-    These are geometric associations, not verified player identities.
+    """Associate sparse pose detections with short-term, motion-aware provisional tracks.
+
+    A constant-velocity center prediction reduces ID switches when players cross
+    or move more than the previous fixed-position gate between sparse samples.
+    OCR remains a supporting cue, never proof of player identity.
     """
     tracks = []
     next_track_id = 1
-    # For chronological scans, avoid revisiting tracks that have irreversibly
-    # exceeded max_gap_seconds. Keep original track-index order for stable ties.
     active_track_indices = []
     last_frame_time = None
     monotonic_timestamps = max_gap_seconds == max_gap_seconds
@@ -597,6 +598,9 @@ def associate_person_tracks(frames, max_gap_seconds=9.0):
     def center(box):
         return ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)
 
+    def shift_box(box, dx, dy):
+        return [box[0] + dx, box[1] + dy, box[2] + dx, box[3] + dy]
+
     def jersey_set(person):
         return {str(x.get("number")) for x in person.get("jersey_ocr_candidates", [])
                 if x.get("number")}
@@ -605,7 +609,6 @@ def associate_person_tracks(frames, max_gap_seconds=9.0):
         now = float(frame.get("time_seconds", 0))
         people = frame.get("detected_people", [])
         if now != now or (last_frame_time is not None and now < last_frame_time):
-            # Preserve the original all-track scan for unusual/non-finite timestamps.
             monotonic_timestamps = False
         last_frame_time = now
         if monotonic_timestamps:
@@ -616,12 +619,14 @@ def associate_person_tracks(frames, max_gap_seconds=9.0):
             candidate_track_indices = active_track_indices
         else:
             candidate_track_indices = range(len(tracks))
+
         pairs = []
         for person_index, person in enumerate(people):
             box = person.get("bbox")
             if not box:
                 continue
             pc = center(box)
+            current_numbers = jersey_set(person)
             for track_index in candidate_track_indices:
                 track = tracks[track_index]
                 gap = now - track["last_time"]
@@ -629,14 +634,34 @@ def associate_person_tracks(frames, max_gap_seconds=9.0):
                     continue
                 old_box = track["last_bbox"]
                 old_center = center(old_box)
-                distance = float(np.linalg.norm(np.array(pc) - np.array(old_center)))
-                overlap = iou(box, old_box)
-                if distance > 0.22 and overlap < 0.03:
-                    continue
+                raw_distance = float(np.linalg.norm(np.array(pc) - np.array(old_center)))
+
+                predicted_box = old_box
+                predicted_distance = raw_distance
+                previous_time = track.get("previous_time")
+                previous_center = track.get("previous_center")
+                if previous_time is not None and previous_center is not None:
+                    history_gap = track["last_time"] - previous_time
+                    if history_gap > 1e-6:
+                        velocity_x = (old_center[0] - previous_center[0]) / history_gap
+                        velocity_y = (old_center[1] - previous_center[1]) / history_gap
+                        horizon = min(gap, 2.0)
+                        dx, dy = velocity_x * horizon, velocity_y * horizon
+                        predicted_box = shift_box(old_box, dx, dy)
+                        predicted_distance = float(
+                            np.linalg.norm(np.array(pc) - np.array(center(predicted_box)))
+                        )
+
+                overlap = iou(box, predicted_box)
                 current_numbers = jersey_set(person)
                 previous_numbers = set(track["jersey_votes"])
                 number_match = bool(current_numbers & previous_numbers)
                 number_conflict = bool(current_numbers and previous_numbers and not number_match)
+                # Blend predicted and observed positions so abrupt direction changes
+                # can still fall back toward the last real detection.
+                distance = 0.75 * predicted_distance + 0.25 * raw_distance
+                if distance > 0.22 and overlap < 0.03:
+                    continue
                 if number_conflict and distance > 0.08 and overlap < 0.20:
                     continue
                 size_a = max(1e-4, (box[2] - box[0]) * (box[3] - box[1]))
@@ -644,6 +669,7 @@ def associate_person_tracks(frames, max_gap_seconds=9.0):
                 size_ratio = min(size_a, size_b) / max(size_a, size_b)
                 cost = distance - (0.10 * overlap) - (0.08 if number_match else 0.0) + (0.08 if number_conflict else 0.0) + (0.025 * (1 - size_ratio))
                 pairs.append((cost, person_index, track_index, distance, overlap, number_match))
+
         used_people, used_tracks = set(), set()
         assignments = {}
         for cost, person_index, track_index, distance, overlap, number_match in sorted(pairs):
@@ -653,7 +679,7 @@ def associate_person_tracks(frames, max_gap_seconds=9.0):
                 continue
             confidence = max(0.15, min(0.85, 0.75 - distance * 1.8 + overlap * 0.35 + (0.12 if number_match else 0)))
             assignments[person_index] = (tracks[track_index], round(confidence, 2),
-                                         "背番号候補＋位置" if number_match else "位置・大きさ")
+                                         "背番号候補＋移動予測" if number_match else "移動予測・位置・大きさ")
             used_people.add(person_index)
             used_tracks.add(track_index)
 
@@ -666,12 +692,16 @@ def associate_person_tracks(frames, max_gap_seconds=9.0):
                 continue
             if person_index in assignments:
                 track, confidence, method = assignments[person_index]
+                track["previous_time"] = track["last_time"]
+                track["previous_center"] = center(track["last_bbox"])
             else:
                 track = {
                     "track_id": f"T{next_track_id}",
                     "first_time": now,
                     "last_time": now,
                     "last_bbox": box,
+                    "previous_time": None,
+                    "previous_center": None,
                     "sample_count": 0,
                     "jersey_votes": {},
                     "confidence_sum": 0.0,
@@ -704,7 +734,7 @@ def associate_person_tracks(frames, max_gap_seconds=9.0):
     return {
         "provisional_track_count": len(summaries),
         "tracks": summaries,
-        "note": "約4秒間隔の検出位置・大きさ・背番号OCR候補による暫定的な関連付けです。選手の継続追跡・背番号・陸玖本人を保証せず、交差や遮蔽でIDが入れ替わる可能性があります。"
+        "note": "検出位置・大きさ・背番号OCR候補に加え、直近2検出から推定した移動方向を使う暫定的な関連付けです。選手の継続追跡・背番号・陸玖本人を保証せず、急な方向転換や遮蔽・交差でIDが入れ替わる可能性があります。"
     }
 
 def has_adjacent_sample_timing(current_time, previous_time, sampling_interval):
