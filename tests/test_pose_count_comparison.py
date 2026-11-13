@@ -9,12 +9,12 @@ PROFILE_SOURCE = (ROOT / "backend" / "profile_match_video.py").read_text(encodin
 
 def load_comparison_builder():
     tree = ast.parse(PROFILE_SOURCE)
-    function = next(
+    helpers = [
         node for node in tree.body
-        if isinstance(node, ast.FunctionDef) and node.name == "build_comparison_report"
-    )
+        if isinstance(node, ast.FunctionDef) and node.name in {"_number", "build_comparison_report"}
+    ]
     namespace = {}
-    exec(compile(ast.Module(body=[function], type_ignores=[]), "<comparison_report>", "exec"), namespace)
+    exec(compile(ast.Module(body=helpers, type_ignores=[]), "<comparison_report>", "exec"), namespace)
     return namespace["build_comparison_report"]
 
 
