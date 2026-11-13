@@ -450,7 +450,7 @@ async function saveMatchScanResult(){
  state.matchAnalyses.unshift(savedRecord);
  if(savedRecord.sourceVideoKey){const linkedClip=(state.clips||[]).find(clip=>clip.sourceVideoKey===savedRecord.sourceVideoKey);if(linkedClip)connectMatchAnalysisToClip(savedRecord,linkedClip);(state.aiFormAnalyses||[]).filter(analysis=>analysis.sourceVideoKey===savedRecord.sourceVideoKey).forEach(analysis=>connectAiFormAnalysisToMatch(analysis,savedRecord));}
  savedRecord.candidateEvents.forEach(ev=>syncTrainingMatchEventLink(savedRecord,ev));
- matchAiResult.dataset.savedId=String(id);if(!persist()){state.matchAnalyses=previousMatchAnalyses;state.clips=previousClips;state.trainings=previousTrainings;state.aiFormAnalyses=previousAiFormAnalyses;matchAiResult.textContent='解析結果は画面上に残っていますが、端末への履歴保存に失敗しました。既存の試合・動画・練習記録は変更していません。設定画面からバックアップを書き出してください。';return}alert('AI試合スキャン結果を履歴に保存しました');
+ matchAiResult.dataset.savedId=String(id);if(!persist()){state.matchAnalyses=previousMatchAnalyses;state.clips=previousClips;state.trainings=previousTrainings;state.aiFormAnalyses=previousAiFormAnalyses;matchAiResult.textContent='解析結果は画面上に残っていますが、端末への履歴保存に失敗しました。既存の試合・動画・練習記録は変更していません。設定画面からバックアップを書き出してください。';return}try{await clearPendingMatchJob()}catch(error){console.warn('保存済みジョブ情報の整理に失敗',error)}alert('AI試合スキャン結果を履歴に保存しました');
 }
 function formatMatchTime(seconds){
  if(seconds==null||!Number.isFinite(Number(seconds)))return '時間不明';
@@ -1338,7 +1338,7 @@ async function postMatchJobToAI(file,resultElement,existingJob=null){
     resultElement.innerHTML='<div class="note success"><b>試合動画の全編スキャンが完了しました</b><br>'+performanceHtml+scanQualityHtml+'<br>動画の長さ：'+(sm.duration_seconds??'—')+'秒<br>姿勢検出フレーム：'+(sm.sampled_pose_frames??'—')+'<br>スキャン間隔：約'+(sm.sampling_interval_seconds??'—')+'秒ごと<br>複数選手検出：'+peopleText+'<br>選手の暫定関連付け：'+trackText+'<br>背番号OCR候補：'+jerseyText+'<br><span class="tiny muted">※暫定トラックは約4秒間隔の位置・大きさ・背番号候補による関連付けです。選手の継続追跡や陸玖本人の確定ではなく、選手同士が交差するとIDが入れ替わる可能性があります。背番号も読み取り候補です。</span><br>膝角度（左右平均・推定）：'+(sm.average_left_right_knee_angle_deg??'—')+'°<br>股関節角度（左右平均・推定）：'+(sm.average_left_right_hip_angle_deg??'—')+'°<br><br>'+candidateHtml+'<br><br><b>AI計測と人による確認の区別</b><br>AI計測：姿勢ランドマーク・可視性条件を満たした関節角度・背番号OCR候補・暫定的な位置関連付け。<br>手動確認：陸玖本人の特定・ポジション・受ける前の首振り・サポート角度・スペースへの動き出し・判断の質・プレー結果。<br>AIが映像だけで確認できない項目は評価せず、手動入力があるまで成長集計に使いません。<br><br><b>現在の段階について</b><br>'+notes+'<br><br>※背番号・トラックは候補情報であり、本人確認ではありません。</div>';
     resultElement.dataset.result=JSON.stringify(j);
     resultElement.innerHTML+='<br><button class="secondary small" onclick="saveMatchScanResult()">このAI解析結果を履歴に保存</button>';
-    try{await clearPendingMatchJob()}catch(error){console.warn('完了済み解析ジョブ情報の整理に失敗',error)}
+    // Keep the completed job pointer until the user explicitly saves the result.
     return;
    }
   }
