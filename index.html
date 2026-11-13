@@ -1277,7 +1277,7 @@ async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
  throw lastCompleteError||Error('動画受信の確定応答を確認できませんでした。再開情報は端末に保持しています。');
 }
 async function postMatchJobToAI(file,resultElement,existingJob=null){
- const u=getApiUrl();
+ const u=String(existingJob?.apiBaseUrl||getApiUrl()||'').replace(/\\/$/,'');
  if(!file&&!existingJob){try{const pending=await getClipVideo('__pending_match_video__');if(pending?.blob instanceof Blob)file=new File([pending.blob],pending.name||'match-video.mp4',{type:pending.type||pending.blob.type||'video/mp4',lastModified:Number(pending.lastModified||0)})}catch(e){console.warn('端末に保存した再開用動画の読み込みに失敗',e)}}
  if(!u){resultElement.textContent='AIサーバーURLが未設定です。設定画面でURLを保存してください。';return}
  if(!file&&!existingJob){resultElement.textContent='先に試合動画を選択してください。';return}
@@ -1304,9 +1304,9 @@ async function postMatchJobToAI(file,resultElement,existingJob=null){
    const statusResponse=await fetch(u+'/analyze/jobs/'+encodeURIComponent(jobId),{cache:'no-store'});
    const statusRaw=await statusResponse.text();
    let status;try{status=JSON.parse(statusRaw)}catch(e){status=null}
-   if(!statusResponse.ok||!status)throw Error('進捗の取得に失敗しました。サーバーが再起動した場合は再送信が必要です。');
+   if(!statusResponse.ok||!status)throw Error('進捗の取得に失敗しました。保存済みジョブ情報は保持しています。接続を確認して再読み込みしてください。');
    resultElement.textContent='試合動画を解析中：'+(status.progress??0)+'%｜'+(status.stage||'処理中')+'。この画面を閉じずにお待ちください。';
-   if(status.status==='failed')throw Error(status.error||'解析に失敗しました');
+   if(status.status==='failed'){try{await clearPendingMatchJob()}catch(_){}throw Error(status.error||'解析に失敗しました')}
    if(status.status==='completed'){
     const j=status.result||{},sm=j.summary||{};
     const notes=(sm.feedback||[]).map(x=>esc(x)).join('<br>');
