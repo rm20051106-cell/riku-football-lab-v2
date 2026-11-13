@@ -1,5 +1,4 @@
-"""Runtime benchmark for motion-aware chronological player-track association."""
-import copy
+"""Exact-output benchmark for chronological active-window track association."""
 import random
 
 import numpy as np
@@ -174,13 +173,12 @@ def main():
     frames = make_frames()
     old, old_times = measure(legacy_associate_person_tracks, frames, 5)
     new, new_times = measure(backend.associate_person_tracks, frames, 9)
-    repeated = backend.associate_person_tracks(copy.deepcopy(frames))
-    if new != repeated:
-        raise AssertionError("Motion-aware track association is not deterministic")
+    if old != new:
+        raise AssertionError("Active-window track association differs from legacy output")
     old_median, new_median = statistics.median(old_times), statistics.median(new_times)
     detections = sum(len(frame["detected_people"]) for frame in frames)
     print(f"Match track-association benchmark: {len(frames)} samples, {detections} detections")
-    print(f"Motion-aware output determinism: PASS ({new['provisional_track_count']} provisional tracks)")
+    print(f"Output equivalence: PASS ({old['provisional_track_count']} tracks; all fields identical)")
     report("Legacy all-track scan (5 repeats)", old_times)
     report("Active time-window scan (9 repeats)", new_times)
     print(f"Speedup: {old_median / new_median:.3f}x; median reduction: {(1-new_median/old_median)*100:.2f}%")
@@ -189,11 +187,9 @@ def main():
 
     non_chronological = [dict(frame) for frame in frames[:80]]
     non_chronological[40] = {**non_chronological[40], "time_seconds": 1.0}
-    fallback_a = backend.associate_person_tracks(copy.deepcopy(non_chronological))
-    fallback_b = backend.associate_person_tracks(copy.deepcopy(non_chronological))
-    if fallback_a != fallback_b:
-        raise AssertionError("Non-chronological fallback is not deterministic")
-    print("Non-chronological fallback determinism: PASS")
+    if legacy_associate_person_tracks(non_chronological) != backend.associate_person_tracks(non_chronological):
+        raise AssertionError("Non-chronological fallback differs from legacy output")
+    print("Non-chronological fallback equivalence: PASS")
 
 
 if __name__ == "__main__":
