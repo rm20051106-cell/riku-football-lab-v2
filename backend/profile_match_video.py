@@ -55,35 +55,46 @@ def profile(video, jersey_numbers, max_poses):
     }
 
 
+def _number(value):
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+
 def build_comparison_report(reports):
-    """Normalize both runs and compare speed, sample coverage, and person detections."""
+    """Compare run summaries without treating synthetic fixtures as model benchmarks."""
     normalized = []
     for report in reports:
         quality = report.get("video_scan_quality") or {}
         detection = report.get("person_detection_summary") or {}
         timing = report.get("scan_timing") or {}
-        sampled = report.get("sampled_pose_frames")
-        sampled = int(sampled) if isinstance(sampled, (int, float)) and not isinstance(sampled, bool) else 0
-        detected_frames = quality.get("pose_detected_frames")
-        if not isinstance(detected_frames, (int, float)) or isinstance(detected_frames, bool):
-            detected_frames = detection.get("frames_with_people", 0)
-        detected_frames = int(detected_frames) if isinstance(detected_frames, (int, float)) and not isinstance(detected_frames, bool) else 0
-        rate = quality.get("pose_detection_rate")
-        if not isinstance(rate, (int, float)) or isinstance(rate, bool):
-            rate = round(detected_frames / sampled, 4) if sampled else None
-        wall = report.get("wall_clock_seconds")
+        sampled_value = _number(report.get("sampled_pose_frames"))
+        sampled = max(0, int(sampled_value)) if sampled_value is not None else 0
+
+        detected_value = _number(quality.get("pose_detected_frames"))
+        if detected_value is None:
+            detected_value = _number(detection.get("frames_with_people"))
+        detected = max(0, int(detected_value)) if detected_value is not None else 0
+        # A malformed summary must not report more detected frames than samples.
+        detected = min(detected, sampled)
+        rate_value = _number(quality.get("pose_detection_rate"))
+        rate = (max(0.0, min(1.0, float(rate_value))) if rate_value is not None
+                else (round(detected / sampled, 4) if sampled else None))
+
+        wall = _number(report.get("wall_clock_seconds"))
+        inference = _number(timing.get("pose_inference_seconds"))
+        people = _number(timing.get("pose_person_count"))
         normalized.append({
             "max_poses": report.get("max_poses"),
-            "wall_clock_seconds": wall,
-            "pose_inference_seconds": timing.get("pose_inference_seconds"),
+            "wall_clock_seconds": round(wall, 3) if wall is not None else None,
+            "pose_inference_seconds": round(inference, 3) if inference is not None else None,
             "sampled_pose_frames": sampled,
-            "pose_detected_frames": detected_frames,
-            "missed_pose_frames": max(0, sampled - detected_frames),
+            "pose_detected_frames": detected,
+            "missed_pose_frames": sampled - detected,
             "pose_detection_rate": rate,
-            "total_person_detections": timing.get("pose_person_count"),
-            "average_people_per_sample": detection.get("average_people_per_sample"),
-            "max_people_in_one_frame": detection.get("max_people_in_one_frame"),
-            "sampling_interval_seconds": report.get("sampling_interval_seconds"),
+            "total_person_detections": int(people) if people is not None else None,
+            "average_people_per_sample": _number(detection.get("average_people_per_sample")),
+            "max_people_in_one_frame": _number(detection.get("max_people_in_one_frame")),
+            "sampling_interval_seconds": _number(report.get("sampling_interval_seconds")),
+            "fixture_only": bool(report.get("fixture_only", False)),
         })
 
     comparison = {}
@@ -91,34 +102,46 @@ def build_comparison_report(reports):
         baseline, capped = normalized[0], normalized[1]
         baseline_time = baseline["wall_clock_seconds"]
         capped_time = capped["wall_clock_seconds"]
+        baseline_rate, capped_rate = baseline["pose_detection_rate"], capped["pose_detection_rate"]
+        baseline_people, capped_people = baseline["total_person_detections"], capped["total_person_detections"]
         comparison = {
             "baseline_max_poses": baseline["max_poses"],
             "capped_max_poses": capped["max_poses"],
             "wall_clock_seconds_saved": (
                 round(baseline_time - capped_time, 3)
-                if isinstance(baseline_time, (int, float)) and isinstance(capped_time, (int, float))
-                else None
+                if baseline_time is not None and capped_time is not None else None
             ),
             "wall_clock_reduction_percent": (
                 round((baseline_time - capped_time) / baseline_time * 100, 2)
-                if isinstance(baseline_time, (int, float)) and isinstance(capped_time, (int, float)) and baseline_time > 0
-                else None
+                if baseline_time is not None and capped_time is not None and baseline_time > 0 else None
             ),
             "same_sample_count": baseline["sampled_pose_frames"] == capped["sampled_pose_frames"],
             "same_sampling_interval": baseline["sampling_interval_seconds"] == capped["sampling_interval_seconds"],
             "pose_detection_rate_delta": (
-                round(capped["pose_detection_rate"] - baseline["pose_detection_rate"], 4)
-                if isinstance(baseline["pose_detection_rate"], (int, float)) and isinstance(capped["pose_detection_rate"], (int, float))
-                else None
+                round(capped_rate - baseline_rate, 4)
+                if baseline_rate is not None and capped_rate is not None else None
             ),
+            "pose_detected_frames_delta": capped["pose_detected_frames"] - baseline["pose_detected_frames"],
             "total_person_detections_delta": (
-                capped["total_person_detections"] - baseline["total_person_detections"]
-                if isinstance(baseline["total_person_detections"], int) and isinstance(capped["total_person_detections"], int)
-                else None
+                capped_people - baseline_people
+                if baseline_people is not None and capped_people is not None else None
             ),
+            "comparable_sampling": (
+                baseline["sampled_pose_frames"] == capped["sampled_pose_frames"]
+                and baseline["sampling_interval_seconds"] == capped["sampling_interval_seconds"]
+            ),
+            "timing_is_synthetic": all(item["fixture_only"] for item in normalized[:2]),
         }
-    return {"runs": normalized, "comparison": comparison}
-
+    return {
+        "runs": normalized,
+        "comparison": comparison,
+        "measurement_note": (
+            "Synthetic fixture: validates report calculations only; elapsed values are fixture inputs, "
+            "not MediaPipe or real-video performance measurements."
+            if normalized and all(item["fixture_only"] for item in normalized)
+            else "Elapsed time and detections are measurements from the supplied profiling runs."
+        ),
+    }
 
 def main():
     parser = argparse.ArgumentParser(description="Profile a full match-video scan")
