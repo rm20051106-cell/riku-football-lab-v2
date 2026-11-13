@@ -820,7 +820,7 @@ def should_run_match_jersey_ocr(sample_index, every=10):
     return index > 0 and (index == 1 or index % cadence == 0)
 
 
-def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
+def process_match_video(path: str, progress_callback=None, jersey_numbers=None, max_poses=8):
     cap = cv2.VideoCapture(path)
     if not cap.isOpened():
         raise HTTPException(status_code=400, detail="動画を開けませんでした。MP4など一般的な形式でお試しください。")
@@ -859,7 +859,7 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None):
     options = mp_vision.PoseLandmarkerOptions(
         base_options=mp_python.BaseOptions(model_asset_path=POSE_LANDMARKER_MODEL),
         running_mode=mp_vision.RunningMode.VIDEO,
-        num_poses=8,
+        num_poses=max(1, min(8, int(max_poses))),
         min_pose_detection_confidence=0.35,
         min_pose_presence_confidence=0.35,
         min_tracking_confidence=0.35,
