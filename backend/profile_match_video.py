@@ -2,13 +2,13 @@
 
 Example (from the repository root):
   docker build -t riku-football-lab-profile ./backend
-  docker run --rm --memory=2g -v "$PWD/sample.mov:/input/sample.mov:ro" \
-    -v "$PWD/backend/profile_match_video.py:/app/profile_match_video.py:ro" \
+  docker run --rm --memory=2g -v "$PWD/sample.mov:/input/sample.mov:ro" \\
+    -v "$PWD/backend/profile_match_video.py:/app/profile_match_video.py:ro" \\
     riku-football-lab-profile python /app/profile_match_video.py /input/sample.mov --jersey-numbers 10,74
 
 Compare the unchanged default (8) with a capped run (4):
-  docker run --rm --memory=2g -v "$PWD/sample.mov:/input/sample.mov:ro" \
-    -v "$PWD/backend/profile_match_video.py:/app/profile_match_video.py:ro" \
+  docker run --rm --memory=2g -v "$PWD/sample.mov:/input/sample.mov:ro" \\
+    -v "$PWD/backend/profile_match_video.py:/app/profile_match_video.py:ro" \\
     riku-football-lab-profile python /app/profile_match_video.py /input/sample.mov --compare-pose-counts
 
 The video is mounted read-only and is not uploaded or copied into the repository.
@@ -55,6 +55,71 @@ def profile(video, jersey_numbers, max_poses):
     }
 
 
+def build_comparison_report(reports):
+    """Normalize both runs and compare speed, sample coverage, and person detections."""
+    normalized = []
+    for report in reports:
+        quality = report.get("video_scan_quality") or {}
+        detection = report.get("person_detection_summary") or {}
+        timing = report.get("scan_timing") or {}
+        sampled = report.get("sampled_pose_frames")
+        sampled = int(sampled) if isinstance(sampled, (int, float)) and not isinstance(sampled, bool) else 0
+        detected_frames = quality.get("pose_detected_frames")
+        if not isinstance(detected_frames, (int, float)) or isinstance(detected_frames, bool):
+            detected_frames = detection.get("frames_with_people", 0)
+        detected_frames = int(detected_frames) if isinstance(detected_frames, (int, float)) and not isinstance(detected_frames, bool) else 0
+        rate = quality.get("pose_detection_rate")
+        if not isinstance(rate, (int, float)) or isinstance(rate, bool):
+            rate = round(detected_frames / sampled, 4) if sampled else None
+        wall = report.get("wall_clock_seconds")
+        normalized.append({
+            "max_poses": report.get("max_poses"),
+            "wall_clock_seconds": wall,
+            "pose_inference_seconds": timing.get("pose_inference_seconds"),
+            "sampled_pose_frames": sampled,
+            "pose_detected_frames": detected_frames,
+            "missed_pose_frames": max(0, sampled - detected_frames),
+            "pose_detection_rate": rate,
+            "total_person_detections": timing.get("pose_person_count"),
+            "average_people_per_sample": detection.get("average_people_per_sample"),
+            "max_people_in_one_frame": detection.get("max_people_in_one_frame"),
+            "sampling_interval_seconds": report.get("sampling_interval_seconds"),
+        })
+
+    comparison = {}
+    if len(normalized) >= 2:
+        baseline, capped = normalized[0], normalized[1]
+        baseline_time = baseline["wall_clock_seconds"]
+        capped_time = capped["wall_clock_seconds"]
+        comparison = {
+            "baseline_max_poses": baseline["max_poses"],
+            "capped_max_poses": capped["max_poses"],
+            "wall_clock_seconds_saved": (
+                round(baseline_time - capped_time, 3)
+                if isinstance(baseline_time, (int, float)) and isinstance(capped_time, (int, float))
+                else None
+            ),
+            "wall_clock_reduction_percent": (
+                round((baseline_time - capped_time) / baseline_time * 100, 2)
+                if isinstance(baseline_time, (int, float)) and isinstance(capped_time, (int, float)) and baseline_time > 0
+                else None
+            ),
+            "same_sample_count": baseline["sampled_pose_frames"] == capped["sampled_pose_frames"],
+            "same_sampling_interval": baseline["sampling_interval_seconds"] == capped["sampling_interval_seconds"],
+            "pose_detection_rate_delta": (
+                round(capped["pose_detection_rate"] - baseline["pose_detection_rate"], 4)
+                if isinstance(baseline["pose_detection_rate"], (int, float)) and isinstance(capped["pose_detection_rate"], (int, float))
+                else None
+            ),
+            "total_person_detections_delta": (
+                capped["total_person_detections"] - baseline["total_person_detections"]
+                if isinstance(baseline["total_person_detections"], int) and isinstance(capped["total_person_detections"], int)
+                else None
+            ),
+        }
+    return {"runs": normalized, "comparison": comparison}
+
+
 def main():
     parser = argparse.ArgumentParser(description="Profile a full match-video scan")
     parser.add_argument("video", help="Path to a local video file")
@@ -74,35 +139,8 @@ def main():
     output = {
         "video_name": video.name,
         "comparison_mode": args.compare_pose_counts,
-        "runs": reports,
+        **build_comparison_report(reports),
     }
-    if len(reports) == 2:
-        baseline, capped = reports
-        baseline_time = baseline["wall_clock_seconds"]
-        capped_time = capped["wall_clock_seconds"]
-        output["comparison"] = {
-            "wall_clock_speedup_8_over_4": (
-                round(baseline_time / capped_time, 3) if capped_time > 0 else None
-            ),
-            "wall_clock_reduction_percent": (
-                round((baseline_time - capped_time) / baseline_time * 100, 2)
-                if baseline_time > 0 else None
-            ),
-            "same_sample_count": (
-                baseline["sampled_pose_frames"] == capped["sampled_pose_frames"]
-            ),
-            "same_sampling_interval": (
-                baseline["sampling_interval_seconds"] == capped["sampling_interval_seconds"]
-            ),
-            "detection_counts": [
-                run["person_detection_summary"].get("frames_with_people")
-                for run in reports
-            ],
-            "max_people_per_frame": [
-                run["person_detection_summary"].get("max_people_in_one_frame")
-                for run in reports
-            ],
-        }
     print(json.dumps(output, ensure_ascii=False, indent=2))
 
 
