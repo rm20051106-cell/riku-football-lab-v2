@@ -1277,7 +1277,7 @@ async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
  throw lastCompleteError||Error('動画受信の確定応答を確認できませんでした。再開情報は端末に保持しています。');
 }
 async function postMatchJobToAI(file,resultElement,existingJob=null){
- const u=String(existingJob?.apiBaseUrl||getApiUrl()||'').replace(/\\/$/,'');
+  const u=String(existingJob?.apiBaseUrl||getApiUrl()||'').replace(/\/$/,'');
  if(!file&&!existingJob){try{const pending=await getClipVideo('__pending_match_video__');if(pending?.blob instanceof Blob)file=new File([pending.blob],pending.name||'match-video.mp4',{type:pending.type||pending.blob.type||'video/mp4',lastModified:Number(pending.lastModified||0)})}catch(e){console.warn('端末に保存した再開用動画の読み込みに失敗',e)}}
  if(!u){resultElement.textContent='AIサーバーURLが未設定です。設定画面でURLを保存してください。';return}
  if(!file&&!existingJob){resultElement.textContent='先に試合動画を選択してください。';return}
@@ -1308,7 +1308,7 @@ async function postMatchJobToAI(file,resultElement,existingJob=null){
    resultElement.textContent='試合動画を解析中：'+(status.progress??0)+'%｜'+(status.stage||'処理中')+'。この画面を閉じずにお待ちください。';
    if(status.status==='failed'){try{await clearPendingMatchJob()}catch(_){}throw Error(status.error||'解析に失敗しました')}
    if(status.status==='completed'){
-    const j=status.result||{},sm=j.summary||{};
+    const j=status.result||{};if(!j.job_id)j.job_id=jobId;const sm=j.summary||{};
     const notes=(sm.feedback||[]).map(x=>esc(x)).join('<br>');
     const jerseyCounts=sm.jersey_ocr_summary?.candidate_detection_counts||sm.jersey_ocr_summary?.candidate_frame_counts||{};
     const jerseyText=Object.keys(jerseyCounts).length?Object.entries(jerseyCounts).map(([n,count])=>n+'番：'+count+'件').join('／'):'該当候補なし';
@@ -1353,7 +1353,7 @@ async function resumePendingMatchJob(){
   const resultElement=document.getElementById('matchAiResult');
   if(!resultElement)return;
   const configured=getApiUrl();
-  const savedBase=String(pending.apiBaseUrl||configured||'').replace(/\\/$/,'');
+  const savedBase=String(pending.apiBaseUrl||configured||'').replace(/\/$/,'');
   if(!savedBase){resultElement.textContent='保存済みの解析ジョブがあります。AIサーバーURLを設定すると再開できます。';return}
   if(configured&&configured!==savedBase){resultElement.textContent='保存済みジョブの接続先が現在の設定と異なります。以前の接続先 '+savedBase+' に接続できるよう設定を戻してください。';return}
   resultElement.textContent='前回の解析ジョブを確認しています…';
