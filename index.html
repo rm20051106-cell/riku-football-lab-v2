@@ -1189,6 +1189,9 @@ async function postVideoToAI(file, endpoint, extra, resultElement){
 async function getPendingMatchUpload(){const db=await openVideoDB();try{return await new Promise((resolve,reject)=>{const tx=db.transaction('videos','readonly'),req=tx.objectStore('videos').get('__pending_match_upload__');req.onsuccess=()=>resolve(req.result||null);req.onerror=()=>reject(req.error||new Error('再開情報を読み込めません'));tx.onabort=()=>reject(tx.error||new Error('再開情報の読み込みが中断されました'))})}finally{db.close()}}
 async function savePendingMatchUpload(record){const db=await openVideoDB();try{await new Promise((resolve,reject)=>{const tx=db.transaction('videos','readwrite');tx.objectStore('videos').put(record,'__pending_match_upload__');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||new Error('再開情報を保存できません'));tx.onabort=()=>reject(tx.error||new Error('再開情報の保存が中断されました'))})}finally{db.close()}}
 async function clearPendingMatchUpload(){const db=await openVideoDB();try{await new Promise((resolve,reject)=>{const tx=db.transaction('videos','readwrite');tx.objectStore('videos').delete('__pending_match_upload__');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||new Error('再開情報を削除できません'));tx.onabort=()=>reject(tx.error||new Error('再開情報の削除が中断されました'))})}finally{db.close()}}
+async function getPendingMatchJob(){const db=await openVideoDB();try{return await new Promise((resolve,reject)=>{const tx=db.transaction('videos','readonly'),req=tx.objectStore('videos').get('__pending_match_job__');req.onsuccess=()=>resolve(req.result||null);req.onerror=()=>reject(req.error||new Error('解析ジョブ情報を読み込めません'));tx.onabort=()=>reject(tx.error||new Error('解析ジョブ情報の読み込みが中断されました'))})}finally{db.close()}}
+async function savePendingMatchJob(record){const db=await openVideoDB();try{await new Promise((resolve,reject)=>{const tx=db.transaction('videos','readwrite');tx.objectStore('videos').put(record,'__pending_match_job__');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||new Error('解析ジョブ情報を保存できません'));tx.onabort=()=>reject(tx.error||new Error('解析ジョブ情報の保存が中断されました'))})}finally{db.close()}}
+async function clearPendingMatchJob(){const db=await openVideoDB();try{await new Promise((resolve,reject)=>{const tx=db.transaction('videos','readwrite');tx.objectStore('videos').delete('__pending_match_job__');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||new Error('解析ジョブ情報を削除できません'));tx.onabort=()=>reject(tx.error||new Error('解析ジョブ情報の削除が中断されました'))})}finally{db.close()}}
 async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
  const chunkSizeDefault=6*1024*1024,sourceKey=getVideoSourceKey(file),duration=Number(matchVideo.duration||0),api=getApiUrl();
  const identity={sourceKey,size:file.size,name:file.name||'match-video.mp4',lastModified:Number(file.lastModified||0),jerseyNumbers};
@@ -1264,7 +1267,7 @@ async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
   try{
    completed=await fetch(api+'/analyze/match/uploads/'+encodeURIComponent(session.upload_id)+'/complete',{method:'POST',credentials:'omit',cache:'no-store'});
    const raw=await completed.text();try{body=JSON.parse(raw)}catch(e){body=null}
-   if(completed.ok&&body?.job_id){try{await clearPendingMatchUpload()}catch(_){}return body}
+   if(completed.ok&&body?.job_id){await savePendingMatchJob({jobId:body.job_id,apiBaseUrl:api,sourceKey:identity.sourceKey,filename:identity.name,sizeBytes:identity.size,createdAt:Date.now()});try{await clearPendingMatchUpload()}catch(_){}return body}
    const detail='動画受信の確定 HTTP '+completed.status+'：'+(body?.detail||raw.slice(0,180));
    if(completed.status>=400&&completed.status<500)throw Error(detail);
    lastCompleteError=Error(detail);
@@ -1273,12 +1276,12 @@ async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
  }
  throw lastCompleteError||Error('動画受信の確定応答を確認できませんでした。再開情報は端末に保持しています。');
 }
-async function postMatchJobToAI(file,resultElement){
+async function postMatchJobToAI(file,resultElement,existingJob=null){
  const u=getApiUrl();
- if(!file){try{const pending=await getClipVideo('__pending_match_video__');if(pending?.blob instanceof Blob)file=new File([pending.blob],pending.name||'match-video.mp4',{type:pending.type||pending.blob.type||'video/mp4',lastModified:Number(pending.lastModified||0)})}catch(e){console.warn('端末に保存した再開用動画の読み込みに失敗',e)}}
+ if(!file&&!existingJob){try{const pending=await getClipVideo('__pending_match_video__');if(pending?.blob instanceof Blob)file=new File([pending.blob],pending.name||'match-video.mp4',{type:pending.type||pending.blob.type||'video/mp4',lastModified:Number(pending.lastModified||0)})}catch(e){console.warn('端末に保存した再開用動画の読み込みに失敗',e)}}
  if(!u){resultElement.textContent='AIサーバーURLが未設定です。設定画面でURLを保存してください。';return}
- if(!file){resultElement.textContent='先に試合動画を選択してください。';return}
- if(file.size>500*1024*1024){resultElement.textContent='試合動画は500MB以内にしてください。';return}
+ if(!file&&!existingJob){resultElement.textContent='先に試合動画を選択してください。';return}
+ if(file&&file.size>500*1024*1024){resultElement.textContent='試合動画は500MB以内にしてください。';return}
  let jobId=null;
  try{
   resultElement.textContent='AIサーバーの起動を確認しています…';
@@ -1286,10 +1289,16 @@ async function postMatchJobToAI(file,resultElement){
   if(!health.ok)throw Error('health HTTP '+health.status);
   const hj=await health.json();
   if(hj.ok!==true && !(hj.status==='ready' && hj.service==='RIKU FOOTBALL LAB Free AI Analysis API'))throw Error('サーバーの応答が想定外です');
-  resultElement.textContent='15分動画を小分けにして送信します。元動画は変更しません…';
-  const created=await uploadMatchVideoInChunks(file,String(state.settings.jersey1)+','+String(state.settings.jersey2),resultElement);
-  jobId=created.job_id;
-  resultElement.textContent='動画を受け付けました。解析ジョブを開始します…';
+  if(existingJob?.jobId){
+   jobId=String(existingJob.jobId);
+   resultElement.textContent='保存済みの解析ジョブを再開しています…';
+  }else{
+   resultElement.textContent='15分動画を小分けにして送信します。元動画は変更しません…';
+   const created=await uploadMatchVideoInChunks(file,String(state.settings.jersey1)+','+String(state.settings.jersey2),resultElement);
+   jobId=created.job_id;
+  }
+  await savePendingMatchJob({jobId,apiBaseUrl:u,filename:file?.name||existingJob?.filename||'match-video.mp4',sizeBytes:file?.size||existingJob?.sizeBytes||0,createdAt:existingJob?.createdAt||Date.now()});
+  resultElement.textContent='動画を受け付けました。解析ジョブを確認しています…';
   while(true){
    await new Promise(resolve=>setTimeout(resolve,3000));
    const statusResponse=await fetch(u+'/analyze/jobs/'+encodeURIComponent(jobId),{cache:'no-store'});
@@ -1329,12 +1338,27 @@ async function postMatchJobToAI(file,resultElement){
     resultElement.innerHTML='<div class="note success"><b>試合動画の全編スキャンが完了しました</b><br>'+performanceHtml+scanQualityHtml+'<br>動画の長さ：'+(sm.duration_seconds??'—')+'秒<br>姿勢検出フレーム：'+(sm.sampled_pose_frames??'—')+'<br>スキャン間隔：約'+(sm.sampling_interval_seconds??'—')+'秒ごと<br>複数選手検出：'+peopleText+'<br>選手の暫定関連付け：'+trackText+'<br>背番号OCR候補：'+jerseyText+'<br><span class="tiny muted">※暫定トラックは約4秒間隔の位置・大きさ・背番号候補による関連付けです。選手の継続追跡や陸玖本人の確定ではなく、選手同士が交差するとIDが入れ替わる可能性があります。背番号も読み取り候補です。</span><br>膝角度（左右平均・推定）：'+(sm.average_left_right_knee_angle_deg??'—')+'°<br>股関節角度（左右平均・推定）：'+(sm.average_left_right_hip_angle_deg??'—')+'°<br><br>'+candidateHtml+'<br><br><b>AI計測と人による確認の区別</b><br>AI計測：姿勢ランドマーク・可視性条件を満たした関節角度・背番号OCR候補・暫定的な位置関連付け。<br>手動確認：陸玖本人の特定・ポジション・受ける前の首振り・サポート角度・スペースへの動き出し・判断の質・プレー結果。<br>AIが映像だけで確認できない項目は評価せず、手動入力があるまで成長集計に使いません。<br><br><b>現在の段階について</b><br>'+notes+'<br><br>※背番号・トラックは候補情報であり、本人確認ではありません。</div>';
     resultElement.dataset.result=JSON.stringify(j);
     resultElement.innerHTML+='<br><button class="secondary small" onclick="saveMatchScanResult()">このAI解析結果を履歴に保存</button>';
+    try{await clearPendingMatchJob()}catch(error){console.warn('完了済み解析ジョブ情報の整理に失敗',error)}
     return;
    }
   }
  }catch(e){
   resultElement.textContent='試合動画の解析に失敗：'+e.message+(jobId?'（ジョブID：'+jobId+'）':'');
  }
+}
+async function resumePendingMatchJob(){
+ try{
+  const pending=await getPendingMatchJob();
+  if(!pending?.jobId)return;
+  const resultElement=document.getElementById('matchAiResult');
+  if(!resultElement)return;
+  const configured=getApiUrl();
+  const savedBase=String(pending.apiBaseUrl||configured||'').replace(/\\/$/,'');
+  if(!savedBase){resultElement.textContent='保存済みの解析ジョブがあります。AIサーバーURLを設定すると再開できます。';return}
+  if(configured&&configured!==savedBase){resultElement.textContent='保存済みジョブの接続先が現在の設定と異なります。以前の接続先 '+savedBase+' に接続できるよう設定を戻してください。';return}
+  resultElement.textContent='前回の解析ジョブを確認しています…';
+  await postMatchJobToAI(null,resultElement,{...pending,apiBaseUrl:savedBase});
+ }catch(error){console.warn('保存済み解析ジョブの再開に失敗',error)}
 }
 async function createRikuHighlight(){
  const raw=matchAiResult.dataset.result;if(!raw){alert('先に試合動画を解析してください');return}
@@ -4445,6 +4469,7 @@ videoFile.addEventListener('change',()=>{
 let pendingFormSave=Promise.resolve(null);formFile.addEventListener('change',()=>{let f=formFile.files[0];if(!f)return;const phaseStatus=document.getElementById('formPhaseMarkerStatus');if(phaseStatus)phaseStatus.textContent='動画を読み込みました。AI解析後、節目を手動登録できます。';formVideo.src=URL.createObjectURL(f);pendingFormSave=storeClipVideo('__pending_form_video__',f).then(()=>f).catch(e=>{console.error('フォーム動画の仮保存失敗',e);return null})})
 formKind.addEventListener('change',renderChecks);
 load();renderChecks();renderAll();renderKickManualReview();if(typeof apiBaseUrl!=='undefined'){apiBaseUrl.value=state.settings.apiBaseUrl||'';apiStatus.textContent=state.settings.apiBaseUrl?'保存済み：'+state.settings.apiBaseUrl:'未設定'}
+setTimeout(()=>resumePendingMatchJob(),800);
 </script>
 <script>
 if("serviceWorker" in navigator && window.isSecureContext){
