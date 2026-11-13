@@ -112,3 +112,64 @@ class PoseCountComparisonReportTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PoseCountComparisonFixtureTests(unittest.TestCase):
+    @staticmethod
+    def fixture(max_poses, wall, samples, detected, people, interval=0.5):
+        return {
+            "fixture_only": True,
+            "max_poses": max_poses,
+            "wall_clock_seconds": wall,
+            "sampling_interval_seconds": interval,
+            "sampled_pose_frames": samples,
+            "video_scan_quality": {"pose_detected_frames": detected},
+            "person_detection_summary": {
+                "frames_with_people": detected,
+                "average_people_per_sample": people / samples if samples else None,
+                "max_people_in_one_frame": min(max_poses, 8),
+            },
+            "scan_timing": {"pose_inference_seconds": wall * 0.6, "pose_person_count": people},
+        }
+
+    def test_fixture_compares_all_requested_metrics_without_claiming_real_speed(self):
+        report = build_comparison_report([
+            self.fixture(8, 100.0, 200, 160, 300),
+            self.fixture(4, 82.0, 200, 150, 240),
+        ])
+        self.assertEqual([x["max_poses"] for x in report["runs"]], [8, 4])
+        self.assertEqual([x["sampled_pose_frames"] for x in report["runs"]], [200, 200])
+        self.assertEqual([x["pose_detected_frames"] for x in report["runs"]], [160, 150])
+        self.assertEqual([x["pose_detection_rate"] for x in report["runs"]], [0.8, 0.75])
+        self.assertEqual([x["total_person_detections"] for x in report["runs"]], [300, 240])
+        self.assertEqual(report["comparison"]["wall_clock_seconds_saved"], 18.0)
+        self.assertEqual(report["comparison"]["pose_detected_frames_delta"], -10)
+        self.assertTrue(report["comparison"]["timing_is_synthetic"])
+        self.assertIn("not MediaPipe", report["measurement_note"])
+
+    def test_invalid_counts_are_clamped_and_missing_metrics_stay_null(self):
+        report = build_comparison_report([
+            {"fixture_only": True, "max_poses": 8, "sampled_pose_frames": 5,
+             "video_scan_quality": {"pose_detected_frames": 9, "pose_detection_rate": 1.4}},
+            {"fixture_only": True, "max_poses": 4, "sampled_pose_frames": 0},
+        ])
+        first, second = report["runs"]
+        self.assertEqual(first["pose_detected_frames"], 5)
+        self.assertEqual(first["missed_pose_frames"], 0)
+        self.assertEqual(first["pose_detection_rate"], 1.0)
+        self.assertIsNone(second["pose_detection_rate"])
+        self.assertIsNone(report["comparison"]["wall_clock_seconds_saved"])
+        self.assertIsNone(report["comparison"]["total_person_detections_delta"])
+
+    def test_sampling_mismatch_marks_comparison_not_comparable(self):
+        report = build_comparison_report([
+            self.fixture(8, 10, 20, 15, 25, 0.5),
+            self.fixture(4, 8, 19, 13, 21, 0.6),
+        ])
+        self.assertFalse(report["comparison"]["same_sample_count"])
+        self.assertFalse(report["comparison"]["same_sampling_interval"])
+        self.assertFalse(report["comparison"]["comparable_sampling"])
+
+
+if __name__ == "__main__":
+    unittest.main()
