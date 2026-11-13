@@ -60,7 +60,7 @@ class Stage64PoseInferenceLatencyTests(unittest.TestCase):
         tree = ast.parse(BACKEND)
         function = next(node for node in tree.body
                         if isinstance(node, ast.FunctionDef) and node.name == "process_match_video")
-        self.assertEqual(function.args.defaults[-1].value.value, 8)
+        self.assertEqual(function.args.defaults[-1].value, 8)
         source = ast.get_source_segment(BACKEND, function)
         self.assertIn("num_poses=max(1, min(8, int(max_poses)))", source)
         self.assertIn("max_poses=8", source)
@@ -68,7 +68,6 @@ class Stage64PoseInferenceLatencyTests(unittest.TestCase):
     def test_service_worker_cache_is_bumped_to_refresh_stale_app_shell(self):
         self.assertIn('riku-football-lab-shell-v5', SW)
         self.assertNotIn('riku-football-lab-shell-v4', SW)
-
 
     def test_pose_postprocess_caches_landmark_reads_without_changing_geometry(self):
         tree = ast.parse(BACKEND)
