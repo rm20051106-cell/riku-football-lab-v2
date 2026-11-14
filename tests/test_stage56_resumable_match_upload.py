@@ -218,5 +218,29 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn("self.assertEqual(result[\"checkpointAtFirstPut\"], 1, result)", retry_test)
 
 
+    def test_resume_rejects_mismatched_or_corrupt_identity_before_reusing_session(self):
+        html = (ROOT / "index.html").read_text(encoding="utf-8")
+        retry_test = (ROOT / "tests" / "test_match_upload_retry.py").read_text(encoding="utf-8")
+        self.assertIn("const savedRecordValid=", html)
+        self.assertIn("typeof saved.uploadId==='string'", html)
+        self.assertIn("Number.isSafeInteger(saved.size)", html)
+        self.assertIn("Number.isInteger(saved.nextChunk)", html)
+        self.assertIn("アップロード再開情報の破損または必須項目不足を検出", html)
+        self.assertIn("try{await clearPendingMatchUpload()}", html)
+        self.assertIn("different_video", retry_test)
+        self.assertIn("different_size", retry_test)
+        self.assertIn("different_last_modified", retry_test)
+        self.assertIn("different_mime_type", retry_test)
+        self.assertIn("stored_identity_mismatch", retry_test)
+        self.assertIn("missing_record", retry_test)
+        self.assertIn("corrupt_missing_upload_id", retry_test)
+        self.assertIn("corrupt_checkpoint_type", retry_test)
+        self.assertIn("corrupt_chunk_size", retry_test)
+        self.assertIn("corrupt_nan_checkpoint", retry_test)
+        self.assertIn("indexeddb_read_error", retry_test)
+        self.assertIn("self.assertEqual(result[\"staleStatusChecks\"], 0, result)", retry_test)
+        self.assertIn("12 * 1024 * 1024", retry_test)
+
+
 if __name__ == "__main__":
     unittest.main()
