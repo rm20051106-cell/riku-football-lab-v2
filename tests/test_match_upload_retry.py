@@ -61,7 +61,7 @@ class MatchUploadRetryTests(unittest.TestCase):
                                 received_bytes: 0, next_chunk: 0, total_chunks: 2
                             }), {status: 200, headers: {'Content-Type': 'application/json'}});
                         }
-                        if (/\\/analyze\\/match\\/uploads\\/retry-session\\/[01]$/.test(path) && options.method === 'PUT') {
+                        if ((path === '/analyze/match/uploads/retry-session/0' || path === '/analyze/match/uploads/retry-session/1') && options.method === 'PUT') {
                             chunkAttempts++;
                             chunkSizes.push(options.body.get('file').size);
                             if (path.endsWith('/0') && chunkSizes.filter(size => size === 12 * 1024 * 1024).length === 1) {
