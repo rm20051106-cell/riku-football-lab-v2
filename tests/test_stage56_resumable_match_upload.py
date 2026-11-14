@@ -168,7 +168,10 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
 
     def test_upload_chunk_size_matches_backend_12mb_and_retry_timeout_contract(self):
         self.assertIn("MATCH_UPLOAD_CHUNK_BYTES = 12 * 1024 * 1024", SOURCE)
-        self.assertIn("chunk_size:12*1024*1024", HTML)
+        self.assertIn("chunkSize=Number(created.chunk_size)||chunkSizeDefault", HTML)
+        retry_test = (ROOT / "tests" / "test_match_upload_retry.py").read_text(encoding="utf-8")
+        self.assertIn("chunk_size: 12 * 1024 * 1024", retry_test)
+        self.assertIn("new Uint8Array(12 * 1024 * 1024 + 1)", retry_test)
         upload = HTML[HTML.index("async function uploadMatchVideoInChunks"):HTML.index("async function fetchMatchJobStatusWithRetry")]
         self.assertIn("attempt<=3", upload)
         self.assertIn("setTimeout(()=>controller.abort(),120000)", upload)
