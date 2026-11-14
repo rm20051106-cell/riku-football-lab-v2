@@ -383,5 +383,162 @@ class MatchUploadRetryTests(unittest.TestCase):
         self._verify_resume_after_storage_survives_restart(restart_browser=True)
 
 
+    def test_mismatched_video_identity_and_invalid_resume_records_start_fresh_sessions(self):
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True, args=["--no-sandbox"])
+            try:
+                page = browser.new_page(viewport={"width": 390, "height": 844})
+                page.goto(self.url, wait_until="load")
+                page.wait_for_function(
+                    "typeof uploadMatchVideoInChunks === 'function' && typeof savePendingMatchUpload === 'function'"
+                )
+                results = page.evaluate("""async () => {
+                    state.settings.apiBaseUrl = 'https://safe-resume.test';
+                    const CHUNK = 12 * 1024 * 1024;
+                    const cases = [
+                        'different_video', 'different_size', 'different_last_modified',
+                        'different_mime_type', 'stored_identity_mismatch',
+                        'missing_record', 'corrupt_missing_upload_id',
+                        'corrupt_checkpoint_type', 'corrupt_chunk_size', 'indexeddb_read_error'
+                    ];
+                    const outcomes = [];
+                    const nativeGetPending = window.getPendingMatchUpload;
+                    for (const caseName of cases) {
+                        const original = new File(
+                            [new Uint8Array(CHUNK + 1)], 'match.mp4',
+                            {type: 'video/mp4', lastModified: 111}
+                        );
+                        let selected = original;
+                        if (caseName === 'different_video') {
+                            selected = new File([new Uint8Array(CHUNK + 1)], 'other-match.mp4',
+                                {type: 'video/mp4', lastModified: 111});
+                        } else if (caseName === 'different_size') {
+                            selected = new File([new Uint8Array(CHUNK + 2)], 'match.mp4',
+                                {type: 'video/mp4', lastModified: 111});
+                        } else if (caseName === 'different_last_modified') {
+                            selected = new File([new Uint8Array(CHUNK + 1)], 'match.mp4',
+                                {type: 'video/mp4', lastModified: 222});
+                        } else if (caseName === 'different_mime_type') {
+                            selected = new File([new Uint8Array(CHUNK + 1)], 'match.mp4',
+                                {type: 'video/quicktime', lastModified: 111});
+                        }
+                        await clearPendingMatchUpload();
+                        const originalKey = getVideoSourceKey(original);
+                        const stale = {
+                            sourceKey: originalKey, size: original.size, name: original.name,
+                            lastModified: original.lastModified, jerseyNumbers: '10,74',
+                            uploadId: 'stale-' + caseName, chunkSize: CHUNK,
+                            totalChunks: 2, nextChunk: 1, createdAt: 123
+                        };
+                        if (caseName === 'stored_identity_mismatch') stale.sourceKey = 'tampered-source-key';
+                        if (caseName === 'corrupt_missing_upload_id') delete stale.uploadId;
+                        if (caseName === 'corrupt_checkpoint_type') stale.nextChunk = '1';
+                        if (caseName === 'corrupt_chunk_size') stale.chunkSize = -1;
+                        if (caseName !== 'missing_record' && caseName !== 'indexeddb_read_error') {
+                            await savePendingMatchUpload(stale);
+                        }
+                        if (caseName === 'indexeddb_read_error') {
+                            window.getPendingMatchUpload = async () => {
+                                throw new Error('simulated IndexedDB read failure');
+                            };
+                        } else {
+                            window.getPendingMatchUpload = nativeGetPending;
+                        }
+
+                        let createCount = 0, staleStatusChecks = 0, freshStatusChecks = 0;
+                        const putIndexes = [], putSizes = [];
+                        const freshId = 'fresh-' + caseName;
+                        window.fetch = async (url, options = {}) => {
+                            const path = new URL(url).pathname;
+                            if (path === '/analyze/match/uploads' && options.method === 'POST') {
+                                createCount++;
+                                return new Response(JSON.stringify({
+                                    ok: true, upload_id: freshId,
+                                    chunk_size: CHUNK, total_chunks: 2
+                                }), {status: 201, headers: {'Content-Type': 'application/json'}});
+                            }
+                            if (path.startsWith('/analyze/match/uploads/stale-') &&
+                                options.method === 'GET') {
+                                staleStatusChecks++;
+                                return new Response(JSON.stringify({
+                                    upload_id: 'unexpected-stale-session',
+                                    total_bytes: original.size, next_chunk: 1, total_chunks: 2
+                                }), {status: 200, headers: {'Content-Type': 'application/json'}});
+                            }
+                            if (path === '/analyze/match/uploads/' + freshId &&
+                                options.method === 'GET') {
+                                freshStatusChecks++;
+                                return new Response(JSON.stringify({
+                                    upload_id: freshId, total_bytes: selected.size,
+                                    received_bytes: 0, next_chunk: 0, total_chunks: 2
+                                }), {status: 200, headers: {'Content-Type': 'application/json'}});
+                            }
+                            if ((path === '/analyze/match/uploads/' + freshId + '/0' ||
+                                 path === '/analyze/match/uploads/' + freshId + '/1') &&
+                                options.method === 'PUT') {
+                                const index = Number(path.split('/').pop());
+                                putIndexes.push(index);
+                                putSizes.push(options.body.get('file').size);
+                                return new Response(JSON.stringify({ok: true}), {
+                                    status: 200, headers: {'Content-Type': 'application/json'}
+                                });
+                            }
+                            if (path === '/analyze/match/uploads/' + freshId + '/complete' &&
+                                options.method === 'POST') {
+                                return new Response(JSON.stringify({
+                                    ok: true, job_id: 'job-' + caseName, status: 'queued'
+                                }), {status: 202, headers: {'Content-Type': 'application/json'}});
+                            }
+                            throw new Error('Unexpected request: ' + options.method + ' ' + path);
+                        };
+                        const response = await uploadMatchVideoInChunks(
+                            selected, '10,74', document.createElement('div')
+                        );
+                        outcomes.push({
+                            caseName, createCount, staleStatusChecks, freshStatusChecks,
+                            putIndexes, putSizes, expectedSize: selected.size,
+                            jobId: response.job_id
+                        });
+                        window.getPendingMatchUpload = nativeGetPending;
+                    }
+                    return outcomes;
+                }""")
+                self.assertEqual(len(results), 10, results)
+                for result in results:
+                    with self.subTest(case=result["caseName"]):
+                        self.assertEqual(result["createCount"], 1, result)
+                        self.assertEqual(result["staleStatusChecks"], 0, result)
+                        self.assertEqual(result["freshStatusChecks"], 1, result)
+                        self.assertEqual(result["putIndexes"], [0, 1], result)
+                        self.assertEqual(result["putSizes"][0], 12 * 1024 * 1024, result)
+                        self.assertEqual(sum(result["putSizes"]), result["expectedSize"], result)
+                        self.assertTrue(result["jobId"].startswith("job-"), result)
+            finally:
+                browser.close()
+
+    def test_corrupt_resume_record_is_rejected_before_old_upload_status_lookup(self):
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True, args=["--no-sandbox"])
+            try:
+                page = browser.new_page(viewport={"width": 390, "height": 844})
+                page.goto(self.url, wait_until="load")
+                page.wait_for_function("typeof uploadMatchVideoInChunks === 'function'")
+                result = page.evaluate("""async () => {
+                    const file = new File([new Uint8Array(12 * 1024 * 1024 + 1)],
+                        'broken-record.mp4', {type: 'video/mp4', lastModified: 456});
+                    const sourceKey = getVideoSourceKey(file);
+                    await savePendingMatchUpload({
+                        sourceKey, size: file.size, jerseyNumbers: '10,74',
+                        uploadId: 'must-not-be-contacted', chunkSize: 12 * 1024 * 1024,
+                        totalChunks: 2, nextChunk: NaN
+                    });
+                    return {sourceKey, stored: await getPendingMatchUpload()};
+                }""")
+                self.assertEqual(result["stored"]["uploadId"], "must-not-be-contacted")
+                self.assertTrue(result["sourceKey"])
+            finally:
+                browser.close()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
