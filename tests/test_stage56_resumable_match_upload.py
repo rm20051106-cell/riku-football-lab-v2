@@ -134,6 +134,22 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn('"PUT", "DELETE"', SOURCE)
 
 
+    def test_analysis_job_status_polling_retries_transient_failures_with_timeout(self):
+        helper = HTML.split("async function fetchMatchJobStatusWithRetry", 1)[1].split(
+            "async function postMatchJobToAI", 1
+        )[0]
+        self.assertIn("retryLimit", helper)
+        self.assertIn("AbortController", helper)
+        self.assertIn("timeoutMs", helper)
+        self.assertIn("response.status>=400&&response.status<500", helper)
+        self.assertIn("retryDelayMs*attempt", helper)
+        self.assertIn("解析ジョブ情報は端末に保持しています", helper)
+        polling = HTML.split("async function postMatchJobToAI", 1)[1].split(
+            "async function resumePendingMatchJob", 1
+        )[0]
+        self.assertIn("fetchMatchJobStatusWithRetry(u,jobId)", polling)
+        self.assertNotIn("const statusResponse=await fetch(u+'/analyze/jobs/'", polling)
+
     def test_frontend_persists_analysis_job_and_resumes_after_reload(self):
         self.assertIn("async function getPendingMatchJob()", HTML)
         self.assertIn("async function savePendingMatchJob(record)", HTML)
