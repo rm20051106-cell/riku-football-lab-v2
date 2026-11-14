@@ -257,5 +257,131 @@ class MatchUploadRetryTests(unittest.TestCase):
                 browser.close()
 
 
+    def _verify_resume_after_storage_survives_restart(self, restart_browser):
+        import tempfile
+
+        with sync_playwright() as playwright:
+            with tempfile.TemporaryDirectory() as user_data_dir:
+                context = playwright.chromium.launch_persistent_context(
+                    user_data_dir, headless=True, args=["--no-sandbox"],
+                    viewport={"width": 390, "height": 844}
+                )
+                try:
+                    page = context.new_page()
+                    page.goto(self.url, wait_until="load")
+                    page.wait_for_function(
+                        "typeof uploadMatchVideoInChunks === 'function' && typeof savePendingMatchUpload === 'function'"
+                    )
+                    seeded = page.evaluate("""async () => {
+                        state.settings.apiBaseUrl = 'https://resume-restart.test';
+                        persist();
+                        const file = new File(
+                            [new Uint8Array(12 * 1024 * 1024 + 1)],
+                            'restart-resume.mp4',
+                            {type: 'video/mp4', lastModified: 12345}
+                        );
+                        const sourceKey = getVideoSourceKey(file);
+                        await savePendingMatchUpload({
+                            sourceKey, size: file.size, name: file.name,
+                            lastModified: file.lastModified, jerseyNumbers: '10,74',
+                            uploadId: 'restart-session', chunkSize: 12 * 1024 * 1024,
+                            totalChunks: 2, nextChunk: 0, createdAt: 123
+                        });
+                        return {sourceKey, size: file.size, lastModified: file.lastModified};
+                    }""")
+
+                    if restart_browser:
+                        context.close()
+                        context = playwright.chromium.launch_persistent_context(
+                            user_data_dir, headless=True, args=["--no-sandbox"],
+                            viewport={"width": 390, "height": 844}
+                        )
+                        page = context.new_page()
+                        page.goto(self.url, wait_until="load")
+                    else:
+                        page.reload(wait_until="load")
+
+                    page.wait_for_function(
+                        "typeof uploadMatchVideoInChunks === 'function' && typeof getPendingMatchUpload === 'function'"
+                    )
+                    page.set_input_files("#videoFile", {
+                        "name": "restart-resume.mp4",
+                        "mimeType": "video/mp4",
+                        "buffer": b"\\x00" * (12 * 1024 * 1024 + 1),
+                        "last_modified": 12345
+                    })
+                    result = page.evaluate("""async () => {
+                        await pendingMatchSave;
+                        const file = document.getElementById('videoFile').files[0];
+                        const restored = await getPendingMatchUpload();
+                        const sourceKey = getVideoSourceKey(file);
+                        const putIndexes = [];
+                        const putSizes = [];
+                        let checkpointAtFirstPut = null;
+                        let statusChecks = 0;
+                        window.fetch = async (url, options = {}) => {
+                            const path = new URL(url).pathname;
+                            if (path === '/analyze/match/uploads/restart-session' &&
+                                options.method === 'GET') {
+                                statusChecks++;
+                                return new Response(JSON.stringify({
+                                    upload_id: 'restart-session',
+                                    total_bytes: file.size,
+                                    received_bytes: 12 * 1024 * 1024,
+                                    next_chunk: 1, total_chunks: 2
+                                }), {status: 200, headers: {'Content-Type': 'application/json'}});
+                            }
+                            if (path === '/analyze/match/uploads/restart-session/1' &&
+                                options.method === 'PUT') {
+                                putIndexes.push(1);
+                                putSizes.push(options.body.get('file').size);
+                                checkpointAtFirstPut = (await getPendingMatchUpload())?.nextChunk ?? null;
+                                return new Response(JSON.stringify({ok: true}), {
+                                    status: 200, headers: {'Content-Type': 'application/json'}
+                                });
+                            }
+                            if (path === '/analyze/match/uploads/restart-session/complete' &&
+                                options.method === 'POST') {
+                                return new Response(JSON.stringify({
+                                    job_id: 'restart-resume-job', status: 'queued'
+                                }), {status: 202, headers: {'Content-Type': 'application/json'}});
+                            }
+                            throw new Error('Unexpected request: ' + options.method + ' ' + path);
+                        };
+                        const response = await uploadMatchVideoInChunks(
+                            file, '10,74', document.createElement('div')
+                        );
+                        return {
+                            restoredUploadId: restored?.uploadId || null,
+                            restoredNextChunk: restored?.nextChunk ?? null,
+                            restoredChunkSize: restored?.chunkSize ?? null,
+                            selectedSourceKey: sourceKey,
+                            selectedSize: file.size,
+                            selectedLastModified: file.lastModified,
+                            putIndexes, putSizes, checkpointAtFirstPut, statusChecks,
+                            jobId: response.job_id
+                        };
+                    }""")
+                    self.assertEqual(result["restoredUploadId"], "restart-session", result)
+                    self.assertEqual(result["restoredNextChunk"], 0, result)
+                    self.assertEqual(result["restoredChunkSize"], 12 * 1024 * 1024, result)
+                    self.assertEqual(result["selectedSourceKey"], seeded["sourceKey"], result)
+                    self.assertEqual(result["selectedSize"], seeded["size"], result)
+                    self.assertEqual(result["selectedLastModified"], seeded["lastModified"], result)
+                    self.assertEqual(result["statusChecks"], 1, result)
+                    self.assertEqual(result["putIndexes"], [1], result)
+                    self.assertEqual(result["putSizes"], [1], result)
+                    self.assertEqual(result["checkpointAtFirstPut"], 1, result)
+                    self.assertEqual(result["jobId"], "restart-resume-job", result)
+                finally:
+                    context.close()
+
+    def test_indexeddb_resume_survives_page_reload_and_same_video_reselection(self):
+        self._verify_resume_after_storage_survives_restart(restart_browser=False)
+
+    def test_indexeddb_resume_survives_browser_process_restart_and_same_video_reselection(self):
+        self._verify_resume_after_storage_survives_restart(restart_browser=True)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
