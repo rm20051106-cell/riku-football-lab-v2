@@ -43,6 +43,7 @@ class MatchUploadRetryTests(unittest.TestCase):
                 result = page.evaluate("""async () => {
                     state.settings.apiBaseUrl = 'https://upload-retry.test';
                     let chunkAttempts = 0;
+                    let chunkSizes = [];
                     let completeAttempts = 0;
                     let serverJobId = null;
                     let deleteAttempts = 0;
@@ -51,12 +52,21 @@ class MatchUploadRetryTests(unittest.TestCase):
                         if (path === '/analyze/match/uploads' && options.method === 'POST') {
                             return new Response(JSON.stringify({
                                 ok: true, upload_id: 'retry-session',
-                                chunk_size: 6 * 1024 * 1024, total_chunks: 1
+                                chunk_size: 12 * 1024 * 1024, total_chunks: 2
                             }), {status: 201, headers: {'Content-Type': 'application/json'}});
                         }
-                        if (path === '/analyze/match/uploads/retry-session/0' && options.method === 'PUT') {
+                        if (path === '/analyze/match/uploads/retry-session' && options.method === 'GET') {
+                            return new Response(JSON.stringify({
+                                upload_id: 'retry-session', total_bytes: 12 * 1024 * 1024 + 1,
+                                received_bytes: 0, next_chunk: 0, total_chunks: 2
+                            }), {status: 200, headers: {'Content-Type': 'application/json'}});
+                        }
+                        if (/\\/analyze\\/match\\/uploads\\/retry-session\\/[01]$/.test(path) && options.method === 'PUT') {
                             chunkAttempts++;
-                            if (chunkAttempts === 1) throw new TypeError('Load failed');
+                            chunkSizes.push(options.body.get('file').size);
+                            if (path.endsWith('/0') && chunkSizes.filter(size => size === 12 * 1024 * 1024).length === 1) {
+                                throw new TypeError('Load failed');
+                            }
                             return new Response(JSON.stringify({ok: true}), {
                                 status: 200, headers: {'Content-Type': 'application/json'}
                             });
@@ -79,14 +89,15 @@ class MatchUploadRetryTests(unittest.TestCase):
                     };
                     const video = document.getElementById('matchVideo');
                     Object.defineProperty(video, 'duration', {configurable: true, value: 60});
-                    const file = new File([new Uint8Array(1024 * 1024)], 'retry.mp4', {
+                    const file = new File([new Uint8Array(12 * 1024 * 1024 + 1)], 'retry.mp4', {
                         type: 'video/mp4'
                     });
                     const status = document.createElement('div');
                     const response = await uploadMatchVideoInChunks(file, ['10', '74'], status);
-                    return {chunkAttempts, completeAttempts, deleteAttempts, response};
+                    return {chunkAttempts, chunkSizes, completeAttempts, deleteAttempts, response};
                 }""")
-                self.assertEqual(result["chunkAttempts"], 2, result)
+                self.assertEqual(result["chunkAttempts"], 3, result)
+                self.assertEqual(result["chunkSizes"], [12 * 1024 * 1024, 12 * 1024 * 1024, 1], result)
                 self.assertEqual(result["completeAttempts"], 2, result)
                 self.assertEqual(result["deleteAttempts"], 0, result)
                 self.assertEqual(result["response"]["job_id"], "retry-job", result)
