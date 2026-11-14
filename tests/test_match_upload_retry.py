@@ -105,5 +105,157 @@ class MatchUploadRetryTests(unittest.TestCase):
                 browser.close()
 
 
+    def test_timeout_aborts_chunk_and_retries_after_server_reconciliation(self):
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(
+                headless=True, args=["--no-sandbox"]
+            )
+            try:
+                page = browser.new_page(viewport={"width": 390, "height": 844})
+                page.goto(self.url, wait_until="load")
+                page.wait_for_function(
+                    "typeof uploadMatchVideoInChunks === 'function'"
+                )
+                result = page.evaluate("""async () => {
+                    state.settings.apiBaseUrl = 'https://upload-timeout.test';
+                    const originalSetTimeout = window.setTimeout.bind(window);
+                    window.setTimeout = (callback, delay, ...args) =>
+                        originalSetTimeout(callback, delay === 120000 ? 0 : delay, ...args);
+                    let putAttempts = 0;
+                    let timedOut = false;
+                    let statusChecks = 0;
+                    window.fetch = async (url, options = {}) => {
+                        const path = new URL(url).pathname;
+                        if (path === '/analyze/match/uploads' && options.method === 'POST') {
+                            return new Response(JSON.stringify({
+                                upload_id: 'timeout-session',
+                                chunk_size: 12 * 1024 * 1024,
+                                total_chunks: 1
+                            }), {status: 201, headers: {'Content-Type': 'application/json'}});
+                        }
+                        if (path === '/analyze/match/uploads/timeout-session' && options.method === 'GET') {
+                            statusChecks++;
+                            return new Response(JSON.stringify({
+                                upload_id: 'timeout-session',
+                                total_bytes: 12 * 1024 * 1024,
+                                next_chunk: 0,
+                                total_chunks: 1
+                            }), {status: 200, headers: {'Content-Type': 'application/json'}});
+                        }
+                        if (path === '/analyze/match/uploads/timeout-session/0' && options.method === 'PUT') {
+                            putAttempts++;
+                            if (putAttempts === 1) {
+                                return new Promise((resolve, reject) => {
+                                    if (options.signal.aborted) {
+                                        timedOut = true;
+                                        reject(new DOMException('Aborted', 'AbortError'));
+                                        return;
+                                    }
+                                    options.signal.addEventListener('abort', () => {
+                                        timedOut = true;
+                                        reject(new DOMException('Aborted', 'AbortError'));
+                                    }, {once: true});
+                                });
+                            }
+                            return new Response(JSON.stringify({ok: true}), {status: 200});
+                        }
+                        if (path === '/analyze/match/uploads/timeout-session/complete' && options.method === 'POST') {
+                            return new Response(JSON.stringify({
+                                job_id: 'timeout-job', status: 'queued'
+                            }), {status: 202, headers: {'Content-Type': 'application/json'}});
+                        }
+                        throw new Error('Unexpected request: ' + options.method + ' ' + path);
+                    };
+                    const video = document.getElementById('matchVideo');
+                    Object.defineProperty(video, 'duration', {configurable: true, value: 60});
+                    const file = new File([new Uint8Array(12 * 1024 * 1024)], 'timeout.mp4', {
+                        type: 'video/mp4'
+                    });
+                    const response = await uploadMatchVideoInChunks(file, ['10', '74'], document.createElement('div'));
+                    return {putAttempts, timedOut, statusChecks, jobId: response.job_id};
+                }""")
+                self.assertEqual(result["putAttempts"], 2, result)
+                self.assertTrue(result["timedOut"], result)
+                self.assertEqual(result["statusChecks"], 1, result)
+                self.assertEqual(result["jobId"], "timeout-job", result)
+            finally:
+                browser.close()
+
+    def test_server_checkpoint_overrides_stale_indexeddb_checkpoint(self):
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(
+                headless=True, args=["--no-sandbox"]
+            )
+            try:
+                page = browser.new_page(viewport={"width": 390, "height": 844})
+                page.goto(self.url, wait_until="load")
+                page.wait_for_function(
+                    "typeof uploadMatchVideoInChunks === 'function' && typeof savePendingMatchUpload === 'function'"
+                )
+                results = page.evaluate("""async () => {
+                    state.settings.apiBaseUrl = 'https://upload-reconcile.test';
+                    const video = document.getElementById('matchVideo');
+                    Object.defineProperty(video, 'duration', {configurable: true, value: 60});
+                    const file = new File([new Uint8Array(12 * 1024 * 1024 + 1)], 'reconcile.mp4', {
+                        type: 'video/mp4', lastModified: 12345
+                    });
+                    const sourceKey = getVideoSourceKey(file);
+                    const cases = [
+                        {id: 'local-behind', localNext: 0, serverNext: 1},
+                        {id: 'local-ahead', localNext: 2, serverNext: 0}
+                    ];
+                    const observed = [];
+                    for (const item of cases) {
+                        const uploadId = 'reconcile-' + item.id;
+                        await savePendingMatchUpload({
+                            sourceKey, size: file.size, name: file.name,
+                            lastModified: file.lastModified, jerseyNumbers: ['10', '74'],
+                            uploadId, chunkSize: 12 * 1024 * 1024,
+                            totalChunks: 2, nextChunk: item.localNext, createdAt: 1
+                        });
+                        const putIndexes = [];
+                        let checkpointAtFirstPut = null;
+                        window.fetch = async (url, options = {}) => {
+                            const path = new URL(url).pathname;
+                            if (path === '/analyze/match/uploads/' + uploadId && options.method === 'GET') {
+                                return new Response(JSON.stringify({
+                                    upload_id: uploadId, total_bytes: file.size,
+                                    next_chunk: item.serverNext, total_chunks: 2
+                                }), {status: 200, headers: {'Content-Type': 'application/json'}});
+                            }
+                            if (path.startsWith('/analyze/match/uploads/' + uploadId + '/') &&
+                                options.method === 'PUT' && !path.endsWith('/complete')) {
+                                const index = Number(path.split('/').pop());
+                                putIndexes.push(index);
+                                if (checkpointAtFirstPut === null) {
+                                    const saved = await getPendingMatchUpload();
+                                    checkpointAtFirstPut = saved?.nextChunk ?? null;
+                                }
+                                return new Response(JSON.stringify({ok: true}), {status: 200});
+                            }
+                            if (path === '/analyze/match/uploads/' + uploadId + '/complete' &&
+                                options.method === 'POST') {
+                                return new Response(JSON.stringify({
+                                    job_id: 'job-' + item.id, status: 'queued'
+                                }), {status: 202, headers: {'Content-Type': 'application/json'}});
+                            }
+                            throw new Error('Unexpected request: ' + options.method + ' ' + path);
+                        };
+                        await uploadMatchVideoInChunks(file, ['10', '74'], document.createElement('div'));
+                        observed.push({
+                            id: item.id, localNext: item.localNext,
+                            serverNext: item.serverNext, putIndexes, checkpointAtFirstPut
+                        });
+                    }
+                    return observed;
+                }""")
+                self.assertEqual(results[0]["putIndexes"], [1], results)
+                self.assertEqual(results[0]["checkpointAtFirstPut"], 1, results)
+                self.assertEqual(results[1]["putIndexes"], [0, 1], results)
+                self.assertEqual(results[1]["checkpointAtFirstPut"], 0, results)
+            finally:
+                browser.close()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
