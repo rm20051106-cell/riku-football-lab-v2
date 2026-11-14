@@ -399,7 +399,7 @@ class MatchUploadRetryTests(unittest.TestCase):
                         'different_video', 'different_size', 'different_last_modified',
                         'different_mime_type', 'stored_identity_mismatch',
                         'missing_record', 'corrupt_missing_upload_id',
-                        'corrupt_checkpoint_type', 'corrupt_chunk_size', 'indexeddb_read_error'
+                        'corrupt_checkpoint_type', 'corrupt_chunk_size', 'corrupt_nan_checkpoint', 'indexeddb_read_error'
                     ];
                     const outcomes = [];
                     const nativeGetPending = window.getPendingMatchUpload;
@@ -433,6 +433,7 @@ class MatchUploadRetryTests(unittest.TestCase):
                         if (caseName === 'stored_identity_mismatch') stale.sourceKey = 'tampered-source-key';
                         if (caseName === 'corrupt_missing_upload_id') delete stale.uploadId;
                         if (caseName === 'corrupt_checkpoint_type') stale.nextChunk = '1';
+                        if (caseName === 'corrupt_nan_checkpoint') stale.nextChunk = NaN;
                         if (caseName === 'corrupt_chunk_size') stale.chunkSize = -1;
                         if (caseName !== 'missing_record' && caseName !== 'indexeddb_read_error') {
                             await savePendingMatchUpload(stale);
@@ -503,12 +504,12 @@ class MatchUploadRetryTests(unittest.TestCase):
                     }
                     return outcomes;
                 }""")
-                self.assertEqual(len(results), 10, results)
+                self.assertEqual(len(results), 11, results)
                 for result in results:
                     with self.subTest(case=result["caseName"]):
                         self.assertEqual(result["createCount"], 1, result)
                         self.assertEqual(result["staleStatusChecks"], 0, result)
-                        self.assertEqual(result["freshStatusChecks"], 1, result)
+                        self.assertEqual(result["freshStatusChecks"], 0, result)
                         self.assertEqual(result["putIndexes"], [0, 1], result)
                         self.assertEqual(result["putSizes"][0], 12 * 1024 * 1024, result)
                         self.assertEqual(sum(result["putSizes"]), result["expectedSize"], result)
@@ -516,28 +517,6 @@ class MatchUploadRetryTests(unittest.TestCase):
             finally:
                 browser.close()
 
-    def test_corrupt_resume_record_is_rejected_before_old_upload_status_lookup(self):
-        with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=True, args=["--no-sandbox"])
-            try:
-                page = browser.new_page(viewport={"width": 390, "height": 844})
-                page.goto(self.url, wait_until="load")
-                page.wait_for_function("typeof uploadMatchVideoInChunks === 'function'")
-                result = page.evaluate("""async () => {
-                    const file = new File([new Uint8Array(12 * 1024 * 1024 + 1)],
-                        'broken-record.mp4', {type: 'video/mp4', lastModified: 456});
-                    const sourceKey = getVideoSourceKey(file);
-                    await savePendingMatchUpload({
-                        sourceKey, size: file.size, jerseyNumbers: '10,74',
-                        uploadId: 'must-not-be-contacted', chunkSize: 12 * 1024 * 1024,
-                        totalChunks: 2, nextChunk: NaN
-                    });
-                    return {sourceKey, stored: await getPendingMatchUpload()};
-                }""")
-                self.assertEqual(result["stored"]["uploadId"], "must-not-be-contacted")
-                self.assertTrue(result["sourceKey"])
-            finally:
-                browser.close()
 
 
 if __name__ == "__main__":
