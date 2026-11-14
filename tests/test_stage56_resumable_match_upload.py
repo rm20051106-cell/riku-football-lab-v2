@@ -178,6 +178,24 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn("method:'GET',credentials:'omit',cache:'no-store'", upload)
         self.assertIn("nextChunk=Number(current.next_chunk)", upload)
 
+    def test_resume_detects_local_server_checkpoint_mismatch_and_syncs_to_server(self):
+        upload = HTML[HTML.index("async function uploadMatchVideoInChunks"):HTML.index("async function fetchMatchJobStatusWithRetry")]
+        self.assertIn("const serverNextChunk=Number(status.next_chunk)", upload)
+        self.assertIn("const localNextChunk=Number(saved.nextChunk)", upload)
+        self.assertIn("checkpointMismatch=Number.isInteger(localNextChunk)&&localNextChunk!==serverNextChunk", upload)
+        self.assertIn("サーバー側の受信位置を優先します", upload)
+        self.assertIn("await persistResume({...identity,uploadId:session.upload_id,chunkSize,totalChunks:total,nextChunk,createdAt:saved.createdAt||Date.now()})", upload)
+        self.assertIn("serverNextChunk>serverTotalChunks", upload)
+
+    def test_browser_retry_suite_covers_timeout_and_both_checkpoint_drift_directions(self):
+        retry_test = (ROOT / "tests" / "test_match_upload_retry.py").read_text(encoding="utf-8")
+        self.assertIn("def test_timeout_aborts_chunk_and_retries_after_server_reconciliation", retry_test)
+        self.assertIn("def test_server_checkpoint_overrides_stale_indexeddb_checkpoint", retry_test)
+        self.assertIn("local-behind", retry_test)
+        self.assertIn("local-ahead", retry_test)
+        self.assertIn("checkpointAtFirstPut", retry_test)
+        self.assertIn("timedOut", retry_test)
+
 
 if __name__ == "__main__":
     unittest.main()
