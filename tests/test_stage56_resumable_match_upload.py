@@ -197,5 +197,26 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn("timedOut", retry_test)
 
 
+    def test_browser_resume_suite_covers_page_reload_and_full_browser_restart(self):
+        retry_test = (ROOT / "tests" / "test_match_upload_retry.py").read_text(encoding="utf-8")
+        self.assertIn(
+            "def test_indexeddb_resume_survives_page_reload_and_same_video_reselection",
+            retry_test
+        )
+        self.assertIn(
+            "def test_indexeddb_resume_survives_browser_process_restart_and_same_video_reselection",
+            retry_test
+        )
+        self.assertIn("launch_persistent_context", retry_test)
+        self.assertIn("page.reload(wait_until=\"load\")", retry_test)
+        self.assertIn('page.set_input_files("#videoFile"', retry_test)
+        self.assertIn("last_modified", retry_test)
+        self.assertIn("12 * 1024 * 1024", retry_test)
+        self.assertIn("restoredUploadId", retry_test)
+        self.assertIn("checkpointAtFirstPut", retry_test)
+        self.assertIn("self.assertEqual(result[\"putIndexes\"], [1], result)", retry_test)
+        self.assertIn("self.assertEqual(result[\"checkpointAtFirstPut\"], 1, result)", retry_test)
+
+
 if __name__ == "__main__":
     unittest.main()
