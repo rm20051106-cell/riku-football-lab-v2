@@ -1219,9 +1219,17 @@ async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
   if(statusResponse.ok){
    const raw=await statusResponse.text();let status;try{status=JSON.parse(raw)}catch(e){status=null}
    if(!status||status.upload_id!==saved.uploadId||Number(status.total_bytes)!==file.size||!Number.isInteger(Number(status.next_chunk)))throw Error('サーバーの再開情報が一致しません。元動画を変更せず再試行してください。');
-   session={upload_id:saved.uploadId,total_chunks:Number(status.total_chunks)};
-   chunkSize=Number(saved.chunkSize)||chunkSizeDefault;total=Number(status.total_chunks);nextChunk=Number(status.next_chunk);
-   resultElement.textContent='前回の続きから再開します：'+Math.round((nextChunk/Math.max(1,total))*100)+'%（'+nextChunk+'/'+total+'）';
+   const serverNextChunk=Number(status.next_chunk),serverTotalChunks=Number(status.total_chunks);
+   if(!Number.isInteger(serverTotalChunks)||serverTotalChunks<1||!Number.isInteger(serverNextChunk)||serverNextChunk<0||serverNextChunk>serverTotalChunks)throw Error('サーバーの分割進捗が不正です。再開情報は保持しています。');
+   const localNextChunk=Number(saved.nextChunk);
+   const checkpointMismatch=Number.isInteger(localNextChunk)&&localNextChunk!==serverNextChunk;
+   session={upload_id:saved.uploadId,total_chunks:serverTotalChunks};
+   chunkSize=Number(saved.chunkSize)||chunkSizeDefault;total=serverTotalChunks;nextChunk=serverNextChunk;
+   if(checkpointMismatch){
+    console.warn('アップロード再開位置の不一致を検出。サーバー側の受信位置を優先します。',{localNextChunk,serverNextChunk,totalChunks:serverTotalChunks});
+    await persistResume({...identity,uploadId:session.upload_id,chunkSize,totalChunks:total,nextChunk,createdAt:saved.createdAt||Date.now()});
+   }
+   resultElement.textContent='前回の続きから再開します：'+Math.round((nextChunk/Math.max(1,total))*100)+'%（'+nextChunk+'/'+total+'）'+(checkpointMismatch?'｜端末保存位置の不一致を検出し、サーバー側の受信位置に同期しました。':'');
   }else if(statusResponse.status===404){try{await clearPendingMatchUpload()}catch(_){}saved=null}
   else throw Error('前回のアップロード状態を取得できません HTTP '+statusResponse.status+'。再開情報は保持しています。');
  }else if(saved){try{await clearPendingMatchUpload()}catch(_){}saved=null}
