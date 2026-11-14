@@ -307,7 +307,7 @@ class MatchUploadRetryTests(unittest.TestCase):
                     page.set_input_files("#videoFile", {
                         "name": "restart-resume.mp4",
                         "mimeType": "video/mp4",
-                        "buffer": b"\\x00" * (12 * 1024 * 1024 + 1),
+                        "buffer": b"\x00" * (12 * 1024 * 1024 + 1),
                         "last_modified": 12345
                     })
                     result = page.evaluate("""async () => {
