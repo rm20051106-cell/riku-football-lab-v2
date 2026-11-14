@@ -231,6 +231,7 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn("different_size", retry_test)
         self.assertIn("different_last_modified", retry_test)
         self.assertIn("different_mime_type", retry_test)
+        self.assertIn("different_jersey_numbers", retry_test)
         self.assertIn("stored_identity_mismatch", retry_test)
         self.assertIn("missing_record", retry_test)
         self.assertIn("corrupt_missing_upload_id", retry_test)
