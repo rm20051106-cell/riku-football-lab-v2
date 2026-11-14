@@ -1211,7 +1211,7 @@ async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
   console.warn('保存済みアップロード再開情報を読み込めません',error);
   resultElement.textContent='端末の保存領域を利用できないため、今回の動画はこの画面を開いている間だけアップロードできます。再読み込み後は動画の再選択が必要で、自動再開はできません。';
  }
- const savedRecordValid=!!saved&&typeof saved==='object'&&typeof saved.uploadId==='string'&&saved.uploadId.trim().length>0&&typeof saved.sourceKey==='string'&&Number.isSafeInteger(Number(saved.size))&&Number(saved.size)>0&&saved.jerseyNumbers===identity.jerseyNumbers&&Number.isInteger(Number(saved.nextChunk))&&Number(saved.nextChunk)>=0&&(!('chunkSize'in saved)||(Number.isInteger(Number(saved.chunkSize))&&Number(saved.chunkSize)>0))&&(!('totalChunks'in saved)||(Number.isInteger(Number(saved.totalChunks))&&Number(saved.totalChunks)>=1));
+ const savedRecordValid=!!saved&&typeof saved==='object'&&typeof saved.uploadId==='string'&&saved.uploadId.trim().length>0&&typeof saved.sourceKey==='string'&&typeof saved.size==='number'&&Number.isSafeInteger(saved.size)&&saved.size>0&&saved.jerseyNumbers===identity.jerseyNumbers&&typeof saved.nextChunk==='number'&&Number.isInteger(saved.nextChunk)&&saved.nextChunk>=0&&(!('chunkSize'in saved)||(typeof saved.chunkSize==='number'&&Number.isInteger(saved.chunkSize)&&saved.chunkSize>0))&&(!('totalChunks'in saved)||(typeof saved.totalChunks==='number'&&Number.isInteger(saved.totalChunks)&&saved.totalChunks>=1));
  if(saved&&!savedRecordValid){
   console.warn('アップロード再開情報の破損または必須項目不足を検出。古いセッションを再利用せず、新規アップロードを開始します。');
   try{await clearPendingMatchUpload()}catch(error){console.warn('破損した再開情報を削除できません',error)}
