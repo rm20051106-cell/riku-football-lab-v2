@@ -397,7 +397,7 @@ class MatchUploadRetryTests(unittest.TestCase):
                     const CHUNK = 12 * 1024 * 1024;
                     const cases = [
                         'different_video', 'different_size', 'different_last_modified',
-                        'different_mime_type', 'stored_identity_mismatch',
+                        'different_mime_type', 'different_jersey_numbers', 'stored_identity_mismatch',
                         'missing_record', 'corrupt_missing_upload_id',
                         'corrupt_checkpoint_type', 'corrupt_chunk_size', 'corrupt_nan_checkpoint', 'indexeddb_read_error'
                     ];
@@ -430,6 +430,7 @@ class MatchUploadRetryTests(unittest.TestCase):
                             uploadId: 'stale-' + caseName, chunkSize: CHUNK,
                             totalChunks: 2, nextChunk: 1, createdAt: 123
                         };
+                        if (caseName === 'different_jersey_numbers') stale.jerseyNumbers = '10,75';
                         if (caseName === 'stored_identity_mismatch') stale.sourceKey = 'tampered-source-key';
                         if (caseName === 'corrupt_missing_upload_id') delete stale.uploadId;
                         if (caseName === 'corrupt_checkpoint_type') stale.nextChunk = '1';
@@ -504,7 +505,7 @@ class MatchUploadRetryTests(unittest.TestCase):
                     }
                     return outcomes;
                 }""")
-                self.assertEqual(len(results), 11, results)
+                self.assertEqual(len(results), 12, results)
                 for result in results:
                     with self.subTest(case=result["caseName"]):
                         self.assertEqual(result["createCount"], 1, result)
