@@ -220,6 +220,51 @@ class MatchUploadBackendIntegrationTest(unittest.TestCase):
 
 
 
+    def test_complete_keeps_upload_session_when_job_manifest_persistence_fails(self):
+        if not Path("/app/main.py").exists():
+            self.skipTest("Run this integration test inside the backend Docker image")
+        sys.path.insert(0, "/app")
+        import main
+        from fastapi import BackgroundTasks, HTTPException
+
+        upload_id = "manifest-write-failure-regression"
+        payload = b"fully-received-video"
+        with tempfile.NamedTemporaryFile(delete=False) as source:
+            source.write(payload)
+            source_path = source.name
+        upload_state = {
+            "path": source_path, "filename": "persist-retry.mp4",
+            "total_size": len(payload), "duration_seconds": 1200.0,
+            "chunk_size": len(payload), "total_chunks": 1,
+            "next_chunk": 1, "received_bytes": len(payload),
+            "jersey_numbers": "10,74", "chunk_hashes": {0: "synthetic"},
+        }
+        main.match_uploads[upload_id] = upload_state
+        main.completed_match_uploads.pop(upload_id, None)
+        tasks = BackgroundTasks()
+
+        async def run():
+            with mock.patch.object(main, "persist_match_job_state", return_value=False):
+                with self.assertRaises(HTTPException) as failure:
+                    await main.complete_match_upload(upload_id, tasks)
+            self.assertEqual(failure.exception.status_code, 507)
+            self.assertIn(upload_id, main.match_uploads)
+            self.assertEqual(len(tasks.tasks), 0)
+            self.assertFalse(any(
+                job.get("upload_id") == upload_id for job in main.match_jobs.values()
+            ))
+
+        try:
+            asyncio.run(run())
+        finally:
+            main.match_uploads.pop(upload_id, None)
+            main.completed_match_uploads.pop(upload_id, None)
+            try:
+                os.remove(source_path)
+            except OSError:
+                pass
+
+
     def test_process_match_video_measures_pose_inference_latency_at_runtime(self):
         if not Path("/app/main.py").exists():
             self.skipTest("Run this integration test inside the backend Docker image")
