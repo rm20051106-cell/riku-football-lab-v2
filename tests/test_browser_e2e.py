@@ -736,6 +736,88 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertTrue(result["storedStillExists"], result)
 
 
+    def test_video_first_restore_can_retry_after_json_and_repeat_safely(self):
+        page = self.page
+        self.accept_dialogs()
+        video_path = self.temp_path / "riku-video__restore-order-1__order.mp4"
+        video_path.write_bytes(b"video")
+        backup_path = self.temp_path / "restore-order.json"
+        backup_path.write_text(json.dumps({
+            "backupFormat": "riku-football-lab",
+            "backupVersion": 3,
+            "state": {
+                "settings": {"name": "陸玖", "jersey1": 10, "jersey2": 74},
+                "menus": [],
+                "trainings": [],
+                "measures": [],
+                "clips": [{
+                    "id": "restore-order-1", "title": "順序確認",
+                    "hasVideo": True,
+                    "sourceVideoKey": "order.mp4|5|123|video/mp4"
+                }],
+                "forms": [], "matchAnalyses": [], "aiFormAnalyses": []
+            }
+        }, ensure_ascii=False), encoding="utf-8")
+
+        page.locator("#videoImportFiles").set_input_files(str(video_path))
+        page.wait_for_function(
+            "document.getElementById('videoImportProgressText')?.textContent.includes('復元処理が終了')",
+            timeout=10000,
+        )
+        self.assertEqual(page.evaluate("lastVideoImportFiles.length"), 1)
+        self.assertEqual(page.evaluate("state.clips.length"), 0)
+
+        page.locator("#importFile").set_input_files(str(backup_path))
+        page.wait_for_function("state.clips.length === 1", timeout=10000)
+        self.assertIn("JSON復元後に再試行", page.locator("#videoImportRetry").inner_text())
+        self.assertEqual(page.evaluate("lastVideoImportFiles.length"), 1)
+
+        page.locator("#videoImportRetry").click()
+        page.wait_for_function(
+            "state.clips.length === 1 && state.clips[0].hasVideo && lastVideoImportFiles.length === 0",
+            timeout=10000,
+        )
+        first_restore = page.evaluate("""async () => ({
+            count: state.clips.length,
+            bytes: (await getClipVideo('restore-order-1'))?.blob?.size || 0
+        })""")
+        self.assertEqual(first_restore, {"count": 1, "bytes": 5})
+
+        page.locator("#videoImportFiles").set_input_files(str(video_path))
+        page.wait_for_function(
+            "document.getElementById('videoImportProgressText')?.textContent.includes('復元処理が終了')",
+            timeout=10000,
+        )
+        repeated = page.evaluate("""async () => ({
+            count: state.clips.length,
+            bytes: (await getClipVideo('restore-order-1'))?.blob?.size || 0,
+            retryCount: lastVideoImportFiles.length
+        })""")
+        self.assertEqual(repeated, {"count": 1, "bytes": 5, "retryCount": 0})
+
+
+    def test_invalid_json_restore_preserves_current_state_and_storage(self):
+        page = self.page
+        page.evaluate("""() => {
+            state.clips = [{id: 'keep-existing', title: '保持する記録', hasVideo: false}];
+            persist();
+        }""")
+        before = page.evaluate("""() => ({
+            state: JSON.stringify(state),
+            stored: localStorage.getItem(KEY)
+        })""")
+        invalid_path = self.temp_path / "invalid-restore.json"
+        invalid_path.write_text('{"backupFormat":"riku-football-lab","state":', encoding="utf-8")
+        page.once("dialog", lambda dialog: dialog.accept())
+        page.locator("#importFile").set_input_files(str(invalid_path))
+        page.wait_for_function("document.getElementById('importFile').value === ''", timeout=10000)
+        after = page.evaluate("""() => ({
+            state: JSON.stringify(state),
+            stored: localStorage.getItem(KEY)
+        })""")
+        self.assertEqual(after, before)
+
+
     def test_webkit_safari_compatibility_smoke(self):
         browser = self.playwright.webkit.launch(headless=True)
         try:
