@@ -60,7 +60,7 @@ class MatchUploadRetryTests(unittest.TestCase):
                         if (path === '/analyze/match/uploads/retry-session' && options.method === 'GET') {
                             return new Response(JSON.stringify({
                                 upload_id: 'retry-session', total_bytes: 12 * 1024 * 1024 + 1,
-                                received_bytes: 0, next_chunk: 0, total_chunks: 2
+                                received_bytes: 0, next_chunk: 0, chunk_size: 12 * 1024 * 1024, total_chunks: 2
                             }), {status: 200, headers: {'Content-Type': 'application/json'}});
                         }
                         if ((path === '/analyze/match/uploads/retry-session/0' || path === '/analyze/match/uploads/retry-session/1') && options.method === 'PUT') {
@@ -142,6 +142,7 @@ class MatchUploadRetryTests(unittest.TestCase):
                                 upload_id: 'timeout-session',
                                 total_bytes: 12 * 1024 * 1024,
                                 next_chunk: 0,
+                                chunk_size: 12 * 1024 * 1024,
                                 total_chunks: 1
                             }), {status: 200, headers: {'Content-Type': 'application/json'}});
                         }
@@ -214,23 +215,25 @@ class MatchUploadRetryTests(unittest.TestCase):
                         await savePendingMatchUpload({
                             sourceKey, contentFingerprint, size: file.size, name: file.name,
                             lastModified: file.lastModified, jerseyNumbers: ['10', '74'],
-                            uploadId, chunkSize: 12 * 1024 * 1024,
+                            uploadId, chunkSize: 6 * 1024 * 1024,
                             totalChunks: 2, nextChunk: item.localNext, createdAt: 1
                         });
                         const putIndexes = [];
+                        const putSizes = [];
                         let checkpointAtFirstPut = null;
                         window.fetch = async (url, options = {}) => {
                             const path = new URL(url).pathname;
                             if (path === '/analyze/match/uploads/' + uploadId && options.method === 'GET') {
                                 return new Response(JSON.stringify({
                                     upload_id: uploadId, total_bytes: file.size,
-                                    next_chunk: item.serverNext, total_chunks: 2
+                                    next_chunk: item.serverNext, chunk_size: 12 * 1024 * 1024, total_chunks: 2
                                 }), {status: 200, headers: {'Content-Type': 'application/json'}});
                             }
                             if (path.startsWith('/analyze/match/uploads/' + uploadId + '/') &&
                                 options.method === 'PUT' && !path.endsWith('/complete')) {
                                 const index = Number(path.split('/').pop());
                                 putIndexes.push(index);
+                                putSizes.push(options.body.get('file').size);
                                 if (checkpointAtFirstPut === null) {
                                     const saved = await getPendingMatchUpload();
                                     checkpointAtFirstPut = saved?.nextChunk ?? null;
@@ -248,14 +251,16 @@ class MatchUploadRetryTests(unittest.TestCase):
                         await uploadMatchVideoInChunks(file, ['10', '74'], document.createElement('div'));
                         observed.push({
                             id: item.id, localNext: item.localNext,
-                            serverNext: item.serverNext, putIndexes, checkpointAtFirstPut
+                            serverNext: item.serverNext, putIndexes, putSizes, checkpointAtFirstPut
                         });
                     }
                     return observed;
                 }""")
                 self.assertEqual(results[0]["putIndexes"], [1], results)
+                self.assertEqual(results[0]["putSizes"], [1], results)
                 self.assertEqual(results[0]["checkpointAtFirstPut"], 1, results)
                 self.assertEqual(results[1]["putIndexes"], [0, 1], results)
+                self.assertEqual(results[1]["putSizes"], [12 * 1024 * 1024, 1], results)
                 self.assertEqual(results[1]["checkpointAtFirstPut"], 0, results)
             finally:
                 browser.close()
