@@ -925,6 +925,33 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertTrue(result["trainingStillExists"], result)
 
 
+    def test_ai_analysis_delete_rolls_back_all_links_when_persistence_fails(self):
+        page = self.page
+        page.evaluate("""() => {
+            state.aiFormAnalyses = [{id: 'ai-delete-rollback'}];
+            state.forms = [{id: 'form-rollback', aiAnalysisIds: ['ai-delete-rollback']}];
+            state.matchAnalyses = [{id: 'match-rollback', aiFormAnalysisIds: ['ai-delete-rollback']}];
+            persist();
+            const originalSetItem = Storage.prototype.setItem;
+            Storage.prototype.setItem = function(key, value) {
+                if (key === 'rikuFootballLab_v3') throw new DOMException('simulated quota', 'QuotaExceededError');
+                return originalSetItem.call(this, key, value);
+            };
+            window.__restoreStorageSetItem = () => { Storage.prototype.setItem = originalSetItem; };
+        }""")
+        page.once("dialog", lambda dialog: dialog.accept())
+        page.evaluate("deleteAiFormAnalysis('ai-delete-rollback')")
+        page.evaluate("window.__restoreStorageSetItem()")
+        result = page.evaluate("""() => ({
+            aiExists: state.aiFormAnalyses.some(x => x.id === 'ai-delete-rollback'),
+            formLinks: state.forms[0].aiAnalysisIds,
+            matchLinks: state.matchAnalyses[0].aiFormAnalysisIds
+        })""")
+        self.assertTrue(result["aiExists"], result)
+        self.assertEqual(result["formLinks"], ["ai-delete-rollback"], result)
+        self.assertEqual(result["matchLinks"], ["ai-delete-rollback"], result)
+
+
     def test_delete_ai_form_analysis_removes_reverse_links_and_keeps_source_records(self):
         page = self.page
         page.evaluate("""() => {
