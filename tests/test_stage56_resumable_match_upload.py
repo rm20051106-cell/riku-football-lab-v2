@@ -226,7 +226,8 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn("progress.completedBytes/progress.totalBytes*100", HTML)
         self.assertIn("error.name='AbortError'", HTML)
         self.assertIn("await new Promise(resolve=>setTimeout(resolve,0))", HTML)
-        self.assertIn("test_video_fingerprint_reports_progress_and_cancels_between_12mb_slices", RETRY_TEST)
+        retry_test = (ROOT / "tests" / "test_match_upload_retry.py").read_text(encoding="utf-8")
+        self.assertIn("test_video_fingerprint_reports_progress_and_cancels_between_12mb_slices", retry_test)
 
     def test_resume_identity_requires_content_fingerprint_and_hashes_each_12mb_block(self):
         self.assertIn("async function getVideoContentFingerprint(file,chunkSize=12*1024*1024)", HTML)
