@@ -224,6 +224,10 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         })
         self.assertEqual(status["chunk_size"], 12 * 1024 * 1024)
         self.assertEqual(status["next_chunk"], 2)
+        with self.assertRaises(Exception):
+            load_upload_status_helper("invalid-session", {
+                "next_chunk": 0, "total_chunks": 2, "total_size": 48 * 1024 * 1024,
+            })
         self.assertIn("persist_match_upload_state(upload_id, match_uploads[upload_id])", SOURCE)
         self.assertIn("match_upload_manifest_path(upload_id).unlink(missing_ok=True)", SOURCE)
 
