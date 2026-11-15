@@ -262,5 +262,18 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn("12 * 1024 * 1024", retry_test)
 
 
+
+    def test_fingerprint_aborts_on_background_and_pagehide_then_allows_restart(self):
+        self.assertIn("cancelFingerprintWhenHidden", HTML)
+        self.assertIn("document.addEventListener('visibilitychange'", HTML)
+        self.assertIn("window.addEventListener('pagehide'", HTML)
+        self.assertIn("document.removeEventListener('visibilitychange'", HTML)
+        self.assertIn("window.removeEventListener('pagehide'", HTML)
+        retry_test = (ROOT / "tests" / "test_match_upload_retry.py").read_text(encoding="utf-8")
+        self.assertIn("def test_fingerprint_cancels_on_background_or_pagehide_and_can_restart", retry_test)
+        self.assertIn("fetchCallsAfterInterruption", retry_test)
+        self.assertIn("restartFetchCalls", retry_test)
+        self.assertIn("12 * 1024 * 1024", HTML)
+
 if __name__ == "__main__":
     unittest.main()
