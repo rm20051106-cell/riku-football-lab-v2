@@ -1041,6 +1041,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                               body=json.dumps({"ok": True}))
             elif path == "/analyze/match/uploads" and request.method == "POST":
                 counters["created"] += 1
+                counters["total_bytes"] = request.post_data_json["size_bytes"]
                 route.fulfill(status=200, headers=headers, content_type="application/json",
                               body=json.dumps({"ok": True, "upload_id": "mock-upload",
                                                "chunk_size": 6 * 1024 * 1024,
@@ -1048,8 +1049,12 @@ class RikuBrowserE2ETests(unittest.TestCase):
                                                (1 if request.post_data_json["size_bytes"] % (6 * 1024 * 1024) else 0)}))
             elif path.startswith("/analyze/match/uploads/mock-upload/") and request.method == "PUT":
                 counters["chunks"] += 1
+                index = int(path.rsplit("/", 1)[-1])
+                received_bytes = min(counters["total_bytes"], (index + 1) * 6 * 1024 * 1024)
                 route.fulfill(status=200, headers=headers, content_type="application/json",
-                              body=json.dumps({"ok": True}))
+                              body=json.dumps({"ok": True, "chunk_index": index,
+                                               "received_bytes": received_bytes,
+                                               "total_bytes": counters["total_bytes"]}))
             elif path == "/analyze/match/uploads/mock-upload/complete" and request.method == "POST":
                 counters["completed"] += 1
                 route.fulfill(status=202, headers=headers, content_type="application/json",
