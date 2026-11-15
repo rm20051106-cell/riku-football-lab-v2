@@ -1160,7 +1160,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             page.evaluate("""() => { state.settings.apiBaseUrl = 'https://riku-resume-mock.invalid'; persist(); }""")
             page.locator("#videoFile").set_input_files({
                 "name": "resume-after-reload.mp4", "mimeType": "video/mp4",
-                "buffer": b"\\xab" * (6 * 1024 * 1024 + 23),
+                "buffer": b"\xab" * (6 * 1024 * 1024 + 23),
             })
             page.wait_for_function("() => document.getElementById('videoFile').files.length === 1")
             original = page.evaluate("""async () => {
