@@ -1166,10 +1166,11 @@ class RikuBrowserE2ETests(unittest.TestCase):
             original = page.evaluate("""async () => {
                 const file = document.getElementById('videoFile').files[0];
                 await storeClipVideo('__pending_match_video__', file);
-                await savePendingMatchUpload({sourceKey:getVideoSourceKey(file),size:file.size,
+                const contentFingerprint = await getVideoContentFingerprint(file);
+                await savePendingMatchUpload({sourceKey:getVideoSourceKey(file),contentFingerprint,size:file.size,
                     name:file.name,lastModified:file.lastModified,jerseyNumbers:'10,74',
                     uploadId:'resume-upload',chunkSize:6*1024*1024,totalChunks:2,nextChunk:1,createdAt:Date.now()});
-                return {size:file.size,sourceKey:getVideoSourceKey(file)};
+                return {size:file.size,sourceKey:getVideoSourceKey(file),contentFingerprint};
             }""")
             page.reload(wait_until="load")
             page.wait_for_function("typeof uploadMatchVideoInChunks === 'function'")
