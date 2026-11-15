@@ -1169,7 +1169,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 const contentFingerprint = await getVideoContentFingerprint(file);
                 await savePendingMatchUpload({sourceKey:getVideoSourceKey(file),contentFingerprint,size:file.size,
                     name:file.name,lastModified:file.lastModified,jerseyNumbers:'10,74',
-                    uploadId:'resume-upload',chunkSize:6*1024*1024,totalChunks:2,nextChunk:1,createdAt:Date.now()});
+                    uploadId:'resume-upload',chunkSize:12*1024*1024,totalChunks:1,nextChunk:1,createdAt:Date.now()});
                 return {size:file.size,sourceKey:getVideoSourceKey(file),contentFingerprint};
             }""")
             page.reload(wait_until="load")
@@ -1190,7 +1190,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     counters["status"] += 1
                     route.fulfill(status=200, headers=headers, content_type="application/json",
                                   body=json.dumps({"ok":True,"upload_id":"resume-upload",
-                                                   "next_chunk":1,"total_chunks":2,
+                                                   "next_chunk":1,"chunk_size":6*1024*1024,"total_chunks":2,
                                                    "received_bytes":6*1024*1024,
                                                    "total_bytes":original["size"],"complete":False}))
                 elif path == "/analyze/match/uploads/resume-upload/1" and request.method == "PUT":
