@@ -2263,5 +2263,17 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertTrue(result["diagnostics"]["staleReverse"])
         self.assertEqual(result["diagnostics"]["danglingForward"], [])
 
+    def test_integrity_scan_does_not_flag_download_timestamp_changes(self):
+        result = self.page.evaluate("""async () => {
+            const original = new File([new Uint8Array([1,2,3,4])], 'restored.mp4', {type:'video/mp4', lastModified:123});
+            const downloaded = new File([new Uint8Array([1,2,3,4])], 'restored.mp4', {type:'video/mp4', lastModified:999999});
+            state.clips = [{id:'timestamp-clip', hasVideo:true, sourceVideoKey:getVideoSourceKey(original), matchAnalysisIds:[]}];
+            state.forms=[];state.matchAnalyses=[];state.aiFormAnalyses=[];
+            await storeClipVideo('timestamp-clip', downloaded);
+            await scanAndRepairRecordIntegrity();
+            return document.getElementById('videoIntegrityResult').textContent;
+        }""")
+        self.assertIn("動画識別情報不一致 0件", result)
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
