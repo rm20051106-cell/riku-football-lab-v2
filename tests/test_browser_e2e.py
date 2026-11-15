@@ -1154,6 +1154,67 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual(result["title"], "delayed-match.mp4", result)
 
 
+    def test_completed_match_job_restores_and_saves_result_once_after_reload(self):
+        page = self.page
+        self.accept_dialogs()
+        api_base = "https://restore-match-job-mock.invalid"
+        page.route(api_base + "/**", lambda route: route.fulfill(
+            status=200,
+            headers={"Access-Control-Allow-Origin": "*"},
+            content_type="application/json",
+            body=json.dumps(
+                {"ok": True} if route.request.url.endswith("/health") else {
+                    "status": "completed", "progress": 100, "stage": "完了",
+                    "result": {
+                        "job_id": "restore-job-123",
+                        "requested_jersey_numbers": "10,74",
+                        "summary": {
+                            "duration_seconds": 1200, "sampled_pose_frames": 0,
+                            "frames": [], "candidate_events": [], "feedback": [],
+                            "person_detection_summary": {}, "person_track_summary": {},
+                            "jersey_ocr_summary": {}
+                        }
+                    }
+                },
+            ),
+        ))
+        metadata = page.evaluate("""async (apiBase) => {
+            state.matchAnalyses = [];
+            state.settings.apiBaseUrl = apiBase;
+            persist();
+            const source = new File([new Uint8Array([1, 2, 3, 4])], 'twenty-minute-match.mp4', {
+                type: 'video/mp4', lastModified: 1700000000123
+            });
+            const sourceKey = getVideoSourceKey(source);
+            await savePendingMatchJob({
+                jobId: 'restore-job-123', apiBaseUrl: apiBase, sourceKey,
+                filename: source.name, sizeBytes: source.size, createdAt: 1700000000
+            });
+            return {sourceKey, filename: source.name};
+        }""", api_base)
+        page.reload(wait_until="load")
+        page.wait_for_function(
+            "() => document.getElementById('matchAiResult').textContent.includes('全編スキャンが完了しました')",
+            timeout=20000,
+        )
+        self.assertIn("このAI解析結果を履歴に保存", page.locator("#matchAiResult").inner_text())
+        page.get_by_role("button", name="このAI解析結果を履歴に保存").click()
+        saved = page.evaluate("""async () => ({
+            count: state.matchAnalyses.length,
+            record: state.matchAnalyses[0],
+            pending: await getPendingMatchJob(),
+            historyText: document.getElementById('matchScanRecords').innerText
+        })""")
+        self.assertEqual(saved["count"], 1, saved)
+        self.assertEqual(saved["record"]["jobId"], "restore-job-123", saved)
+        self.assertEqual(saved["record"]["sourceVideoKey"], metadata["sourceKey"], saved)
+        self.assertEqual(saved["record"]["title"], metadata["filename"], saved)
+        self.assertIsNone(saved["pending"], saved)
+        self.assertIn(metadata["filename"], saved["historyText"])
+        page.evaluate("() => saveMatchScanResult()")
+        self.assertEqual(page.evaluate("state.matchAnalyses.length"), 1)
+
+
     def test_webkit_resumes_saved_match_upload_after_page_reload(self):
         browser = self.playwright.webkit.launch(headless=True)
         context = browser.new_context(viewport={"width": 390, "height": 844}, service_workers="block")
