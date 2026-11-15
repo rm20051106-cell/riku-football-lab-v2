@@ -92,6 +92,8 @@ def restore_match_jobs():
                 raise ValueError("invalid job manifest")
             status = str(job.get("status") or "")
             source_path = job.get("source_path")
+            if status not in {"queued", "processing", "completed", "failed"}:
+                raise ValueError("invalid job status")
             if status in {"queued", "processing"}:
                 if source_path and os.path.isfile(source_path):
                     job.update(status="queued", progress=0, stage="再起動後の解析再開待ち")
@@ -100,6 +102,29 @@ def restore_match_jobs():
                         status="failed", progress=100, stage="解析を再開できません",
                         error="サーバー再起動後に元動画の一時ファイルが見つかりません。動画を再送信してください。",
                     )
+            elif status == "completed":
+                result = job.get("result")
+                if not isinstance(result, dict) or not isinstance(result.get("summary"), dict):
+                    job.update(
+                        status="failed", progress=100, stage="保存済み解析結果を復元できません",
+                        error="保存済み解析結果の形式が不正です。動画を再送信してください。",
+                        result=None, clips=[],
+                    )
+                else:
+                    clips = job.get("clips") if isinstance(job.get("clips"), list) else []
+                    available_clips = [
+                        clip for clip in clips
+                        if isinstance(clip, dict) and clip.get("id") is not None
+                        and isinstance(clip.get("path"), str) and os.path.isfile(clip["path"])
+                    ]
+                    available_ids = {str(clip["id"]) for clip in available_clips}
+                    for event in result["summary"].get("candidate_events", []):
+                        if not isinstance(event, dict):
+                            continue
+                        if str(event.get("id")) not in available_ids:
+                            event["clip_available"] = False
+                            event["clip_url"] = None
+                    job["clips"] = available_clips
             restored[job_id] = job
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             try:
