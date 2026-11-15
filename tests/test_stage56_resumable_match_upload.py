@@ -320,6 +320,9 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
     def test_browser_retry_suite_covers_timeout_and_both_checkpoint_drift_directions(self):
         retry_test = (ROOT / "tests" / "test_match_upload_retry.py").read_text(encoding="utf-8")
         self.assertIn("def test_timeout_aborts_chunk_and_retries_after_server_reconciliation", retry_test)
+        self.assertIn("def test_retry_stops_when_server_chunk_size_changes_or_is_missing", retry_test)
+        self.assertIn("serverNextChunk = 1", retry_test)
+        self.assertIn("Network disconnected while checking upload status", retry_test)
         self.assertIn("def test_server_checkpoint_overrides_stale_indexeddb_checkpoint", retry_test)
         self.assertIn("local-behind", retry_test)
         self.assertIn("local-ahead", retry_test)
@@ -343,8 +346,11 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn("last_modified", retry_test)
         self.assertIn("12 * 1024 * 1024", retry_test)
         self.assertIn("restoredUploadId", retry_test)
-        self.assertIn("checkpointAtFirstPut", retry_test)
-        self.assertIn("self.assertEqual(result[\"putIndexes\"], [1], result)", retry_test)
+        self.assertIn("chunk_size: 12 * 1024 * 1024, total_chunks: 2", retry_test)
+        self.assertIn("checkpointChunkSizeAtFirstPut", retry_test)
+        self.assertIn("checkpointTotalChunksAtFirstPut", retry_test)
+        self.assertIn("self.assertEqual(result[\"restoredChunkSize\"], 6 * 1024 * 1024, result)", retry_test)
+        self.assertIn("self.assertEqual(result[\"putIndexes\"], [1], result)")
         self.assertIn("self.assertEqual(result[\"checkpointAtFirstPut\"], 1, result)", retry_test)
 
 
