@@ -186,6 +186,13 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
             helpers["match_job_manifest_path"]("completed-job").write_text(
                 json.dumps(completed), encoding="utf-8"
             )
+            invalid_completed = {
+                "job_id": "invalid-completed-job", "status": "completed",
+                "progress": 100, "result": None, "clips": [],
+            }
+            helpers["match_job_manifest_path"]("invalid-completed-job").write_text(
+                json.dumps(invalid_completed), encoding="utf-8"
+            )
             corrupt_path = helpers["match_job_manifest_path"]("corrupt-job")
             corrupt_path.write_text("{invalid-json", encoding="utf-8")
 
@@ -205,6 +212,9 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
             self.assertEqual(events[0]["clip_url"], "/analyze/jobs/completed-job/clips/scene-1")
             self.assertFalse(events[1]["clip_available"])
             self.assertIsNone(events[1]["clip_url"])
+            self.assertEqual(restored["invalid-completed-job"]["status"], "failed")
+            self.assertIsNone(restored["invalid-completed-job"]["result"])
+            self.assertIn("形式が不正", restored["invalid-completed-job"]["error"])
             self.assertNotIn("corrupt-job", restored)
             self.assertFalse(corrupt_path.exists())
 
