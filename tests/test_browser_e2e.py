@@ -1195,7 +1195,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                                                    "total_bytes":original["size"],"complete":False}))
                 elif path == "/analyze/match/uploads/resume-upload/1" and request.method == "PUT":
                     counters["puts"].append(1)
-                    counters["putMarkerBytes"] = (request.post_data_buffer or b"").count(b"\\xab")
+                    counters["putMarkerBytes"] = (request.post_data_buffer or b"").count(b"\xab")
                     route.fulfill(status=200, headers=headers, content_type="application/json",
                                   body=json.dumps({"ok":True,"chunk_index":1}))
                 elif path == "/analyze/match/uploads/resume-upload/complete" and request.method == "POST":
