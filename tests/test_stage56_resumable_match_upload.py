@@ -229,6 +229,8 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
 
     def test_upload_status_endpoint_and_manifest_cleanup_are_wired(self):
         self.assertIn('@app.get("/analyze/match/uploads/{upload_id}")', SOURCE)
+        self.assertIn('job.get("upload_id") == upload_id', SOURCE)
+        self.assertIn("completed_match_uploads[upload_id] = completed_job_id", SOURCE)
         self.assertIn('"next_chunk": upload_state["next_chunk"]', SOURCE)
         self.assertIn('"chunk_size": chunk_size', SOURCE)
         self.assertIn('createdTotalChunks!==Math.ceil(file.size/createdChunkSize)', HTML)
