@@ -2084,5 +2084,53 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual(result["videoSize"], 3)
         self.assertTrue(result["chunkExists"])
 
+    def test_duplicate_record_ids_and_ambiguous_targets_are_never_auto_repaired(self):
+        result = self.page.evaluate("""() => {
+            const data = {
+                clips: [{id:'dup-clip', matchAnalysisIds:['keep-me']}, {id:'dup-clip', matchAnalysisIds:['keep-me-too']}],
+                forms: [],
+                matchAnalyses: [{id:'match-a', clipId:'dup-clip', aiFormAnalysisIds:[]}],
+                aiFormAnalyses: []
+            };
+            const report = reconcileRecordReverseLinks(data);
+            return {data, report};
+        }""")
+        self.assertIn("clips:dup-clip", result["report"]["duplicateIds"])
+        self.assertTrue(any("dup-clip" in item for item in result["report"]["ambiguousReferences"]))
+        self.assertEqual(result["data"]["clips"][0]["matchAnalysisIds"], ["keep-me"])
+        self.assertEqual(result["data"]["clips"][1]["matchAnalysisIds"], ["keep-me-too"])
+
+    def test_restore_link_reconciliation_does_not_guess_between_duplicate_or_multiple_candidates(self):
+        result = self.page.evaluate("""() => {
+            const restored = {
+                clips: [{id:'clip-a', sourceVideoKey:'same-source', matchAnalysisIds:[]}, {id:'clip-b', sourceVideoKey:'same-source', matchAnalysisIds:[]}],
+                forms: [],
+                matches: [{id:'match-a', sourceVideoKey:'same-source'}],
+                analyses: []
+            };
+            const links = reconcileRestoredAnalysisLinks(restored);
+            const duplicateIdRestore = reconcileRestoredAnalysisLinks({
+                clips: [{id:'same-id', sourceVideoKey:'one', matchAnalysisIds:[]}, {id:'same-id', sourceVideoKey:'one', matchAnalysisIds:[]}],
+                forms: [], matches: [{id:'match-b', clipId:'same-id', sourceVideoKey:'one'}], analyses:[]
+            });
+            return {links, duplicateIdRestore};
+        }""")
+        self.assertIsNone(result["links"]["matches"][0].get("clipId"))
+        self.assertEqual(result["links"]["clips"][0]["matchAnalysisIds"], [])
+        self.assertIsNone(result["duplicateIdRestore"]["matches"][0].get("clipId"))
+
+    def test_integrity_scan_flags_full_video_identity_mismatch_without_relinking(self):
+        result = self.page.evaluate("""async () => {
+            const file = new File([new Uint8Array([1,2,3,4])], 'actual.mp4', {type:'video/mp4', lastModified:1234});
+            state.clips = [{id:'identity-clip', hasVideo:true, sourceVideoKey:getVideoSourceKey(new File([new Uint8Array([1,2,3,4])], 'expected.mp4', {type:'video/mp4', lastModified:1234})), matchAnalysisIds:[]}];
+            state.forms = []; state.matchAnalyses = []; state.aiFormAnalyses = [];
+            await storeClipVideo('identity-clip', file);
+            await scanAndRepairRecordIntegrity();
+            return {message:document.getElementById('videoIntegrityResult').textContent,source:state.clips[0].sourceVideoKey};
+        }""")
+        self.assertIn("動画識別情報不一致 1件", result["message"])
+        self.assertIn("保留・動画識別情報不一致", result["message"])
+        self.assertIn("expected.mp4", result["source"])
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
