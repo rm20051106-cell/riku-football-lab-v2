@@ -319,7 +319,7 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
 
     def test_browser_retry_suite_covers_timeout_and_both_checkpoint_drift_directions(self):
         retry_test = (ROOT / "tests" / "test_match_upload_retry.py").read_text(encoding="utf-8")
-        self.assertIn("def test_timeout_aborts_chunk_and_retries_after_server_reconciliation", retry_test)
+        self.assertIn("def test_timeout_reconciles_chunk_committed_before_response_was_lost", retry_test)
         self.assertIn("def test_retry_stops_when_server_chunk_size_changes_or_is_missing", retry_test)
         self.assertIn("serverNextChunk = 1", retry_test)
         self.assertIn("Network disconnected while checking upload status", retry_test)
