@@ -301,7 +301,10 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn("attempt<=3", upload)
         self.assertIn("setTimeout(()=>controller.abort(),120000)", upload)
         self.assertIn("method:'GET',credentials:'omit',cache:'no-store'", upload)
+        self.assertIn("currentChunkSize=Number(current.chunk_size)", upload)
+        self.assertIn("currentChunkSize!==chunkSize", upload)
         self.assertIn("nextChunk=Number(current.next_chunk)", upload)
+        self.assertIn("再開情報が送信中に変化しました", upload)
 
     def test_resume_detects_local_server_checkpoint_mismatch_and_syncs_to_server(self):
         upload = HTML[HTML.index("async function uploadMatchVideoInChunks"):HTML.index("async function fetchMatchJobStatusWithRetry")]
