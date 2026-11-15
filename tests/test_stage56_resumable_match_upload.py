@@ -322,6 +322,13 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn("renderAll();try{await clearPendingMatchJob()}", HTML)
         self.assertIn("existingJob?.apiBaseUrl||getApiUrl()", HTML)
         self.assertIn("await clearPendingMatchJob()", HTML)
+        status_helper = HTML.split("async function fetchMatchJobStatusWithRetry", 1)[1].split(
+            "async function postMatchJobToAI", 1
+        )[0]
+        self.assertIn("String(status.job_id)!==String(jobId)", status_helper)
+        self.assertIn("['queued','processing','completed','failed']", status_helper)
+        self.assertIn("!status.result.summary", status_helper)
+        self.assertIn("保存済みジョブ情報は保持しています", status_helper)
         completed_branch = HTML.split("if(status.status==='completed'){", 1)[1].split("return;", 1)[0]
         self.assertNotIn("clearPendingMatchJob()", completed_branch)
         saved_result = HTML.split("async function saveMatchScanResult()", 1)[1].split("function formatMatchTime", 1)[0]
