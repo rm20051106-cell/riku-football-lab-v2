@@ -161,11 +161,20 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
                 "job_id": "processing-job", "status": "processing", "progress": 65,
                 "stage": "解析中", "source_path": str(pathlib.Path(directory) / "missing.mp4"),
             }
+            completed = {
+                "job_id": "completed-job", "status": "completed", "progress": 100,
+                "stage": "解析完了", "source_path": str(source),
+                "result": {"job_id": "completed-job", "summary": {"duration_seconds": 1200}},
+                "clips": [{"id": "scene-1", "path": str(pathlib.Path(directory) / "scene-1.mp4")}],
+            }
             helpers["match_job_manifest_path"]("queued-job").write_text(
                 json.dumps(queued), encoding="utf-8"
             )
             helpers["match_job_manifest_path"]("processing-job").write_text(
                 json.dumps(processing), encoding="utf-8"
+            )
+            helpers["match_job_manifest_path"]("completed-job").write_text(
+                json.dumps(completed), encoding="utf-8"
             )
             corrupt_path = helpers["match_job_manifest_path"]("corrupt-job")
             corrupt_path.write_text("{invalid-json", encoding="utf-8")
@@ -177,6 +186,9 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
             self.assertEqual(restored["queued-job"]["stage"], "再起動後の解析再開待ち")
             self.assertEqual(restored["processing-job"]["status"], "failed")
             self.assertIn("元動画の一時ファイルが見つかりません", restored["processing-job"]["error"])
+            self.assertEqual(restored["completed-job"]["status"], "completed")
+            self.assertEqual(restored["completed-job"]["result"]["summary"]["duration_seconds"], 1200)
+            self.assertEqual(restored["completed-job"]["clips"][0]["id"], "scene-1")
             self.assertNotIn("corrupt-job", restored)
             self.assertFalse(corrupt_path.exists())
 
