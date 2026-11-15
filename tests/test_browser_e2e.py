@@ -1206,9 +1206,11 @@ class RikuBrowserE2ETests(unittest.TestCase):
         page.get_by_role("button", name="このAI解析結果を履歴に保存").click()
         failed_save = page.evaluate("""async () => ({
             count: state.matchAnalyses.length,
+            savedId: document.getElementById('matchAiResult').dataset.savedId || null,
             pending: await getPendingMatchJob()
         })""")
         self.assertEqual(failed_save["count"], 0, failed_save)
+        self.assertIsNone(failed_save["savedId"], failed_save)
         self.assertEqual(failed_save["pending"]["jobId"], "restore-job-123", failed_save)
         page.evaluate("""() => {
             window.persist = window.__originalMatchPersist;
@@ -1222,6 +1224,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             historyText: document.getElementById('matchScanRecords').innerText
         })""")
         self.assertEqual(saved["count"], 1, saved)
+        self.assertEqual(saved["savedId"], str(saved["record"]["id"]), saved)
         self.assertEqual(saved["record"]["jobId"], "restore-job-123", saved)
         self.assertEqual(saved["record"]["sourceVideoKey"], metadata["sourceKey"], saved)
         self.assertEqual(saved["record"]["title"], metadata["filename"], saved)
