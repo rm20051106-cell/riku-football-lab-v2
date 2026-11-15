@@ -48,6 +48,8 @@ class MatchUploadRetryTests(unittest.TestCase):
                     let completeAttempts = 0;
                     let serverJobId = null;
                     let deleteAttempts = 0;
+                    let serverNextChunk = 0;
+                    let statusChecks = 0;
                     window.fetch = async (url, options = {}) => {
                         const path = new URL(url).pathname;
                         if (path === '/analyze/match/uploads' && options.method === 'POST') {
@@ -58,17 +60,22 @@ class MatchUploadRetryTests(unittest.TestCase):
                             }), {status: 201, headers: {'Content-Type': 'application/json'}});
                         }
                         if (path === '/analyze/match/uploads/retry-session' && options.method === 'GET') {
+                            statusChecks++;
+                            if (statusChecks === 1) throw new TypeError('Network disconnected while checking upload status');
                             return new Response(JSON.stringify({
                                 upload_id: 'retry-session', total_bytes: 12 * 1024 * 1024 + 1,
-                                received_bytes: 0, next_chunk: 0, chunk_size: 12 * 1024 * 1024, total_chunks: 2
+                                received_bytes: serverNextChunk * 12 * 1024 * 1024,
+                                next_chunk: serverNextChunk, chunk_size: 12 * 1024 * 1024, total_chunks: 2
                             }), {status: 200, headers: {'Content-Type': 'application/json'}});
                         }
                         if ((path === '/analyze/match/uploads/retry-session/0' || path === '/analyze/match/uploads/retry-session/1') && options.method === 'PUT') {
                             chunkAttempts++;
                             chunkSizes.push(options.body.get('file').size);
                             if (path.endsWith('/0') && chunkSizes.filter(size => size === 12 * 1024 * 1024).length === 1) {
-                                throw new TypeError('Load failed');
+                                serverNextChunk = 1;
+                                throw new TypeError('Load failed after server accepted the chunk');
                             }
+                            if (path.endsWith('/1')) serverNextChunk = 2;
                             return new Response(JSON.stringify({ok: true}), {
                                 status: 200, headers: {'Content-Type': 'application/json'}
                             });
@@ -96,13 +103,14 @@ class MatchUploadRetryTests(unittest.TestCase):
                     });
                     const status = document.createElement('div');
                     const response = await uploadMatchVideoInChunks(file, ['10', '74'], status);
-                    return {chunkAttempts, chunkSizes, initJerseyNumbers, completeAttempts, deleteAttempts, response};
+                    return {chunkAttempts, chunkSizes, initJerseyNumbers, completeAttempts, deleteAttempts, statusChecks, response};
                 }""")
                 self.assertEqual(result["initJerseyNumbers"], ["10,74"], result)
                 self.assertEqual(result["chunkAttempts"], 3, result)
                 self.assertEqual(result["chunkSizes"], [12 * 1024 * 1024, 12 * 1024 * 1024, 1], result)
                 self.assertEqual(result["completeAttempts"], 2, result)
                 self.assertEqual(result["deleteAttempts"], 0, result)
+                self.assertEqual(result["statusChecks"], 2, result)
                 self.assertEqual(result["response"]["job_id"], "retry-job", result)
             finally:
                 browser.close()
@@ -127,6 +135,7 @@ class MatchUploadRetryTests(unittest.TestCase):
                     let putAttempts = 0;
                     let timedOut = false;
                     let statusChecks = 0;
+                    let serverNextChunk = 0;
                     window.fetch = async (url, options = {}) => {
                         const path = new URL(url).pathname;
                         if (path === '/analyze/match/uploads' && options.method === 'POST') {
@@ -141,7 +150,8 @@ class MatchUploadRetryTests(unittest.TestCase):
                             return new Response(JSON.stringify({
                                 upload_id: 'timeout-session',
                                 total_bytes: 12 * 1024 * 1024,
-                                next_chunk: 0,
+                                received_bytes: serverNextChunk * 12 * 1024 * 1024,
+                                next_chunk: serverNextChunk,
                                 chunk_size: 12 * 1024 * 1024,
                                 total_chunks: 1
                             }), {status: 200, headers: {'Content-Type': 'application/json'}});
@@ -149,6 +159,8 @@ class MatchUploadRetryTests(unittest.TestCase):
                         if (path === '/analyze/match/uploads/timeout-session/0' && options.method === 'PUT') {
                             putAttempts++;
                             if (putAttempts === 1) {
+                                // The server commits the chunk, but the client times out before receiving its response.
+                                serverNextChunk = 1;
                                 return new Promise((resolve, reject) => {
                                     if (options.signal.aborted) {
                                         timedOut = true;
@@ -178,7 +190,7 @@ class MatchUploadRetryTests(unittest.TestCase):
                     const response = await uploadMatchVideoInChunks(file, ['10', '74'], document.createElement('div'));
                     return {putAttempts, timedOut, statusChecks, jobId: response.job_id};
                 }""")
-                self.assertEqual(result["putAttempts"], 2, result)
+                self.assertEqual(result["putAttempts"], 1, result)
                 self.assertTrue(result["timedOut"], result)
                 self.assertEqual(result["statusChecks"], 1, result)
                 self.assertEqual(result["jobId"], "timeout-job", result)
@@ -298,8 +310,8 @@ class MatchUploadRetryTests(unittest.TestCase):
                         await savePendingMatchUpload({
                             sourceKey, contentFingerprint, size: file.size, name: file.name,
                             lastModified: file.lastModified, jerseyNumbers: '10,74',
-                            uploadId: 'restart-session', chunkSize: 12 * 1024 * 1024,
-                            totalChunks: 2, nextChunk: 0, createdAt: 123
+                            uploadId: 'restart-session', chunkSize: 6 * 1024 * 1024,
+                            totalChunks: 3, nextChunk: 0, createdAt: 123
                         });
                         return {sourceKey, size: file.size, lastModified: file.lastModified};
                     }""")
@@ -332,6 +344,8 @@ class MatchUploadRetryTests(unittest.TestCase):
                         const putIndexes = [];
                         const putSizes = [];
                         let checkpointAtFirstPut = null;
+                        let checkpointChunkSizeAtFirstPut = null;
+                        let checkpointTotalChunksAtFirstPut = null;
                         let statusChecks = 0;
                         window.fetch = async (url, options = {}) => {
                             const path = new URL(url).pathname;
@@ -342,14 +356,17 @@ class MatchUploadRetryTests(unittest.TestCase):
                                     upload_id: 'restart-session',
                                     total_bytes: file.size,
                                     received_bytes: 12 * 1024 * 1024,
-                                    next_chunk: 1, total_chunks: 2
+                                    next_chunk: 1, chunk_size: 12 * 1024 * 1024, total_chunks: 2
                                 }), {status: 200, headers: {'Content-Type': 'application/json'}});
                             }
                             if (path === '/analyze/match/uploads/restart-session/1' &&
                                 options.method === 'PUT') {
                                 putIndexes.push(1);
                                 putSizes.push(options.body.get('file').size);
-                                checkpointAtFirstPut = (await getPendingMatchUpload())?.nextChunk ?? null;
+                                const checkpoint = await getPendingMatchUpload();
+                                checkpointAtFirstPut = checkpoint?.nextChunk ?? null;
+                                checkpointChunkSizeAtFirstPut = checkpoint?.chunkSize ?? null;
+                                checkpointTotalChunksAtFirstPut = checkpoint?.totalChunks ?? null;
                                 return new Response(JSON.stringify({ok: true}), {
                                     status: 200, headers: {'Content-Type': 'application/json'}
                                 });
@@ -369,6 +386,7 @@ class MatchUploadRetryTests(unittest.TestCase):
                             restoredUploadId: restored?.uploadId || null,
                             restoredNextChunk: restored?.nextChunk ?? null,
                             restoredChunkSize: restored?.chunkSize ?? null,
+                            checkpointChunkSizeAtFirstPut, checkpointTotalChunksAtFirstPut,
                             selectedSourceKey: sourceKey,
                             selectedSize: file.size,
                             selectedLastModified: file.lastModified,
@@ -378,7 +396,9 @@ class MatchUploadRetryTests(unittest.TestCase):
                     }""")
                     self.assertEqual(result["restoredUploadId"], "restart-session", result)
                     self.assertEqual(result["restoredNextChunk"], 0, result)
-                    self.assertEqual(result["restoredChunkSize"], 12 * 1024 * 1024, result)
+                    self.assertEqual(result["restoredChunkSize"], 6 * 1024 * 1024, result)
+                    self.assertEqual(result["checkpointChunkSizeAtFirstPut"], 12 * 1024 * 1024, result)
+                    self.assertEqual(result["checkpointTotalChunksAtFirstPut"], 2, result)
                     self.assertEqual(result["selectedSourceKey"], seeded["sourceKey"], result)
                     self.assertEqual(result["selectedSize"], seeded["size"], result)
                     self.assertEqual(result["selectedLastModified"], seeded["lastModified"], result)
