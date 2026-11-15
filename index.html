@@ -1289,8 +1289,8 @@ async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
    const chunkSizeMismatch=Number.isInteger(localChunkSize)&&localChunkSize!==serverChunkSize;
    session={upload_id:saved.uploadId,total_chunks:serverTotalChunks};
    chunkSize=serverChunkSize;total=serverTotalChunks;nextChunk=serverNextChunk;
-   if(checkpointMismatch){
-    console.warn('アップロード再開位置の不一致を検出。サーバー側の受信位置を優先します。',{localNextChunk,serverNextChunk,totalChunks:serverTotalChunks});
+   if(checkpointMismatch||chunkSizeMismatch){
+    console.warn('端末とサーバーの再開情報の不一致を検出。サーバー側の値を優先します。',{localNextChunk,serverNextChunk,localChunkSize,serverChunkSize,totalChunks:serverTotalChunks});
     await persistResume({...identity,uploadId:session.upload_id,chunkSize,totalChunks:total,nextChunk,createdAt:saved.createdAt||Date.now()});
    }
    resultElement.textContent='前回の続きから再開します：'+Math.round((nextChunk/Math.max(1,total))*100)+'%（'+nextChunk+'/'+total+'）'+(checkpointMismatch||chunkSizeMismatch?'｜端末とサーバーの差異を検出し、サーバー側の分割サイズ・受信位置に同期しました。':'');
