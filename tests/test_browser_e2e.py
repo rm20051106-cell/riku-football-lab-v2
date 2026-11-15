@@ -1263,7 +1263,8 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     counters["puts"].append(1)
                     counters["putMarkerBytes"] = (request.post_data_buffer or b"").count(b"\xab")
                     route.fulfill(status=200, headers=headers, content_type="application/json",
-                                  body=json.dumps({"ok":True,"chunk_index":1}))
+                                  body=json.dumps({"ok":True,"chunk_index":1,
+                                                    "received_bytes":original["size"],"total_bytes":original["size"]}))
                 elif path == "/analyze/match/uploads/resume-upload/complete" and request.method == "POST":
                     counters["completed"] += 1
                     route.fulfill(status=202, headers=headers, content_type="application/json",
@@ -1328,8 +1329,12 @@ class RikuBrowserE2ETests(unittest.TestCase):
                                                    "total_chunks": (size + chunk_size - 1) // chunk_size}))
                 elif path.startswith("/analyze/match/uploads/webkit-upload/") and request.method == "PUT":
                     counters["chunks"] += 1
+                    index = int(path.rsplit("/", 1)[-1])
+                    received_bytes = min(size, (index + 1) * chunk_size)
                     route.fulfill(status=200, headers=headers, content_type="application/json",
-                                  body=json.dumps({"ok": True}))
+                                  body=json.dumps({"ok": True, "chunk_index": index,
+                                                   "received_bytes": received_bytes,
+                                                   "total_bytes": size}))
                 elif path == "/analyze/match/uploads/webkit-upload/complete" and request.method == "POST":
                     counters["completed"] += 1
                     route.fulfill(status=202, headers=headers, content_type="application/json",
