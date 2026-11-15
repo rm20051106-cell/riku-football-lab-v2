@@ -861,6 +861,54 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertTrue(messages and "再読み込みせず" in messages[0], messages)
 
 
+    def test_restored_analysis_links_require_unique_identity_and_are_idempotent(self):
+        result = self.page.evaluate("""() => {
+            const key = 'same-source.mp4|5|123|video/mp4';
+            const restored = {
+                clips: [
+                    {id: 'clip-a', sourceVideoKey: key, matchAnalysisIds: []},
+                    {id: 'clip-b', sourceVideoKey: key, matchAnalysisIds: []}
+                ],
+                forms: [
+                    {id: 'form-a', sourceVideoKey: key, hasVideo: true, aiAnalysisIds: []},
+                    {id: 'form-b', sourceVideoKey: key, hasVideo: true, aiAnalysisIds: []}
+                ],
+                matchAnalyses: [
+                    {id: 'match-ambiguous', sourceVideoKey: key, aiFormAnalysisIds: []},
+                    {id: 'match-explicit', clipId: 'clip-b', sourceVideoKey: key, aiFormAnalysisIds: []}
+                ],
+                aiFormAnalyses: [
+                    {id: 'ai-ambiguous', sourceVideoKey: key},
+                    {id: 'ai-explicit', sourceVideoKey: key, formId: 'form-b', matchId: 'match-explicit'}
+                ]
+            };
+            reconcileRestoredAnalysisLinks(restored);
+            reconcileRestoredAnalysisLinks(restored);
+            return {
+                ambiguous: restored.aiFormAnalyses[0],
+                explicit: restored.aiFormAnalyses[1],
+                ambiguousMatchClip: restored.matchAnalyses[0].clipId || null,
+                explicitMatchClip: restored.matchAnalyses[1].clipId,
+                clipAIds: restored.clips[0].matchAnalysisIds,
+                clipBIds: restored.clips[1].matchAnalysisIds,
+                formAIds: restored.forms[0].aiAnalysisIds,
+                formBIds: restored.forms[1].aiAnalysisIds,
+                matchIds: restored.matchAnalyses[1].aiFormAnalysisIds
+            };
+        }""")
+        self.assertIsNone(result["ambiguous"].get("formId"), result)
+        self.assertIsNone(result["ambiguous"].get("matchId"), result)
+        self.assertIsNone(result["ambiguousMatchClip"], result)
+        self.assertEqual(result["explicit"]["formId"], "form-b", result)
+        self.assertEqual(result["explicit"]["matchId"], "match-explicit", result)
+        self.assertEqual(result["explicitMatchClip"], "clip-b", result)
+        self.assertEqual(result["clipAIds"], [], result)
+        self.assertEqual(result["clipBIds"], ["match-explicit"], result)
+        self.assertEqual(result["formAIds"], [], result)
+        self.assertEqual(result["formBIds"], ["ai-explicit"], result)
+        self.assertEqual(result["matchIds"], ["ai-explicit"], result)
+
+
     def test_webkit_safari_compatibility_smoke(self):
         browser = self.playwright.webkit.launch(headless=True)
         try:
