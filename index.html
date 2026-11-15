@@ -1378,7 +1378,10 @@ async function fetchMatchJobStatusWithRetry(apiBaseUrl,jobId,options={}){
     if(response.status>=400&&response.status<500)throw Object.assign(error,{nonRetryable:true});
     throw error;
    }
-   if(!status||typeof status!=='object')throw new Error('解析サーバーの進捗応答を読み取れません。');
+   if(!status||typeof status!=='object'||Array.isArray(status))throw Object.assign(new Error('解析サーバーの進捗応答を読み取れません。保存済みジョブ情報は保持しています。'),{nonRetryable:true});
+   if(status.job_id!=null&&String(status.job_id)!==String(jobId))throw Object.assign(new Error('解析サーバーが別のジョブIDを返しました。誤った結果を保存しないよう停止しました。保存済みジョブ情報は保持しています。'),{nonRetryable:true});
+   if(!['queued','processing','completed','failed'].includes(String(status.status||'')))throw Object.assign(new Error('解析サーバーのジョブ状態が不正です。保存済みジョブ情報は保持しています。'),{nonRetryable:true});
+   if(status.status==='completed'&&(!status.result||typeof status.result!=='object'||Array.isArray(status.result)||!status.result.summary||typeof status.result.summary!=='object'||Array.isArray(status.result.summary)))throw Object.assign(new Error('完了した解析結果の形式が不正です。保存済みジョブ情報は保持しています。'),{nonRetryable:true});
    return status;
   }catch(error){
    lastError=error?.name==='AbortError'
