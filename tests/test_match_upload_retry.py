@@ -398,7 +398,7 @@ class MatchUploadRetryTests(unittest.TestCase):
                     state.settings.apiBaseUrl = 'https://safe-resume.test';
                     const CHUNK = 12 * 1024 * 1024;
                     const cases = [
-                        'different_video', 'different_size', 'different_last_modified',
+                        'different_video', 'different_content_same_metadata', 'different_size', 'different_last_modified',
                         'different_mime_type', 'different_jersey_numbers', 'stored_identity_mismatch',
                         'missing_record', 'corrupt_missing_upload_id',
                         'corrupt_checkpoint_type', 'corrupt_chunk_size', 'corrupt_nan_checkpoint', 'indexeddb_read_error'
@@ -413,6 +413,11 @@ class MatchUploadRetryTests(unittest.TestCase):
                         let selected = original;
                         if (caseName === 'different_video') {
                             selected = new File([new Uint8Array(CHUNK + 1)], 'other-match.mp4',
+                                {type: 'video/mp4', lastModified: 111});
+                        } else if (caseName === 'different_content_same_metadata') {
+                            const differentBytes = new Uint8Array(CHUNK + 1);
+                            differentBytes.fill(1);
+                            selected = new File([differentBytes], 'match.mp4',
                                 {type: 'video/mp4', lastModified: 111});
                         } else if (caseName === 'different_size') {
                             selected = new File([new Uint8Array(CHUNK + 2)], 'match.mp4',
@@ -507,7 +512,7 @@ class MatchUploadRetryTests(unittest.TestCase):
                     }
                     return outcomes;
                 }""")
-                self.assertEqual(len(results), 12, results)
+                self.assertEqual(len(results), 13, results)
                 for result in results:
                     with self.subTest(case=result["caseName"]):
                         self.assertEqual(result["createCount"], 1, result)
