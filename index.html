@@ -240,23 +240,57 @@ function saveTraining(){
 function addMenu(){let name=newMenuName.value.trim();if(!name){alert('メニュー名を入力してください');return}state.menus.push({name,category:newMenuCategory.value,minutes:10});newMenuName.value='';persist()}
 function removeMenu(i){if(!confirm('このメニューを削除しますか？'))return;state.menus.splice(i,1);persist()}
 function saveMeasure(){let v=Number(measureValue.value);if(!measureValue.value||!Number.isFinite(v)){alert('数値を入力してください');return}state.measures.unshift({date:measureDate.value||today(),type:measureType.value,value:v,unit:measureUnit.value,note:measureNote.value.trim()});measureValue.value='';measureNote.value='';persist();alert('測定値を保存しました')}
+function cloneRecordRows(rows){return JSON.parse(JSON.stringify(Array.isArray(rows)?rows:[]))}
+function detachDeletedRecordLinks(type,record){
+ const id=String(record.id),sourceKey=String(record.sourceVideoKey||'');
+ if(type==='clips'){
+  (state.matchAnalyses||[]).forEach(match=>{
+   if(String(match.clipId||'')===id||String(match.videoStorageKey||'')===id){
+    match.clipId=null;match.videoStorageKey=null;
+   }
+  });
+  (state.aiFormAnalyses||[]).forEach(analysis=>{
+   if(String(analysis.matchClipId||'')===id)analysis.matchClipId=null;
+  });
+ }else{
+  (state.aiFormAnalyses||[]).forEach(analysis=>{
+   if(String(analysis.formId||'')===id){
+    analysis.formId=null;analysis.videoStorageKey=null;
+   }
+  });
+ }
+ if(sourceKey){
+  if(type==='clips'){
+   (state.matchAnalyses||[]).forEach(match=>{
+    if(match.sourceVideoKey===sourceKey&&String(match.clipId||'')===id){match.clipId=null;match.videoStorageKey=null}
+   });
+  }else{
+   (state.aiFormAnalyses||[]).forEach(analysis=>{
+    if(analysis.sourceVideoKey===sourceKey&&String(analysis.formId||'')===id){analysis.formId=null;analysis.videoStorageKey=null}
+   });
+  }
+ }
+ (state.clips||[]).forEach(clip=>{clip.matchAnalysisIds=(clip.matchAnalysisIds||[]).filter(linkId=>!(state.matchAnalyses||[]).some(match=>String(match.id)===String(linkId)&&!match.clipId))});
+ (state.forms||[]).forEach(form=>{form.aiAnalysisIds=(form.aiAnalysisIds||[]).filter(linkId=>(state.aiFormAnalyses||[]).some(analysis=>String(analysis.id)===String(linkId)&&String(analysis.formId||'')===String(form.id)))});
+ (state.matchAnalyses||[]).forEach(match=>{match.aiFormAnalysisIds=(match.aiFormAnalysisIds||[]).filter(linkId=>(state.aiFormAnalyses||[]).some(analysis=>String(analysis.id)===String(linkId)&&String(analysis.matchId||'')===String(match.id)))});
+}
 async function deleteItem(type,id){
  if(!['clips','forms'].includes(type)){alert('削除対象を確認できませんでした');return}
  if(!confirm('この記録を削除しますか？'))return;
- const original=state[type].slice(),record=original.find(x=>String(x.id)===String(id));
- if(!record)return;
- state[type]=original.filter(x=>String(x.id)!==String(id));
+ const originalState={clips:cloneRecordRows(state.clips),forms:cloneRecordRows(state.forms),matchAnalyses:cloneRecordRows(state.matchAnalyses),aiFormAnalyses:cloneRecordRows(state.aiFormAnalyses)};
+ const record=(state[type]||[]).find(x=>String(x.id)===String(id));if(!record)return;
+ state[type]=state[type].filter(x=>String(x.id)!==String(id));
+ detachDeletedRecordLinks(type,record);
  if(!persist()){
-  state[type]=original;renderAll();
-  alert('記録を保存できなかったため、削除を取り消しました。動画と記録はそのまま残っています。');
-  return;
+  state.clips=originalState.clips;state.forms=originalState.forms;state.matchAnalyses=originalState.matchAnalyses;state.aiFormAnalyses=originalState.aiFormAnalyses;renderAll();
+  alert('記録と関連リンクを保存できなかったため、削除を取り消しました。動画と記録はそのまま残っています。');return;
  }
  try{await removeClipVideo(type==='clips'?id:'form-'+id)}
  catch(e){
   console.error('記録削除後の動画整理に失敗',e);
-  state[type]=original;
-  if(!persist()){state[type]=original;renderAll()}
-  alert('動画ファイルの削除に失敗しました。記録を可能な範囲で元に戻しました。設定画面の整合性チェックで確認してください。');
+  state.clips=originalState.clips;state.forms=originalState.forms;state.matchAnalyses=originalState.matchAnalyses;state.aiFormAnalyses=originalState.aiFormAnalyses;
+  const restored=persist();if(!restored)renderAll();
+  alert('動画ファイルの削除に失敗しました。記録と関連リンクを可能な範囲で元に戻しました。設定画面の整合性チェックで確認してください。');
  }
 }
 function setTime(input,video){if(video.readyState>=1)input.value=video.currentTime.toFixed(1)}
