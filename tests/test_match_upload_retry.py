@@ -527,5 +527,62 @@ class MatchUploadRetryTests(unittest.TestCase):
 
 
 
+
+    def test_video_fingerprint_reports_progress_and_cancels_between_12mb_slices(self):
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True, args=["--no-sandbox"])
+            try:
+                page = browser.new_page(viewport={"width": 390, "height": 844})
+                page.goto(self.url, wait_until="load")
+                page.wait_for_function("typeof getVideoContentFingerprint === 'function'")
+                result = page.evaluate("""async () => {
+                    const CHUNK = 12 * 1024 * 1024;
+                    const file = new File([new Uint8Array(CHUNK * 2 + 1)], 'fingerprint.mp4',
+                        {type: 'video/mp4', lastModified: 777});
+                    const originalSlice = Blob.prototype.slice;
+                    const sliceSizes = [];
+                    Blob.prototype.slice = function(start, end, type) {
+                        sliceSizes.push(Math.max(0, Math.min(this.size, end ?? this.size) - start));
+                        return originalSlice.call(this, start, end, type);
+                    };
+                    try {
+                        const progress = [];
+                        const fingerprint = await getVideoContentFingerprint(file, CHUNK, item => {
+                            progress.push(item);
+                        });
+                        const controller = new AbortController();
+                        const cancelSlices = [];
+                        Blob.prototype.slice = function(start, end, type) {
+                            cancelSlices.push(Math.max(0, Math.min(this.size, end ?? this.size) - start));
+                            return originalSlice.call(this, start, end, type);
+                        };
+                        let cancelError = null;
+                        try {
+                            await getVideoContentFingerprint(file, CHUNK, () => controller.abort(), controller.signal);
+                        } catch (error) {
+                            cancelError = error.name;
+                        }
+                        return {
+                            fingerprintLength: fingerprint.length,
+                            progress: progress.map(item => ({
+                                completedBytes: item.completedBytes, totalBytes: item.totalBytes,
+                                chunkIndex: item.chunkIndex, totalChunks: item.totalChunks
+                            })),
+                            sliceSizes, cancelSlices, cancelError
+                        };
+                    } finally {
+                        Blob.prototype.slice = originalSlice;
+                    }
+                }""")
+                self.assertEqual(result["fingerprintLength"], 64, result)
+                self.assertEqual([p["chunkIndex"] for p in result["progress"]], [1, 2, 3], result)
+                self.assertEqual(result["progress"][-1]["completedBytes"], 24 * 1024 * 1024 + 1, result)
+                self.assertLessEqual(max(result["sliceSizes"]), 12 * 1024 * 1024, result)
+                self.assertEqual(result["cancelError"], "AbortError", result)
+                self.assertEqual(len(result["cancelSlices"]), 1, result)
+                self.assertLessEqual(max(result["cancelSlices"]), 12 * 1024 * 1024, result)
+            finally:
+                browser.close()
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
