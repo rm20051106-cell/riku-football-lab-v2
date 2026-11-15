@@ -31,6 +31,22 @@ def load_session_helpers(directory):
     return namespace
 
 
+def load_upload_status_helper(upload_id, upload_state):
+    node = next(item for item in TREE.body if isinstance(item, ast.FunctionDef)
+                and item.name == "get_match_upload_status")
+
+    class HTTPExceptionStub(Exception):
+        def __init__(self, status_code=None, detail=None):
+            super().__init__(detail)
+            self.status_code = status_code
+            self.detail = detail
+
+    module = ast.Module(body=[node], type_ignores=[])
+    namespace = {"match_uploads": {upload_id: upload_state}, "HTTPException": HTTPExceptionStub}
+    exec(compile(module, "<stage56-upload-status>", "exec"), namespace)
+    return namespace["get_match_upload_status"](upload_id)
+
+
 def load_append_helper():
     node = next(item for item in TREE.body if isinstance(item, ast.FunctionDef)
                 and item.name == "append_match_upload_chunk")
@@ -200,6 +216,14 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
     def test_upload_status_endpoint_and_manifest_cleanup_are_wired(self):
         self.assertIn('@app.get("/analyze/match/uploads/{upload_id}")', SOURCE)
         self.assertIn('"next_chunk": upload_state["next_chunk"]', SOURCE)
+        self.assertIn('"chunk_size": upload_state["chunk_size"]', SOURCE)
+        status = load_upload_status_helper("status-session", {
+            "next_chunk": 2, "chunk_size": 12 * 1024 * 1024,
+            "total_chunks": 4, "received_bytes": 24 * 1024 * 1024,
+            "total_size": 48 * 1024 * 1024,
+        })
+        self.assertEqual(status["chunk_size"], 12 * 1024 * 1024)
+        self.assertEqual(status["next_chunk"], 2)
         self.assertIn("persist_match_upload_state(upload_id, match_uploads[upload_id])", SOURCE)
         self.assertIn("match_upload_manifest_path(upload_id).unlink(missing_ok=True)", SOURCE)
 
@@ -209,7 +233,9 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn('async function clearPendingMatchUpload()', HTML)
         self.assertIn('saved.sourceKey===identity.sourceKey', HTML)
         self.assertIn("method:'GET',credentials:'omit',cache:'no-store'", HTML)
-        self.assertIn('const serverNextChunk=Number(status.next_chunk)', HTML)
+        self.assertIn('const serverNextChunk=Number(status.next_chunk),serverTotalChunks=Number(status.total_chunks),serverChunkSize=Number(status.chunk_size)', HTML)
+        self.assertIn('serverTotalChunks!==Math.ceil(file.size/serverChunkSize)', HTML)
+        self.assertIn('chunkSize=serverChunkSize', HTML)
         self.assertIn('nextChunk=serverNextChunk', HTML)
         self.assertIn('中断しても同じ動画を再選択すると続きから再開できます', HTML)
         self.assertIn('clearPendingMatchUpload()', HTML)
@@ -275,8 +301,10 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
 
     def test_resume_detects_local_server_checkpoint_mismatch_and_syncs_to_server(self):
         upload = HTML[HTML.index("async function uploadMatchVideoInChunks"):HTML.index("async function fetchMatchJobStatusWithRetry")]
-        self.assertIn("const serverNextChunk=Number(status.next_chunk)", upload)
-        self.assertIn("const localNextChunk=Number(saved.nextChunk)", upload)
+        self.assertIn("const serverNextChunk=Number(status.next_chunk),serverTotalChunks=Number(status.total_chunks),serverChunkSize=Number(status.chunk_size)", upload)
+        self.assertIn("chunkSize=serverChunkSize", upload)
+        self.assertIn("const localNextChunk=Number(saved.nextChunk),localChunkSize=Number(saved.chunkSize)", upload)
+        self.assertIn("chunkSizeMismatch=Number.isInteger(localChunkSize)&&localChunkSize!==serverChunkSize", upload)
         self.assertIn("checkpointMismatch=Number.isInteger(localNextChunk)&&localNextChunk!==serverNextChunk", upload)
         self.assertIn("サーバー側の受信位置を優先します", upload)
         self.assertIn("await persistResume({...identity,uploadId:session.upload_id,chunkSize,totalChunks:total,nextChunk,createdAt:saved.createdAt||Date.now()})", upload)
