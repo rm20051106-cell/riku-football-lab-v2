@@ -2353,5 +2353,173 @@ class RikuBrowserE2ETests(unittest.TestCase):
         page.wait_for_function("document.getElementById('formVideo').readyState >= 2", timeout=10000)
         self.assertIn("保存フォーム動画の読み込み成功", page.locator("#formVideoPlaybackStatus").inner_text())
 
+    def test_video_import_before_json_is_retried_after_json_and_keeps_ai_links(self):
+        import json
+        page = self.page
+        self.accept_dialogs()
+        video = self.temp_path / "riku-video__late-clip__late-match.mp4"
+        video.write_bytes(b"late")
+        page.locator("#videoImportFiles").set_input_files(str(video))
+        page.wait_for_function("document.getElementById('videoImportProgressText')?.textContent.includes('復元処理が終了')")
+        pending = page.evaluate("""() => ({
+            count:lastVideoImportFiles.length,
+            name:lastVideoImportFiles[0]?.name,
+            button:getComputedStyle(document.getElementById('videoImportRetry')).display !== 'none'
+        })""")
+        self.assertEqual(pending["count"], 1, pending)
+        self.assertTrue(pending["button"], pending)
+        backup = {
+            "backupFormat":"riku-football-lab", "backupVersion":3,
+            "videoFilesIncluded":False,
+            "state":{
+                "settings":{"name":"陸玖","jersey1":10,"jersey2":74,"apiBaseUrl":""},
+                "menus":[],"trainings":[],"measures":[],
+                "clips":[{"id":"late-clip","title":"後から復元した試合","hasVideo":False,"matchAnalysisIds":[]}],
+                "forms":[{"id":"late-form","title":"フォーム","hasVideo":False,"aiAnalysisIds":[]}],
+                "matchAnalyses":[{"id":"late-match","title":"試合分析","clipId":"late-clip","aiFormAnalysisIds":["late-ai"]}],
+                "aiFormAnalyses":[{"id":"late-ai","title":"AIフォーム","formId":"late-form","matchId":"late-match"}]
+            }
+        }
+        backup_path = self.temp_path / "late-video-json.json"
+        backup_path.write_text(json.dumps(backup, ensure_ascii=False), encoding="utf-8")
+        page.locator("#importFile").set_input_files(str(backup_path))
+        page.wait_for_function("state.clips.some(x=>x.id==='late-clip') && state.matchAnalyses.some(x=>x.id==='late-match')")
+        self.assertEqual(page.evaluate("lastVideoImportFiles.length"), 1)
+        page.locator("#videoImportRetry").click()
+        page.wait_for_function("document.getElementById('videoImportProgressText')?.textContent.includes('すべての動画の復元が完了')", timeout=10000)
+        result = page.evaluate("""async () => ({
+            retryCount:lastVideoImportFiles.length,
+            videoSize:(await getClipVideo('late-clip'))?.blob?.size || 0,
+            hasVideo:state.clips[0].hasVideo,
+            clipLink:state.matchAnalyses[0].clipId,
+            clipReverse:state.clips[0].matchAnalysisIds,
+            aiForm:state.aiFormAnalyses[0].formId,
+            aiMatch:state.aiFormAnalyses[0].matchId,
+            formReverse:state.forms[0].aiAnalysisIds,
+            matchReverse:state.matchAnalyses[0].aiFormAnalysisIds
+        })""")
+        self.assertEqual(result["retryCount"], 0, result)
+        self.assertEqual(result["videoSize"], 4, result)
+        self.assertTrue(result["hasVideo"], result)
+        self.assertEqual(result["clipLink"], "late-clip", result)
+        self.assertEqual(result["clipReverse"], ["late-match"], result)
+        self.assertEqual(result["aiForm"], "late-form", result)
+        self.assertEqual(result["aiMatch"], "late-match", result)
+        self.assertEqual(result["formReverse"], ["late-ai"], result)
+        self.assertEqual(result["matchReverse"], ["late-ai"], result)
+
+    def test_json_before_video_restores_clip_and_form_media_with_analysis_links(self):
+        import json
+        page = self.page
+        self.accept_dialogs()
+        backup = {
+            "backupFormat":"riku-football-lab", "backupVersion":3,
+            "videoFilesIncluded":False,
+            "state":{
+                "settings":{"name":"陸玖","jersey1":10,"jersey2":74,"apiBaseUrl":""},
+                "menus":[],"trainings":[],"measures":[],
+                "clips":[{"id":"early-clip","title":"先にJSON","hasVideo":False,"matchAnalysisIds":[]}],
+                "forms":[{"id":"early-form","title":"フォーム先行","hasVideo":False,"aiAnalysisIds":[]}],
+                "matchAnalyses":[{"id":"early-match","title":"先行分析","clipId":"early-clip","aiFormAnalysisIds":["early-ai"]}],
+                "aiFormAnalyses":[{"id":"early-ai","title":"AI分析","formId":"early-form","matchId":"early-match"}]
+            }
+        }
+        backup_path = self.temp_path / "early-json-video.json"
+        backup_path.write_text(json.dumps(backup, ensure_ascii=False), encoding="utf-8")
+        page.locator("#importFile").set_input_files(str(backup_path))
+        page.wait_for_function("state.clips.some(x=>x.id==='early-clip') && state.forms.some(x=>x.id==='early-form')")
+        match_video = self.temp_path / "riku-video__early-clip__match.mp4"
+        form_video = self.temp_path / "riku-video__form-early-form__form.mp4"
+        match_video.write_bytes(b"match")
+        form_video.write_bytes(b"form")
+        page.locator("#videoImportFiles").set_input_files([str(match_video),str(form_video)])
+        page.wait_for_function("document.getElementById('videoImportProgressText')?.textContent.includes('すべての動画の復元が完了')", timeout=10000)
+        result = page.evaluate("""async () => ({
+            clipBytes:(await getClipVideo('early-clip'))?.blob?.size || 0,
+            formBytes:(await getClipVideo('form-early-form'))?.blob?.size || 0,
+            clipHasVideo:state.clips[0].hasVideo,
+            formHasVideo:state.forms[0].hasVideo,
+            matchClipId:state.matchAnalyses[0].clipId,
+            aiFormId:state.aiFormAnalyses[0].formId,
+            aiMatchId:state.aiFormAnalyses[0].matchId,
+            formReverse:state.forms[0].aiAnalysisIds,
+            matchReverse:state.matchAnalyses[0].aiFormAnalysisIds
+        })""")
+        self.assertEqual(result["clipBytes"], 5, result)
+        self.assertEqual(result["formBytes"], 4, result)
+        self.assertTrue(result["clipHasVideo"], result)
+        self.assertTrue(result["formHasVideo"], result)
+        self.assertEqual(result["matchClipId"], "early-clip", result)
+        self.assertEqual(result["aiFormId"], "early-form", result)
+        self.assertEqual(result["aiMatchId"], "early-match", result)
+        self.assertEqual(result["formReverse"], ["early-ai"], result)
+        self.assertEqual(result["matchReverse"], ["early-ai"], result)
+
+    def test_partial_video_first_restore_preserves_success_then_retries_only_missing_record_file(self):
+        import json
+        page = self.page
+        self.accept_dialogs()
+        page.evaluate("""() => {
+            state.clips=[{id:'partial-existing',title:'先にある記録',hasVideo:false,matchAnalysisIds:[]}];
+            state.forms=[];
+            state.matchAnalyses=[{id:'partial-match-existing',clipId:'partial-existing',aiFormAnalysisIds:[]}];
+            state.aiFormAnalyses=[];
+            persist();
+        }""")
+        good = self.temp_path / "riku-video__partial-existing__good.mp4"
+        pending = self.temp_path / "riku-video__partial-later__later.mp4"
+        good.write_bytes(b"good")
+        pending.write_bytes(b"later")
+        page.locator("#videoImportFiles").set_input_files([str(good),str(pending)])
+        page.wait_for_function("document.getElementById('videoImportProgressText')?.textContent.includes('復元処理が終了')")
+        first = page.evaluate("""async () => ({
+            goodSize:(await getClipVideo('partial-existing'))?.blob?.size || 0,
+            retryNames:lastVideoImportFiles.map(f=>f.name),
+            goodFlag:state.clips[0].hasVideo
+        })""")
+        self.assertEqual(first["goodSize"], 4, first)
+        self.assertTrue(first["goodFlag"], first)
+        self.assertEqual(first["retryNames"], ["riku-video__partial-later__later.mp4"], first)
+        backup = {
+            "backupFormat":"riku-football-lab", "backupVersion":3,
+            "videoFilesIncluded":False,
+            "state":{
+                "settings":{"name":"陸玖","jersey1":10,"jersey2":74,"apiBaseUrl":""},
+                "menus":[],"trainings":[],"measures":[],
+                "clips":[
+                    {"id":"partial-existing","title":"先にある記録","hasVideo":False,"matchAnalysisIds":[]},
+                    {"id":"partial-later","title":"後から復元する記録","hasVideo":False,"matchAnalysisIds":[]}
+                ],
+                "forms":[],
+                "matchAnalyses":[
+                    {"id":"partial-match-existing","clipId":"partial-existing","aiFormAnalysisIds":[]},
+                    {"id":"partial-match-later","clipId":"partial-later","aiFormAnalysisIds":["partial-ai"]}
+                ],
+                "aiFormAnalyses":[{"id":"partial-ai","matchId":"partial-match-later"}]
+            }
+        }
+        backup_path = self.temp_path / "partial-video-json.json"
+        backup_path.write_text(json.dumps(backup, ensure_ascii=False), encoding="utf-8")
+        page.locator("#importFile").set_input_files(str(backup_path))
+        page.wait_for_function("state.clips.length===2 && state.matchAnalyses.length===2")
+        page.locator("#videoImportRetry").click()
+        page.wait_for_function("document.getElementById('videoImportProgressText')?.textContent.includes('すべての動画の復元が完了')", timeout=10000)
+        result = page.evaluate("""async () => ({
+            retryCount:lastVideoImportFiles.length,
+            firstBytes:(await getClipVideo('partial-existing'))?.blob?.size || 0,
+            secondBytes:(await getClipVideo('partial-later'))?.blob?.size || 0,
+            flags:state.clips.map(x=>x.hasVideo),
+            matchLinks:state.matchAnalyses.map(x=>x.clipId),
+            aiMatch:state.aiFormAnalyses[0].matchId,
+            aiReverse:state.matchAnalyses[1].aiFormAnalysisIds
+        })""")
+        self.assertEqual(result["retryCount"], 0, result)
+        self.assertEqual(result["firstBytes"], 4, result)
+        self.assertEqual(result["secondBytes"], 5, result)
+        self.assertEqual(result["flags"], [True,True], result)
+        self.assertEqual(result["matchLinks"], ["partial-existing","partial-later"], result)
+        self.assertEqual(result["aiMatch"], "partial-match-later", result)
+        self.assertEqual(result["aiReverse"], ["partial-ai"], result)
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
