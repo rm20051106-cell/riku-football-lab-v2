@@ -86,7 +86,7 @@ button:focus-visible,.button:focus-visible,a:focus-visible,input:focus-visible,s
 <section class="view" id="video">
  <h1 class="section-title">動画分析ラボ</h1><p class="section-desc">iPhoneの写真・ファイルから試合や練習動画を選び、再生しながら時刻付きでプレーを記録・採点します。</p>
  <div class="card"><h2>① 動画を読み込む</h2><label class="label" for="videoTitle">動画タイトル</label><input id="videoTitle" placeholder="例：10/28 練習試合 前半"><label class="label" for="videoFile">動画ファイル</label><input type="file" id="videoFile" accept="video/*"><div id="videoMeta" class="tiny muted" role="status" aria-live="polite" style="margin-top:8px">動画はこの画面内で再生します。ファイル自体はアップロードされません。</div><div id="videoSaveProgress" class="video-task-progress" role="status" aria-live="polite" hidden><span class="tiny muted" id="videoSaveProgressText">動画を保存しています…</span><progress id="videoSaveProgressBar" max="100" value="0" aria-label="動画保存の進行状況"></progress></div><div class="video-wrap" id="videoWrap"><video id="matchVideo" controls playsinline preload="metadata"></video><div class="overlay-guide" id="overlayGuide"><div class="silhouette"></div><div class="guide-label">姿勢ガイド（目安）</div></div></div><div class="btnrow"><button class="secondary small" onclick="seekVideo(-1)">↶ 1秒戻る</button><button class="secondary small" onclick="seekVideo(1)">1秒進む ↷</button><button class="secondary small" onclick="toggleGuide()">姿勢ガイド ON/OFF</button></div><p class="tiny muted">動画は端末内で再生します。画面を閉じたり再読み込みすると、読み込んだ動画を再選択する必要があります。</p></div>
- <div class="card"><h2>② プレーを記録・採点</h2><div class="two"><div><label class="label">動画内の時刻（秒）</label><input type="number" id="clipTime" min="0" step="0.1" placeholder="動画から取得"></div><div><label class="label">プレー種別</label><select id="clipType"><option>ドリブル突破</option><option>パス・受ける動き</option><option>シュート</option><option>フリーキック</option><option>守備・プレス</option><option>ポジショニング</option><option>その他</option></select></div></div><div class="btnrow"><button class="secondary small" onclick="takeCurrentTime()">現在の再生時刻を入れる</button></div><div class="two"><div><label class="label">判断・準備 <b id="s1v">3</b>/5</label><input type="range" id="s1" min="1" max="5" value="3" oninput="s1v.textContent=this.value"></div><div><label class="label">技術・実行 <b id="s2v">3</b>/5</label><input type="range" id="s2" min="1" max="5" value="3" oninput="s2v.textContent=this.value"></div><div><label class="label">スピード・強度 <b id="s3v">3</b>/5</label><input type="range" id="s3" min="1" max="5" value="3" oninput="s3v.textContent=this.value"></div><div><label class="label">チームへの貢献 <b id="s4v">3</b>/5</label><input type="range" id="s4" min="1" max="5" value="3" oninput="s4v.textContent=this.value"></div></div><label class="label">良かった点</label><textarea id="clipGood" placeholder="例：相手の逆を取って加速できた"></textarea><label class="label">改善点・次回の意識</label><textarea id="clipImprove" placeholder="例：仕掛ける前に味方とゴールの位置を見る"></textarea><div class="btnrow"><button onclick="saveClip()">プレー分析を保存</button><button class="secondary" onclick="sendMatchToAI()">AIサーバーで動画解析</button></div><div id="matchAiResult" class="tiny muted" style="margin-top:10px"></div><div class="note">AI試合スキャンでは動画全体から姿勢データを抽出して履歴に保存できます。背番号の自動認識・陸玖本人の特定・プレー内容の判定・ハイライト動画の自動生成は、今後の開発機能です。姿勢データは画面内の人物の推定値で、陸玖本人のものとは限りません。</div></div>
+ <div class="card"><h2>② プレーを記録・採点</h2><div class="two"><div><label class="label">動画内の時刻（秒）</label><input type="number" id="clipTime" min="0" step="0.1" placeholder="動画から取得"></div><div><label class="label">プレー種別</label><select id="clipType"><option>ドリブル突破</option><option>パス・受ける動き</option><option>シュート</option><option>フリーキック</option><option>守備・プレス</option><option>ポジショニング</option><option>その他</option></select></div></div><div class="btnrow"><button class="secondary small" onclick="takeCurrentTime()">現在の再生時刻を入れる</button></div><div class="two"><div><label class="label">判断・準備 <b id="s1v">3</b>/5</label><input type="range" id="s1" min="1" max="5" value="3" oninput="s1v.textContent=this.value"></div><div><label class="label">技術・実行 <b id="s2v">3</b>/5</label><input type="range" id="s2" min="1" max="5" value="3" oninput="s2v.textContent=this.value"></div><div><label class="label">スピード・強度 <b id="s3v">3</b>/5</label><input type="range" id="s3" min="1" max="5" value="3" oninput="s3v.textContent=this.value"></div><div><label class="label">チームへの貢献 <b id="s4v">3</b>/5</label><input type="range" id="s4" min="1" max="5" value="3" oninput="s4v.textContent=this.value"></div></div><label class="label">良かった点</label><textarea id="clipGood" placeholder="例：相手の逆を取って加速できた"></textarea><label class="label">改善点・次回の意識</label><textarea id="clipImprove" placeholder="例：仕掛ける前に味方とゴールの位置を見る"></textarea><div class="btnrow"><button onclick="saveClip()">プレー分析を保存</button><button class="secondary" onclick="sendMatchToAI()">AIサーバーで動画解析</button></div><div id="matchFingerprintProgress" class="video-task-progress" role="status" aria-live="polite" hidden><span id="matchFingerprintProgressText" class="tiny muted">動画の内容を照合しています…</span><progress id="matchFingerprintProgressBar" max="100" value="0" aria-label="動画内容照合の進行状況"></progress><button id="cancelMatchFingerprintButton" type="button" class="secondary small" onclick="cancelMatchFingerprint()">照合をキャンセル</button></div><div id="matchAiResult" class="tiny muted" style="margin-top:10px"></div><div class="note">AI試合スキャンでは動画全体から姿勢データを抽出して履歴に保存できます。背番号の自動認識・陸玖本人の特定・プレー内容の判定・ハイライト動画の自動生成は、今後の開発機能です。姿勢データは画面内の人物の推定値で、陸玖本人のものとは限りません。</div></div>
  <div class="card"><h2>③ 保存したプレー分析</h2><div id="clipRecords"></div></div>
  <div class="card"><h2>④ プレーライブラリ</h2><p class="tiny muted">試合動画から抽出した場面候補を、検索・分類別に探せます。</p><label class="label" for="matchLibrarySearch">場面を検索</label><input id="matchLibrarySearch" placeholder="例：ドリブル、突破、試合名" oninput="renderMatchLibrary()"><label class="label" for="matchLibraryFilter">絞り込み</label><select id="matchLibraryFilter" onchange="renderMatchLibrary()"><option value="all">すべての場面</option><option value="riku">陸玖本人として確認済み</option><option value="good">陸玖・良かった</option><option value="improve">陸玖・改善したい</option><option value="unconfirmed">本人未確認</option><option>ドリブル</option><option>パス</option><option>シュート</option><option>ボールを受ける</option><option>守備・プレス</option><option>オフザボール</option><option>その他</option></select><div id="matchLibrary"><div class="empty">試合スキャン履歴を保存すると場面が表示されます。</div></div></div><div class="card"><h2>⑤ AI試合スキャン履歴</h2><div id="matchScanRecords"><div class="empty">AI解析の履歴はまだありません</div></div></div>
  <div class="card"><h2>⑤ 陸玖専属コーチレポート</h2><p class="tiny muted">保存された記録から、陸玖のプレー傾向と次の練習テーマを整理します。</p><div id="rikuCoachReport"><div class="empty">記録を集めるとレポートが表示されます</div></div></div>
@@ -313,17 +313,30 @@ async function scanSavedVideoIntegrity(){const output=document.getElementById('v
 async function removeClipVideo(id){const key=String(id),db=await openVideoDB();try{await new Promise((resolve,reject)=>{const tx=db.transaction(['videos','videoChunks'],'readwrite');tx.objectStore('videos').delete(key);tx.objectStore('videoChunks').delete(IDBKeyRange.bound(key+'|',key+'|\uffff'));tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||new Error('動画削除に失敗しました'));tx.onabort=()=>reject(tx.error||new Error('動画削除が中断されました'))})}finally{db.close()}}
 async function playSavedClip(id,time){try{const saved=await getClipVideo(id);if(!saved||!(saved.blob instanceof Blob)){alert('この記録の動画データが見つかりません。設定画面の「動画と記録の整合性チェック」を確認してください。');return}if(matchVideo.dataset.objectUrl)URL.revokeObjectURL(matchVideo.dataset.objectUrl);const url=URL.createObjectURL(saved.blob);matchVideo.dataset.objectUrl=url;showView('video');videoMeta.textContent='保存動画：'+(saved.name||'動画ファイル')+'（端末内に保存）'+(Number.isFinite(Number(time))?'・確認位置 '+formatMatchTime(Number(time)):'')+'。iPhoneで自動再生されない場合は、動画中央の再生ボタンを押してください。';matchVideo.onerror=()=>{videoMeta.textContent='動画を再生できません。ファイル形式または動画データを確認してください。'};matchVideo.onloadeddata=()=>{videoMeta.textContent='保存動画の読み込み成功：'+(saved.name||'動画ファイル')+'。映像が表示されたら再生ボタンを押して、実際の再生も確認してください。'};matchVideo.onplay=()=>{videoMeta.textContent='保存動画を再生中：'+(saved.name||'動画ファイル')};matchVideo.onended=()=>{videoMeta.textContent='保存動画の再生が最後まで完了しました：'+(saved.name||'動画ファイル')};matchVideo.onloadedmetadata=()=>{const duration=Number(matchVideo.duration);const target=Number(time);if(Number.isFinite(target)&&target>=0&&Number.isFinite(duration)&&duration>0)matchVideo.currentTime=Math.min(target,duration);};matchVideo.src=url;matchVideo.load();matchVideo.controls=true;videoWrap.scrollIntoView({behavior:'smooth',block:'center'})}catch(e){console.error('保存動画の再生失敗',e);alert('保存動画を開けませんでした。端末の空き容量と動画データを確認してください。')}}
 async function playSavedForm(id){try{const saved=await getClipVideo('form-'+id);if(!saved||!(saved.blob instanceof Blob)){alert('このフォーム記録の動画データが見つかりません。設定画面の「動画と記録の整合性チェック」を確認してください。');return}if(formVideo.dataset.objectUrl)URL.revokeObjectURL(formVideo.dataset.objectUrl);const url=URL.createObjectURL(saved.blob);formVideo.dataset.objectUrl=url;showView('form');document.getElementById('formVideoPlaybackStatus').textContent='保存動画：'+(saved.name||'動画ファイル')+'。iPhoneで自動再生されない場合は、動画中央の再生ボタンを押してください。';formVideo.onerror=()=>{document.getElementById('formVideoPlaybackStatus').textContent='動画を再生できません。ファイル形式または動画データを確認してください。'};formVideo.onloadeddata=()=>{document.getElementById('formVideoPlaybackStatus').textContent='保存フォーム動画の読み込み成功。再生ボタンを押して実際の動作も確認してください。'};formVideo.onplay=()=>{document.getElementById('formVideoPlaybackStatus').textContent='保存フォーム動画を再生中'};formVideo.onended=()=>{document.getElementById('formVideoPlaybackStatus').textContent='保存フォーム動画の再生が最後まで完了しました'};formVideo.src=url;formVideo.load();formVideo.controls=true;formVideo.scrollIntoView({behavior:'smooth',block:'center'})}catch(e){console.error('保存フォーム動画の再生失敗',e);alert('保存したフォーム動画を開けませんでした。')}}
-async function getVideoContentFingerprint(file,chunkSize=12*1024*1024){
+let matchFingerprintController=null;
+function cancelMatchFingerprint(){
+ if(matchFingerprintController&&!matchFingerprintController.signal.aborted)matchFingerprintController.abort();
+}
+async function getVideoContentFingerprint(file,chunkSize=12*1024*1024,onProgress=()=>{},signal=null){
  if(!(file instanceof Blob)||!Number.isSafeInteger(file.size)||file.size<=0)throw new Error('動画内容を確認できません');
+ if(!Number.isSafeInteger(chunkSize)||chunkSize<=0)throw new Error('動画照合サイズが不正です');
  if(!globalThis.crypto?.subtle||typeof TextEncoder!=='function')throw new Error('このブラウザでは安全な動画照合を利用できません。再開せず新規アップロードしてください。');
- const hashes=[];
- for(let offset=0;offset<file.size;offset+=chunkSize){
+ const checkCancelled=()=>{if(signal?.aborted){const error=new Error('動画照合をキャンセルしました');error.name='AbortError';throw error}};
+ const hashes=[],totalChunks=Math.ceil(file.size/chunkSize);
+ for(let offset=0,index=0;offset<file.size;offset+=chunkSize,index++){
+  checkCancelled();
   const bytes=await file.slice(offset,Math.min(file.size,offset+chunkSize)).arrayBuffer();
+  checkCancelled();
   const digest=await crypto.subtle.digest('SHA-256',bytes);
   hashes.push(Array.from(new Uint8Array(digest),value=>value.toString(16).padStart(2,'0')).join(''));
+  onProgress({completedBytes:Math.min(file.size,offset+bytes.byteLength),totalBytes:file.size,chunkIndex:index+1,totalChunks});
+  checkCancelled();
+  await new Promise(resolve=>setTimeout(resolve,0));
  }
+ checkCancelled();
  const rootInput=new TextEncoder().encode('riku-video-v1|'+file.size+'|'+chunkSize+'|'+hashes.join('|'));
  const root=await crypto.subtle.digest('SHA-256',rootInput);
+ checkCancelled();
  return Array.from(new Uint8Array(root),value=>value.toString(16).padStart(2,'0')).join('');
 }
 function getVideoSourceKey(file){
@@ -1207,7 +1220,29 @@ async function savePendingMatchJob(record){const db=await openVideoDB();try{awai
 async function clearPendingMatchJob(){const db=await openVideoDB();try{await new Promise((resolve,reject)=>{const tx=db.transaction('videos','readwrite');tx.objectStore('videos').delete('__pending_match_job__');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||new Error('解析ジョブ情報を削除できません'));tx.onabort=()=>reject(tx.error||new Error('解析ジョブ情報の削除が中断されました'))})}finally{db.close()}}
 async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
  const chunkSizeDefault=6*1024*1024,sourceKey=getVideoSourceKey(file),duration=Number(matchVideo.duration||0),api=getApiUrl();
- const contentFingerprint=await getVideoContentFingerprint(file);
+ const progressWrap=document.getElementById('matchFingerprintProgress');
+ const progressText=document.getElementById('matchFingerprintProgressText');
+ const progressBar=document.getElementById('matchFingerprintProgressBar');
+ const cancelButton=document.getElementById('cancelMatchFingerprintButton');
+ const controller=new AbortController();
+ matchFingerprintController=controller;
+ if(progressWrap){progressWrap.hidden=false;progressBar.value=0;progressText.textContent='動画の内容を照合しています…';}
+ if(cancelButton)cancelButton.hidden=false;
+ let contentFingerprint;
+ try{
+  contentFingerprint=await getVideoContentFingerprint(file,12*1024*1024,progress=>{
+   const percent=Math.round(progress.completedBytes/progress.totalBytes*100);
+   if(progressBar)progressBar.value=percent;
+   if(progressText)progressText.textContent='動画内容を照合中：'+percent+'%（'+progress.chunkIndex+'/'+progress.totalChunks+'・12MB単位）';
+  },controller.signal);
+ }catch(error){
+  if(progressText)progressText.textContent=error.name==='AbortError'?'動画内容の照合をキャンセルしました。前回のアップロード情報は変更していません。':'動画内容を照合できません：'+error.message;
+  throw error;
+ }finally{
+  if(matchFingerprintController===controller)matchFingerprintController=null;
+  if(cancelButton)cancelButton.hidden=true;
+  if(progressWrap)progressWrap.hidden=true;
+ }
  const identity={sourceKey,size:file.size,name:file.name||'match-video.mp4',lastModified:Number(file.lastModified||0),jerseyNumbers,contentFingerprint};
  let saved=null,session=null,chunkSize=chunkSizeDefault,total=0,nextChunk=0,resumeStorageAvailable=true;
  const persistResume=async record=>{
