@@ -138,5 +138,68 @@ class Stage47VideoRecoveryTests(unittest.TestCase):
         self.assertIsNone(page.evaluate("getClipVideo('does-not-exist')"))
 
 
+    def test_stage48_keeps_successful_video_and_retries_only_failed_video(self):
+        page = self.page
+        page.evaluate("""() => {
+            state.clips = [
+                {id: 4811, date: today(), title: 'First retry', hasVideo: false},
+                {id: 4812, date: today(), title: 'Successful sibling', hasVideo: false}
+            ];
+            persist();
+            window.__stage48Intercept = true;
+            window.__stage48Calls = [];
+            window.__stage48FailFirst = true;
+            window.runStage47VideoRestore = async files => {
+                const file = files[0];
+                window.__stage48Calls.push(file.name);
+                const match = file.name.match(/^riku-video__(.+?)__(.+)$/);
+                if (!match) throw new Error('bad test filename');
+                const key = decodeURIComponent(match[1]);
+                if (key === '4811' && window.__stage48FailFirst) {
+                    window.__stage48FailFirst = false;
+                    throw new Error('simulated one-video write failure');
+                }
+                await storeClipVideo(key, file);
+                const record = state.clips.find(row => String(row.id) === key);
+                record.hasVideo = true;
+                if (!persist()) throw new Error('simulated state persistence failure');
+                return {ok: true};
+            };
+        }""")
+        result = page.evaluate("""async () => {
+            const bytes = new Uint8Array([9, 8, 7, 6, 5]);
+            const files = [
+                new File([bytes], 'riku-video__4811__failed.webm', {type:'video/webm', lastModified:1000}),
+                new File([bytes], 'riku-video__4812__success.webm', {type:'video/webm', lastModified:1000})
+            ];
+            await runStage48VideoRestore(files);
+            const first = JSON.parse(localStorage.getItem('rikuVideoRestoreJob_v1'));
+            const successfulBeforeRetry = await getClipVideo('4812');
+            const failedBeforeRetry = await getClipVideo('4811');
+            const firstCalls = [...window.__stage48Calls];
+            await retryStage48FailedVideos(files);
+            const second = JSON.parse(localStorage.getItem('rikuVideoRestoreJob_v1'));
+            const successfulAfterRetry = await getClipVideo('4812');
+            return {
+                firstStatuses: first.items.map(x => x.status),
+                secondStatuses: second.items.map(x => x.status),
+                firstCalls,
+                allCalls: window.__stage48Calls,
+                successfulBeforeRetry: successfulBeforeRetry?.blob?.size || 0,
+                failedBeforeRetry: !!failedBeforeRetry,
+                successfulAfterRetry: successfulAfterRetry?.blob?.size || 0,
+                flags: state.clips.map(x => x.hasVideo)
+            };
+        }""")
+        self.assertEqual(result["firstStatuses"], ["failed", "done"], result)
+        self.assertEqual(result["secondStatuses"], ["done", "done"], result)
+        self.assertEqual(len(result["firstCalls"]), 2, result)
+        self.assertEqual(result["allCalls"][-1:], ["riku-video__4811__failed.webm"], result)
+        self.assertEqual(result["successfulBeforeRetry"], 5, result)
+        self.assertFalse(result["failedBeforeRetry"], result)
+        self.assertEqual(result["successfulAfterRetry"], 5, result)
+        self.assertEqual(result["flags"], [True, True], result)
+
+
 if __name__ == "__main__":
     unittest.main()
