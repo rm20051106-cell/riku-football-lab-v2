@@ -584,6 +584,43 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertIsNone(result["stored"])
 
 
+    def test_video_batch_restore_keeps_success_and_retries_only_failed_file(self):
+        page = self.page
+        page.evaluate("""() => {
+            state.clips = [{
+                id: 'batch-good', title: '正常動画', hasVideo: false,
+                sourceVideoKey: 'good.mp4|4|123|video/mp4'
+            }];
+            persist();
+        }""")
+        good_video = self.temp_path / "riku-video__batch-good__good.mp4"
+        missing_record_video = self.temp_path / "riku-video__missing-record__lost.mp4"
+        good_video.write_bytes(b"good")
+        missing_record_video.write_bytes(b"lost")
+        page.once("dialog", lambda dialog: dialog.accept())
+        page.locator("#videoImportFiles").set_input_files([
+            str(good_video), str(missing_record_video)
+        ])
+        page.wait_for_function(
+            "document.getElementById('videoImportProgressText')?.textContent.includes('復元処理が終了')",
+            timeout=10000,
+        )
+        result = page.evaluate("""async () => ({
+            hasGoodVideo: state.clips[0].hasVideo,
+            goodBytes: (await getClipVideo('batch-good'))?.blob?.size || 0,
+            retryCount: lastVideoImportFiles.length,
+            retryNames: lastVideoImportFiles.map(file => file.name),
+            retryButtonVisible: getComputedStyle(document.getElementById('videoImportRetry')).display !== 'none'
+        })""")
+        self.assertTrue(result["hasGoodVideo"], result)
+        self.assertEqual(result["goodBytes"], 4, result)
+        self.assertEqual(result["retryCount"], 1, result)
+        self.assertEqual(
+            result["retryNames"], ["riku-video__missing-record__lost.mp4"], result
+        )
+        self.assertTrue(result["retryButtonVisible"], result)
+
+
     def test_video_integrity_scan_reports_corrupt_chunks_without_aborting_other_records(self):
         page = self.page
         result = page.evaluate("""async () => {
