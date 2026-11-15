@@ -2030,5 +2030,25 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual(result["matchClipId"], "missing-clip")
         self.assertEqual(result["formId"], "missing-form")
 
+    def test_record_link_integrity_repair_rolls_back_when_persistence_fails(self):
+        page = self.page
+        result = page.evaluate("""async () => {
+            state.clips = [{id:'clip-rollback', matchAnalysisIds:['stale-id']}];
+            state.forms = [];
+            state.matchAnalyses = [];
+            state.aiFormAnalyses = [];
+            const before = JSON.stringify(state.clips);
+            const original = Storage.prototype.setItem;
+            Storage.prototype.setItem = function(key, value) {
+                if (key === KEY) throw new DOMException('quota', 'QuotaExceededError');
+                return original.call(this, key, value);
+            };
+            try { await scanAndRepairRecordIntegrity(); }
+            finally { Storage.prototype.setItem = original; }
+            return {before, after:JSON.stringify(state.clips), message:document.getElementById('videoIntegrityResult').textContent};
+        }""")
+        self.assertEqual(result["after"], result["before"])
+        self.assertIn("保存に失敗", result["message"])
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
