@@ -538,34 +538,31 @@ function connectAiFormAnalysisToMatch(analysis,match){
 }
 function reconcileRestoredAnalysisLinks(restored){
  const clips=Array.isArray(restored.clips)?restored.clips:[],forms=Array.isArray(restored.forms)?restored.forms:[],matches=Array.isArray(restored.matchAnalyses)?restored.matchAnalyses:[],analyses=Array.isArray(restored.aiFormAnalyses)?restored.aiFormAnalyses:[];
- const byId=(rows,id)=>rows.find(row=>String(row.id)===String(id));
- const uniqueBySource=(rows,key)=>key?rows.filter(row=>row.sourceVideoKey===key):[];
+ const counts=rows=>{const map=new Map();rows.forEach(row=>{const id=String(row?.id??'');map.set(id,(map.get(id)||0)+1)});return map};
+ const ids={clips:counts(clips),forms:counts(forms),matches:counts(matches),analyses:counts(analyses)};
+ const uniqueById=(rows,id,map)=>{const key=String(id),found=rows.filter(row=>String(row.id)===key);return found.length===1&&map.get(key)===1?found[0]:null};
+ const uniqueBySource=(rows,key,map)=>{const found=key?rows.filter(row=>row.sourceVideoKey===key):[];return found.length===1&&map.get(String(found[0]?.id))===1?found[0]:null};
+ const addReverse=(owner,field,id)=>{owner[field]=Array.isArray(owner[field])?owner[field]:[];if(!owner[field].some(value=>String(value)===String(id)))owner[field].push(id)};
  clips.forEach(clip=>{clip.matchAnalysisIds=Array.isArray(clip.matchAnalysisIds)?clip.matchAnalysisIds:[]});
  forms.forEach(form=>{form.aiAnalysisIds=Array.isArray(form.aiAnalysisIds)?form.aiAnalysisIds:[]});
  matches.forEach(match=>{
-  const explicit=match.clipId?byId(clips,match.clipId):null;
-  const candidates=uniqueBySource(clips,match.sourceVideoKey);
-  const clip=explicit&&(!match.sourceVideoKey||!explicit.sourceVideoKey||explicit.sourceVideoKey===match.sourceVideoKey)?explicit:(!match.clipId&&candidates.length===1?candidates[0]:null);
+  if(ids.matches.get(String(match.id))!==1)return;
+  const explicit=match.clipId?uniqueById(clips,match.clipId,ids.clips):null;
+  const candidate=uniqueBySource(clips,match.sourceVideoKey,ids.clips);
+  const clip=match.clipId?(explicit&&(!match.sourceVideoKey||explicit.sourceVideoKey===match.sourceVideoKey)?explicit:null):candidate;
   if(!clip)return;
-  match.clipId=String(clip.id);match.videoStorageKey=String(clip.id);
-  if(!clip.matchAnalysisIds.some(id=>String(id)===String(match.id)))clip.matchAnalysisIds.push(match.id);
+  match.clipId=String(clip.id);match.videoStorageKey=String(clip.id);addReverse(clip,'matchAnalysisIds',match.id);
  });
  analyses.forEach(analysis=>{
-  const explicitForm=analysis.formId?byId(forms,analysis.formId):null;
-  const formCandidates=uniqueBySource(forms,analysis.sourceVideoKey);
-  const form=explicitForm&&(!analysis.sourceVideoKey||!explicitForm.sourceVideoKey||explicitForm.sourceVideoKey===analysis.sourceVideoKey)?explicitForm:(!analysis.formId&&formCandidates.length===1?formCandidates[0]:null);
-  if(form){
-   analysis.formId=String(form.id);analysis.videoStorageKey=form.hasVideo?'form-'+form.id:null;
-   if(!form.aiAnalysisIds.some(id=>String(id)===String(analysis.id)))form.aiAnalysisIds.push(analysis.id);
-  }
-  const explicitMatch=analysis.matchId?byId(matches,analysis.matchId):null;
-  const matchCandidates=uniqueBySource(matches,analysis.sourceVideoKey);
-  const match=explicitMatch&&(!analysis.sourceVideoKey||!explicitMatch.sourceVideoKey||explicitMatch.sourceVideoKey===analysis.sourceVideoKey)?explicitMatch:(!analysis.matchId&&matchCandidates.length===1?matchCandidates[0]:null);
-  if(match){
-   analysis.matchId=String(match.id);analysis.matchTitle=String(match.title||'試合');analysis.matchDate=String(match.date||'');analysis.matchClipId=match.clipId?String(match.clipId):null;
-   match.aiFormAnalysisIds=Array.isArray(match.aiFormAnalysisIds)?match.aiFormAnalysisIds:[];
-   if(!match.aiFormAnalysisIds.some(id=>String(id)===String(analysis.id)))match.aiFormAnalysisIds.push(analysis.id);
-  }
+  if(ids.analyses.get(String(analysis.id))!==1)return;
+  const explicitForm=analysis.formId?uniqueById(forms,analysis.formId,ids.forms):null;
+  const formCandidate=uniqueBySource(forms,analysis.sourceVideoKey,ids.forms);
+  const form=analysis.formId?(explicitForm&&(!analysis.sourceVideoKey||explicitForm.sourceVideoKey===analysis.sourceVideoKey)?explicitForm:null):formCandidate;
+  if(form){analysis.formId=String(form.id);analysis.videoStorageKey=form.hasVideo?'form-'+form.id:null;addReverse(form,'aiAnalysisIds',analysis.id)}
+  const explicitMatch=analysis.matchId?uniqueById(matches,analysis.matchId,ids.matches):null;
+  const matchCandidate=uniqueBySource(matches,analysis.sourceVideoKey,ids.matches);
+  const match=analysis.matchId?(explicitMatch&&(!analysis.sourceVideoKey||explicitMatch.sourceVideoKey===analysis.sourceVideoKey)?explicitMatch:null):matchCandidate;
+  if(match){analysis.matchId=String(match.id);analysis.matchTitle=String(match.title||'試合');analysis.matchDate=String(match.date||'');analysis.matchClipId=match.clipId?String(match.clipId):null;addReverse(match,'aiFormAnalysisIds',analysis.id)}
  });
  return {clips,forms,matches,analyses};
 }
