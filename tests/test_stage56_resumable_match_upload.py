@@ -162,7 +162,8 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
                 "stage": "解析中", "source_path": str(pathlib.Path(directory) / "missing.mp4"),
             }
             completed = {
-                "job_id": "completed-job", "status": "completed", "progress": 100,
+                "job_id": "completed-job", "upload_id": "completed-upload",
+                "status": "completed", "progress": 100,
                 "stage": "解析完了", "source_path": str(source),
                 "result": {"job_id": "completed-job", "summary": {"duration_seconds": 1200}},
                 "clips": [{"id": "scene-1", "path": str(pathlib.Path(directory) / "scene-1.mp4")}],
@@ -187,6 +188,7 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
             self.assertEqual(restored["processing-job"]["status"], "failed")
             self.assertIn("元動画の一時ファイルが見つかりません", restored["processing-job"]["error"])
             self.assertEqual(restored["completed-job"]["status"], "completed")
+            self.assertEqual(restored["completed-job"]["upload_id"], "completed-upload")
             self.assertEqual(restored["completed-job"]["result"]["summary"]["duration_seconds"], 1200)
             self.assertEqual(restored["completed-job"]["clips"][0]["id"], "scene-1")
             self.assertNotIn("corrupt-job", restored)
