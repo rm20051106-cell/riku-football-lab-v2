@@ -310,7 +310,7 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn("const localNextChunk=Number(saved.nextChunk),localChunkSize=Number(saved.chunkSize)", upload)
         self.assertIn("chunkSizeMismatch=Number.isInteger(localChunkSize)&&localChunkSize!==serverChunkSize", upload)
         self.assertIn("checkpointMismatch=Number.isInteger(localNextChunk)&&localNextChunk!==serverNextChunk", upload)
-        self.assertIn("サーバー側の受信位置を優先します", upload)
+        self.assertIn("サーバー側の値を優先します", upload)
         self.assertIn("await persistResume({...identity,uploadId:session.upload_id,chunkSize,totalChunks:total,nextChunk,createdAt:saved.createdAt||Date.now()})", upload)
         self.assertIn("serverNextChunk>serverTotalChunks", upload)
 
