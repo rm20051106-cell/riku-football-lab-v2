@@ -2275,5 +2275,83 @@ class RikuBrowserE2ETests(unittest.TestCase):
         }""")
         self.assertIn("動画識別情報不一致 0件", result)
 
+    def test_backup_restore_reload_relinks_and_plays_match_and_form_videos(self):
+        page = self.page
+        self.accept_dialogs()
+        page.locator("#videoFile").set_input_files(str(self.video_path))
+        page.locator("#formFile").set_input_files(str(self.video_path))
+        metadata = page.evaluate("""async () => {
+            const matchFile = document.getElementById('videoFile').files[0];
+            const formFile = document.getElementById('formFile').files[0];
+            const matchKey = getVideoSourceKey(matchFile);
+            const formKey = getVideoSourceKey(formFile);
+            await storeClipVideo('restore-play-clip', matchFile);
+            await storeClipVideo('form-restore-play', formFile);
+            return {matchKey, formKey, matchName:matchFile.name, formName:formFile.name};
+        }""")
+        import json
+        backup = {
+            "backupFormat": "riku-football-lab", "backupVersion": 3,
+            "videoFilesIncluded": False,
+            "state": {
+                "settings": {"name": "陸玖", "jersey1": 10, "jersey2": 74, "apiBaseUrl": ""},
+                "menus": [], "trainings": [], "measures": [],
+                "clips": [{
+                    "id": "restore-play-clip", "title": "復元した試合動画",
+                    "date": "2026-11-15", "hasVideo": True,
+                    "sourceVideoKey": metadata["matchKey"], "matchAnalysisIds": []
+                }],
+                "forms": [{
+                    "id": "form-restore-play", "title": "復元したフォーム動画",
+                    "date": "2026-11-15", "hasVideo": True,
+                    "sourceVideoKey": metadata["formKey"], "aiAnalysisIds": []
+                }],
+                "matchAnalyses": [{
+                    "id": "restore-play-match", "title": "復元試合分析",
+                    "date": "2026-11-15", "sourceVideoKey": metadata["matchKey"],
+                    "candidateEvents": [{"id": "restore-event", "time": 0, "label": "復元場面"}],
+                    "aiFormAnalysisIds": []
+                }],
+                "aiFormAnalyses": [{
+                    "id": "restore-play-ai", "title": "復元フォームAI分析",
+                    "date": "2026-11-15", "sourceVideoKey": metadata["formKey"],
+                    "formId": "form-restore-play", "matchId": "restore-play-match"
+                }]
+            }
+        }
+        backup_path = self.temp_path / "restore-playback-backup.json"
+        backup_path.write_text(json.dumps(backup, ensure_ascii=False), encoding="utf-8")
+        page.locator("#importFile").set_input_files(str(backup_path))
+        page.wait_for_function("""() =>
+            state.clips.some(x => x.id === 'restore-play-clip') &&
+            state.forms.some(x => x.id === 'form-restore-play') &&
+            state.matchAnalyses.some(x => x.id === 'restore-play-match') &&
+            state.aiFormAnalyses.some(x => x.id === 'restore-play-ai')
+        """, timeout=10000)
+        page.reload(wait_until="load")
+        page.wait_for_function("state.matchAnalyses.length === 1 && state.aiFormAnalyses.length === 1")
+        links = page.evaluate("""() => ({
+            matchClipId: state.matchAnalyses[0].clipId,
+            matchStorageKey: state.matchAnalyses[0].videoStorageKey,
+            clipReverse: state.clips[0].matchAnalysisIds,
+            aiFormId: state.aiFormAnalyses[0].formId,
+            aiMatchId: state.aiFormAnalyses[0].matchId,
+            formReverse: state.forms[0].aiAnalysisIds,
+            matchReverse: state.matchAnalyses[0].aiFormAnalysisIds
+        })""")
+        self.assertEqual(links["matchClipId"], "restore-play-clip", links)
+        self.assertEqual(links["matchStorageKey"], "restore-play-clip", links)
+        self.assertEqual(links["clipReverse"], ["restore-play-match"], links)
+        self.assertEqual(links["aiFormId"], "form-restore-play", links)
+        self.assertEqual(links["aiMatchId"], "restore-play-match", links)
+        self.assertEqual(links["formReverse"], ["restore-play-ai"], links)
+        self.assertEqual(links["matchReverse"], ["restore-play-ai"], links)
+        page.evaluate("playSavedClip('restore-play-clip', 0)")
+        page.wait_for_function("document.getElementById('matchVideo').readyState >= 2", timeout=10000)
+        self.assertIn("保存動画の読み込み成功", page.locator("#videoMeta").inner_text())
+        page.evaluate("playSavedForm('form-restore-play')")
+        page.wait_for_function("document.getElementById('formVideo').readyState >= 2", timeout=10000)
+        self.assertIn("保存フォーム動画の読み込み成功", page.locator("#formVideoPlaybackStatus").inner_text())
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
