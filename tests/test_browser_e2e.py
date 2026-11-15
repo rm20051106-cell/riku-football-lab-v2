@@ -708,6 +708,13 @@ class RikuBrowserE2ETests(unittest.TestCase):
         }""")
         self.assertEqual(page.evaluate("state.matchAnalyses.length"), 1)
         self.assertIsNone(page.evaluate("state.matchAnalyses[0].clipId"))
+        original_source_key = page.evaluate("state.matchAnalyses[0].sourceVideoKey")
+        self.assertTrue(original_source_key)
+        # Simulate Safari page reload: the file input and pendingMatchSave promise are gone,
+        # but the original video and its metadata remain in IndexedDB.
+        page.reload(wait_until="load")
+        page.locator('.nav button[data-view="video"]').click()
+        page.locator("#videoTitle").fill("同一動画の端末保存")
         page.evaluate("saveClip()")
         page.wait_for_function("state.clips.length === 1 && state.clips[0].hasVideo")
         linked = page.evaluate("""() => ({
@@ -716,12 +723,16 @@ class RikuBrowserE2ETests(unittest.TestCase):
             matchClipId: String(state.matchAnalyses[0].clipId),
             storageKey: state.matchAnalyses[0].videoStorageKey,
             matchIds: state.clips[0].matchAnalysisIds.map(String),
-            fingerprint: !!state.matchAnalyses[0].sourceVideoKey
+            clipSourceVideoKey: state.clips[0].sourceVideoKey,
+            matchSourceVideoKey: state.matchAnalyses[0].sourceVideoKey,
+            savedVideoName: state.clips[0].title
         })""")
         self.assertEqual(linked["matchClipId"], linked["clipId"], linked)
         self.assertEqual(linked["storageKey"], linked["clipId"], linked)
         self.assertIn(linked["matchId"], linked["matchIds"], linked)
-        self.assertTrue(linked["fingerprint"], linked)
+        self.assertEqual(linked["clipSourceVideoKey"], original_source_key, linked)
+        self.assertEqual(linked["matchSourceVideoKey"], original_source_key, linked)
+        self.assertEqual(linked["savedVideoName"], "同一動画の端末保存", linked)
         page.evaluate("renderMatchLibrary()")
         self.assertIn("端末内動画を再生", page.locator("#matchLibrary").inner_text())
         page.get_by_role("button", name="端末内動画を再生").first.click()
