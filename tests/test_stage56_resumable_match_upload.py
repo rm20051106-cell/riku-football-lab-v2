@@ -161,12 +161,21 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
                 "job_id": "processing-job", "status": "processing", "progress": 65,
                 "stage": "解析中", "source_path": str(pathlib.Path(directory) / "missing.mp4"),
             }
+            available_clip = pathlib.Path(directory) / "scene-1.mp4"
+            available_clip.write_bytes(b"synthetic-clip")
             completed = {
                 "job_id": "completed-job", "upload_id": "completed-upload",
                 "status": "completed", "progress": 100,
                 "stage": "解析完了", "source_path": str(source),
-                "result": {"job_id": "completed-job", "summary": {"duration_seconds": 1200}},
-                "clips": [{"id": "scene-1", "path": str(pathlib.Path(directory) / "scene-1.mp4")}],
+                "result": {"job_id": "completed-job", "summary": {"duration_seconds": 1200,
+                    "candidate_events": [
+                        {"id": "scene-1", "clip_available": True, "clip_url": "/analyze/jobs/completed-job/clips/scene-1"},
+                        {"id": "scene-2", "clip_available": True, "clip_url": "/analyze/jobs/completed-job/clips/scene-2"},
+                    ]}},
+                "clips": [
+                    {"id": "scene-1", "path": str(available_clip)},
+                    {"id": "scene-2", "path": str(pathlib.Path(directory) / "missing-scene-2.mp4")},
+                ],
             }
             helpers["match_job_manifest_path"]("queued-job").write_text(
                 json.dumps(queued), encoding="utf-8"
@@ -190,7 +199,12 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
             self.assertEqual(restored["completed-job"]["status"], "completed")
             self.assertEqual(restored["completed-job"]["upload_id"], "completed-upload")
             self.assertEqual(restored["completed-job"]["result"]["summary"]["duration_seconds"], 1200)
-            self.assertEqual(restored["completed-job"]["clips"][0]["id"], "scene-1")
+            self.assertEqual([clip["id"] for clip in restored["completed-job"]["clips"]], ["scene-1"])
+            events = restored["completed-job"]["result"]["summary"]["candidate_events"]
+            self.assertTrue(events[0]["clip_available"])
+            self.assertEqual(events[0]["clip_url"], "/analyze/jobs/completed-job/clips/scene-1")
+            self.assertFalse(events[1]["clip_available"])
+            self.assertIsNone(events[1]["clip_url"])
             self.assertNotIn("corrupt-job", restored)
             self.assertFalse(corrupt_path.exists())
 
