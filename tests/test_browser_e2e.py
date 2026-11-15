@@ -2132,5 +2132,89 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertIn("保留・動画識別情報不一致", result["message"])
         self.assertIn("expected.mp4", result["source"])
 
+    def test_backup_restore_repeated_twice_is_idempotent_for_record_ids_and_links(self):
+        import json
+        backup = {
+            "backupFormat": "riku-football-lab",
+            "backupVersion": 3,
+            "videoFilesIncluded": False,
+            "state": {
+                "settings": {"name": "陸玖"},
+                "menus": [],
+                "trainings": [],
+                "measures": [],
+                "clips": [{"id": "repeat-clip", "sourceVideoKey": "same.mp4|4|123|video/mp4", "hasVideo": False, "matchAnalysisIds": []}],
+                "forms": [{"id": "repeat-form", "sourceVideoKey": "form.mp4|4|123|video/mp4", "hasVideo": False, "aiAnalysisIds": []}],
+                "matchAnalyses": [{"id": "repeat-match", "sourceVideoKey": "same.mp4|4|123|video/mp4", "aiFormAnalysisIds": []}],
+                "aiFormAnalyses": [{"id": "repeat-ai", "sourceVideoKey": "form.mp4|4|123|video/mp4", "formId": "repeat-form"}]
+            }
+        }
+        backup_path = self.temp_path / "repeat-backup.json"
+        backup_path.write_text(json.dumps(backup, ensure_ascii=False), encoding="utf-8")
+        for _ in range(2):
+            self.page.once("dialog", lambda dialog: dialog.accept())
+            self.page.locator("#importFile").set_input_files(str(backup_path))
+            self.page.wait_for_function("state.clips.length === 1 && state.forms.length === 1 && state.matchAnalyses.length === 1 && state.aiFormAnalyses.length === 1")
+        result = self.page.evaluate("""() => ({
+            clipIds: state.clips.map(x => x.id),
+            formIds: state.forms.map(x => x.id),
+            matchIds: state.matchAnalyses.map(x => x.id),
+            aiIds: state.aiFormAnalyses.map(x => x.id),
+            clipReverse: state.clips[0].matchAnalysisIds,
+            formReverse: state.forms[0].aiAnalysisIds
+        })""")
+        self.assertEqual(result["clipIds"], ["repeat-clip"])
+        self.assertEqual(result["formIds"], ["repeat-form"])
+        self.assertEqual(result["matchIds"], ["repeat-match"])
+        self.assertEqual(result["aiIds"], ["repeat-ai"])
+        self.assertEqual(result["clipReverse"], ["repeat-match"])
+        self.assertEqual(result["formReverse"], ["repeat-ai"])
+
+    def test_live_source_key_linking_stops_when_multiple_records_match(self):
+        result = self.page.evaluate("""() => {
+            const key = 'shared.mp4|4|123|video/mp4';
+            state.clips = [
+                {id:'clip-one', sourceVideoKey:key, matchAnalysisIds:[]},
+                {id:'clip-two', sourceVideoKey:key, matchAnalysisIds:[]}
+            ];
+            state.matchAnalyses = [{id:'match-one', sourceVideoKey:key}];
+            state.forms = [{id:'form-one', sourceVideoKey:key, aiAnalysisIds:[]}];
+            state.aiFormAnalyses = [
+                {id:'ai-one', sourceVideoKey:key},
+                {id:'ai-two', sourceVideoKey:key}
+            ];
+            const clipLinks = syncVideoClipAnalysisLinks(state.clips[0]);
+            const formLinks = syncAiFormAnalysisLinks(state.forms[0]);
+            const matchLinks = syncAiFormAnalysisMatchLinks(state.aiFormAnalyses[0]);
+            return {clipLinks:clipLinks.length,formLinks:formLinks.length,matchLinks:matchLinks.length,matchClipId:state.matchAnalyses[0].clipId||null,formIds:state.aiFormAnalyses.map(x=>x.formId||null)};
+        }""")
+        self.assertEqual(result["clipLinks"], 0)
+        self.assertEqual(result["formLinks"], 0)
+        self.assertEqual(result["matchLinks"], 0)
+        self.assertIsNone(result["matchClipId"])
+        self.assertEqual(result["formIds"], [None, None])
+
+    def test_restored_video_identity_checks_name_size_and_type_but_not_download_timestamp(self):
+        result = self.page.evaluate("""() => ({
+            valid: validateRestoredVideoIdentity('goal.mp4|4|123|video%2Fmp4', 'goal.mp4', 4, 'video/mp4'),
+            wrongName: validateRestoredVideoIdentity('goal.mp4|4|123|video%2Fmp4', 'other.mp4', 4, 'video/mp4'),
+            wrongSize: validateRestoredVideoIdentity('goal.mp4|4|123|video%2Fmp4', 'goal.mp4', 5, 'video/mp4'),
+            wrongType: validateRestoredVideoIdentity('goal.mp4|4|123|video%2Fmp4', 'goal.mp4', 4, 'video/quicktime')
+        })""")
+        self.assertTrue(result["valid"]["ok"], result)
+        self.assertFalse(result["wrongName"]["ok"], result)
+        self.assertFalse(result["wrongSize"]["ok"], result)
+        self.assertFalse(result["wrongType"]["ok"], result)
+
+    def test_backup_snapshot_is_stable_when_live_state_changes_after_capture(self):
+        result = self.page.evaluate("""() => {
+            const current = {clips:[{id:'before'}], matchAnalyses:[]};
+            const snapshot = createBackupStateSnapshot(current);
+            current.clips.push({id:'after'});
+            return {snapshotIds:snapshot.clips.map(x=>x.id),liveIds:current.clips.map(x=>x.id)};
+        }""")
+        self.assertEqual(result["snapshotIds"], ["before"])
+        self.assertEqual(result["liveIds"], ["before", "after"])
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
