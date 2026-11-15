@@ -401,25 +401,36 @@ async function storeClipVideo(id,file){
 async function compareVideoBlobs(a,b){if(!(a instanceof Blob)||!(b instanceof Blob)||a.size!==b.size)return false;const chunkSize=1024*1024;for(let offset=0;offset<a.size;offset+=chunkSize){const [left,right]=await Promise.all([a.slice(offset,Math.min(a.size,offset+chunkSize)).arrayBuffer(),b.slice(offset,Math.min(b.size,offset+chunkSize)).arrayBuffer()]);const x=new Uint8Array(left),y=new Uint8Array(right);if(x.length!==y.length)return false;for(let i=0;i<x.length;i++)if(x[i]!==y[i])return false}return true}
 function reconcileRecordReverseLinks(data){
  const clips=Array.isArray(data.clips)?data.clips:[],forms=Array.isArray(data.forms)?data.forms:[],matches=Array.isArray(data.matchAnalyses)?data.matchAnalyses:[],analyses=Array.isArray(data.aiFormAnalyses)?data.aiFormAnalyses:[];
- const byId=(rows,id)=>rows.find(row=>String(row.id)===String(id));
- const report={danglingForward:[],staleReverse:[],repaired:[]};
- const collect=(owner,field,targetRows,targetField,label)=>{
-  const refs=Array.isArray(owner[field])?owner[field]:[];
-  refs.forEach(id=>{const target=byId(targetRows,id);if(!target)report.staleReverse.push(label+':'+owner.id+' -> '+id);else if(String(target[targetField]||'')!==String(owner.id))report.staleReverse.push(label+':'+owner.id+' -> '+id+' (逆リンク不一致)')});
+ const report={danglingForward:[],staleReverse:[],repaired:[],duplicateIds:[],ambiguousReferences:[]};
+ const duplicates=rows=>{const counts=new Map();rows.forEach(row=>{const id=String(row?.id??'');counts.set(id,(counts.get(id)||0)+1)});return new Set([...counts].filter(([id,count])=>id&&count>1).map(([id])=>id))};
+ const dup={clips:duplicates(clips),forms:duplicates(forms),matches:duplicates(matches),analyses:duplicates(analyses)};
+ Object.entries(dup).forEach(([kind,ids])=>ids.forEach(id=>report.duplicateIds.push(kind+':'+id)));
+ const uniqueById=(rows,id,dups)=>{const found=rows.filter(row=>String(row?.id??'')===String(id));return found.length===1&&!dups.has(String(id))?found[0]:null};
+ const uniqueSource=(rows,key,dups)=>{const found=key?rows.filter(row=>row.sourceVideoKey===key):[];return found.length===1&&!dups.has(String(found[0]?.id??''))?found[0]:null};
+ const collect=(owner,field,targetRows,targetField,targetDup,label)=>{
+  const refs=Array.isArray(owner[field])?owner[field]:[],seen=new Set();
+  refs.forEach(id=>{const key=String(id);if(seen.has(key))report.duplicateIds.push(label+':duplicate-reference:'+key);seen.add(key);if(targetDup.has(key)){report.ambiguousReferences.push(label+':'+owner.id+' -> '+key+' (ID重複)');return}const target=uniqueById(targetRows,key,targetDup);if(!target)report.staleReverse.push(label+':'+owner.id+' -> '+key);else if(String(target[targetField]||'')!==String(owner.id))report.staleReverse.push(label+':'+owner.id+' -> '+key+' (逆リンク不一致)')});
  };
- clips.forEach(x=>collect(x,'matchAnalysisIds',matches,'clipId','clip.matchAnalysisIds'));
- forms.forEach(x=>collect(x,'aiAnalysisIds',analyses,'formId','form.aiAnalysisIds'));
- matches.forEach(x=>collect(x,'aiFormAnalysisIds',analyses,'matchId','match.aiFormAnalysisIds'));
- matches.forEach(match=>{if(match.clipId&&!byId(clips,match.clipId))report.danglingForward.push('match.clipId:'+match.id+' -> '+match.clipId)});
+ clips.forEach(x=>collect(x,'matchAnalysisIds',matches,'clipId',dup.matches,'clip.matchAnalysisIds'));
+ forms.forEach(x=>collect(x,'aiAnalysisIds',analyses,'formId',dup.analyses,'form.aiAnalysisIds'));
+ matches.forEach(x=>collect(x,'aiFormAnalysisIds',analyses,'matchId',dup.analyses,'match.aiFormAnalysisIds'));
+ matches.forEach(match=>{if(match.clipId){if(dup.clips.has(String(match.clipId)))report.ambiguousReferences.push('match.clipId:'+match.id+' -> '+match.clipId+' (ID重複)');else if(!uniqueById(clips,match.clipId,dup.clips))report.danglingForward.push('match.clipId:'+match.id+' -> '+match.clipId)}});
  analyses.forEach(row=>{
-  if(row.formId&&!byId(forms,row.formId))report.danglingForward.push('ai.formId:'+row.id+' -> '+row.formId);
-  if(row.matchId&&!byId(matches,row.matchId))report.danglingForward.push('ai.matchId:'+row.id+' -> '+row.matchId);
-  if(row.matchClipId&&!byId(clips,row.matchClipId))report.danglingForward.push('ai.matchClipId:'+row.id+' -> '+row.matchClipId);
+  [['formId',forms,dup.forms],['matchId',matches,dup.matches],['matchClipId',clips,dup.clips]].forEach(([field,rows,dups])=>{if(!row[field])return;if(dups.has(String(row[field])))report.ambiguousReferences.push('ai.'+field+':'+row.id+' -> '+row[field]+' (ID重複)');else if(!uniqueById(rows,row[field],dups))report.danglingForward.push('ai.'+field+':'+row.id+' -> '+row[field])});
  });
- const setReverse=(owner,field,ids,label)=>{const current=Array.isArray(owner[field])?owner[field]:[];const next=[...new Set(ids.map(String))];if(JSON.stringify(current.map(String))!==JSON.stringify(next)){owner[field]=next;report.repaired.push(label+':'+owner.id)}};
- clips.forEach(clip=>setReverse(clip,'matchAnalysisIds',matches.filter(x=>String(x.clipId||'')===String(clip.id)).map(x=>x.id),'clip.matchAnalysisIds'));
- forms.forEach(form=>setReverse(form,'aiAnalysisIds',analyses.filter(x=>String(x.formId||'')===String(form.id)).map(x=>x.id),'form.aiAnalysisIds'));
- matches.forEach(match=>setReverse(match,'aiFormAnalysisIds',analyses.filter(x=>String(x.matchId||'')===String(match.id)).map(x=>x.id),'match.aiFormAnalysisIds'));
+ const setReverse=(owners,field,targets,targetField,ownerDup,targetDup,label)=>{
+  owners.forEach(owner=>{
+   const ownerId=String(owner.id);if(ownerDup.has(ownerId))return;
+   const ambiguousTarget=targets.some(row=>targetDup.has(String(row.id))&&String(row[targetField]||'')===ownerId);
+   if(ambiguousTarget)return;
+   const current=Array.isArray(owner[field])?owner[field]:[];
+   const next=[...new Set(targets.filter(row=>!targetDup.has(String(row.id))&&String(row[targetField]||'')===ownerId).map(row=>String(row.id)))];
+   if(JSON.stringify(current.map(String))!==JSON.stringify(next)){owner[field]=next;report.repaired.push(label+':'+ownerId)}
+  });
+ };
+ setReverse(clips,'matchAnalysisIds',matches,'clipId',dup.clips,dup.matches,'clip.matchAnalysisIds');
+ setReverse(forms,'aiAnalysisIds',analyses,'formId',dup.forms,dup.analyses,'form.aiAnalysisIds');
+ setReverse(matches,'aiFormAnalysisIds',analyses,'matchId',dup.matches,dup.analyses,'match.aiFormAnalysisIds');
  return report;
 }
 async function scanAndRepairRecordIntegrity(){
