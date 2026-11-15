@@ -2,6 +2,7 @@ import asyncio
 import io
 import os
 import sys
+import tempfile
 import time
 import unittest
 from unittest import mock
