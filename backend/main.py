@@ -1969,11 +1969,18 @@ def get_match_upload_status(upload_id: str):
     upload_state = match_uploads.get(upload_id)
     if upload_state is None:
         raise HTTPException(status_code=404, detail="動画アップロードが見つかりません。最初から再試行してください。")
+    chunk_size = upload_state.get("chunk_size")
+    total_size = upload_state.get("total_size")
+    total_chunks = upload_state.get("total_chunks")
+    if (not isinstance(chunk_size, int) or isinstance(chunk_size, bool) or chunk_size < 1
+            or not isinstance(total_size, int) or total_size < 1
+            or total_chunks != (total_size + chunk_size - 1) // chunk_size):
+        raise HTTPException(status_code=409, detail="アップロードの分割情報が不正です。安全のため再開を停止しました。")
     return {
         "ok": True, "upload_id": upload_id,
         "next_chunk": upload_state["next_chunk"],
-        "chunk_size": upload_state["chunk_size"],
-        "total_chunks": upload_state["total_chunks"],
+        "chunk_size": chunk_size,
+        "total_chunks": total_chunks,
         "received_bytes": upload_state["received_bytes"],
         "total_bytes": upload_state["total_size"],
         "complete": upload_state["received_bytes"] == upload_state["total_size"],
