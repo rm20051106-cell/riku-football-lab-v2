@@ -389,7 +389,7 @@ class MatchUploadRetryTests(unittest.TestCase):
                                 statusChecks++;
                                 const status = {
                                     upload_id: uploadId, total_bytes: 12 * 1024 * 1024 + 1,
-                                    next_chunk: 0, total_chunks: mode === 'changed' ? 3 : 2
+                                    received_bytes: 0, next_chunk: 0, total_chunks: mode === 'changed' ? 3 : 2
                                 };
                                 if (mode === 'changed') status.chunk_size = 6 * 1024 * 1024;
                                 return new Response(JSON.stringify(status), {
@@ -469,6 +469,7 @@ class MatchUploadRetryTests(unittest.TestCase):
                             if (path === '/analyze/match/uploads/' + uploadId && options.method === 'GET') {
                                 return new Response(JSON.stringify({
                                     upload_id: uploadId, total_bytes: file.size,
+                                    received_bytes: item.serverNext * 12 * 1024 * 1024,
                                     next_chunk: item.serverNext, chunk_size: 12 * 1024 * 1024, total_chunks: 2
                                 }), {status: 200, headers: {'Content-Type': 'application/json'}});
                             }
@@ -743,7 +744,7 @@ class MatchUploadRetryTests(unittest.TestCase):
                                 staleStatusChecks++;
                                 return new Response(JSON.stringify({
                                     upload_id: 'unexpected-stale-session',
-                                    total_bytes: original.size, next_chunk: 1,
+                                    total_bytes: original.size, received_bytes: CHUNK, next_chunk: 1,
                                     chunk_size: CHUNK, total_chunks: 2
                                 }), {status: 200, headers: {'Content-Type': 'application/json'}});
                             }
