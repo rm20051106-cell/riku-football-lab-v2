@@ -584,6 +584,47 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertIsNone(result["stored"])
 
 
+    def test_video_export_keeps_valid_files_when_one_saved_video_is_corrupt(self):
+        result = self.page.evaluate("""async () => {
+            await storeClipVideo('export-good', new Blob([
+                new Uint8Array([1, 2, 3, 4])
+            ], {type: 'video/mp4'}));
+            await storeClipVideo('export-bad', new Blob([
+                new Uint8Array([5, 6, 7, 8])
+            ], {type: 'video/mp4'}));
+            const db = await openVideoDB();
+            try {
+                const record = await new Promise((resolve, reject) => {
+                    const tx = db.transaction('videos', 'readonly');
+                    const req = tx.objectStore('videos').get('export-bad');
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => reject(req.error);
+                });
+                await new Promise((resolve, reject) => {
+                    const tx = db.transaction('videoChunks', 'readwrite');
+                    tx.objectStore('videoChunks').delete(
+                        record.chunkPrefix + '00000000'
+                    );
+                    tx.oncomplete = resolve;
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                });
+            } finally { db.close(); }
+            await prepareVideoExport();
+            const host = document.getElementById('videoExportList');
+            return {
+                text: host.textContent,
+                links: [...host.querySelectorAll('a[download]')].map(a => a.download),
+                hasGood: host.textContent.includes('export-good'),
+                hasBadWarning: host.textContent.includes('export-bad')
+            };
+        }""")
+        self.assertTrue(result["hasGood"], result)
+        self.assertTrue(result["hasBadWarning"], result)
+        self.assertEqual(len(result["links"]), 1, result)
+        self.assertIn("export-good", result["links"][0])
+
+
     def test_video_batch_restore_keeps_success_and_retries_only_failed_file(self):
         page = self.page
         page.evaluate("""() => {
