@@ -44,12 +44,14 @@ class MatchUploadRetryTests(unittest.TestCase):
                     state.settings.apiBaseUrl = 'https://upload-retry.test';
                     let chunkAttempts = 0;
                     let chunkSizes = [];
+                    let initJerseyNumbers = [];
                     let completeAttempts = 0;
                     let serverJobId = null;
                     let deleteAttempts = 0;
                     window.fetch = async (url, options = {}) => {
                         const path = new URL(url).pathname;
                         if (path === '/analyze/match/uploads' && options.method === 'POST') {
+                            initJerseyNumbers.push(JSON.parse(options.body).jersey_numbers);
                             return new Response(JSON.stringify({
                                 ok: true, upload_id: 'retry-session',
                                 chunk_size: 12 * 1024 * 1024, total_chunks: 2
@@ -94,8 +96,9 @@ class MatchUploadRetryTests(unittest.TestCase):
                     });
                     const status = document.createElement('div');
                     const response = await uploadMatchVideoInChunks(file, ['10', '74'], status);
-                    return {chunkAttempts, chunkSizes, completeAttempts, deleteAttempts, response};
+                    return {chunkAttempts, chunkSizes, initJerseyNumbers, completeAttempts, deleteAttempts, response};
                 }""")
+                self.assertEqual(result["initJerseyNumbers"], ["10,74"], result)
                 self.assertEqual(result["chunkAttempts"], 3, result)
                 self.assertEqual(result["chunkSizes"], [12 * 1024 * 1024, 12 * 1024 * 1024, 1], result)
                 self.assertEqual(result["completeAttempts"], 2, result)
