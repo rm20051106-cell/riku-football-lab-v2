@@ -216,7 +216,9 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
     def test_upload_status_endpoint_and_manifest_cleanup_are_wired(self):
         self.assertIn('@app.get("/analyze/match/uploads/{upload_id}")', SOURCE)
         self.assertIn('"next_chunk": upload_state["next_chunk"]', SOURCE)
-        self.assertIn('"chunk_size": upload_state["chunk_size"]', SOURCE)
+        self.assertIn('"chunk_size": chunk_size', SOURCE)
+        self.assertIn('createdTotalChunks!==Math.ceil(file.size/createdChunkSize)', HTML)
+        self.assertIn('body.chunk_index!==i||body.received_bytes!==expectedReceivedBytes||body.total_bytes!==file.size', HTML)
         status = load_upload_status_helper("status-session", {
             "next_chunk": 2, "chunk_size": 12 * 1024 * 1024,
             "total_chunks": 4, "received_bytes": 24 * 1024 * 1024,
@@ -293,7 +295,9 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
 
     def test_upload_chunk_size_matches_backend_12mb_and_retry_timeout_contract(self):
         self.assertIn("MATCH_UPLOAD_CHUNK_BYTES = 12 * 1024 * 1024", SOURCE)
-        self.assertIn("chunkSize=Number(created.chunk_size)||chunkSizeDefault", HTML)
+        self.assertIn("chunkSize=createdChunkSize", HTML)
+        self.assertIn("createdTotalChunks!==Math.ceil(file.size/createdChunkSize)", HTML)
+        self.assertIn("expectedReceivedBytes=Math.min(file.size,(i+1)*chunkSize)", HTML)
         retry_test = (ROOT / "tests" / "test_match_upload_retry.py").read_text(encoding="utf-8")
         self.assertIn("chunk_size: 12 * 1024 * 1024", retry_test)
         self.assertIn("new Uint8Array(12 * 1024 * 1024 + 1)", retry_test)
@@ -316,6 +320,19 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn("サーバー側の値を優先します", upload)
         self.assertIn("await persistResume({...identity,uploadId:session.upload_id,chunkSize,totalChunks:total,nextChunk,createdAt:saved.createdAt||Date.now()})", upload)
         self.assertIn("serverNextChunk>serverTotalChunks", upload)
+
+    def test_multi_chunk_duration_boundary_regressions_are_covered(self):
+        retry_test = (ROOT / "tests" / "test_match_upload_retry.py").read_text(encoding="utf-8")
+        backend_test = (ROOT / "tests" / "test_backend_match_upload_integration.py").read_text(encoding="utf-8")
+        self.assertIn("def test_multi_chunk_20_minute_upload_checks_every_byte_boundary_before_completion", retry_test)
+        self.assertIn("chunkSizes", retry_test)
+        self.assertIn("receivedBytes", retry_test)
+        self.assertIn("chunk * 3 + 123", retry_test)
+        self.assertIn("await exercise(900, 2 * chunk + 11", backend_test)
+        self.assertIn("await exercise(1200, 3 * chunk + 123", backend_test)
+        self.assertIn("incomplete.exception.status_code, 409", backend_test)
+        self.assertIn("duplicate_final", backend_test)
+
 
     def test_browser_retry_suite_covers_timeout_and_both_checkpoint_drift_directions(self):
         retry_test = (ROOT / "tests" / "test_match_upload_retry.py").read_text(encoding="utf-8")
