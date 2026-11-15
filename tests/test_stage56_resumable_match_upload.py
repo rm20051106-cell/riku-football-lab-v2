@@ -218,6 +218,16 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn("self.assertEqual(result[\"checkpointAtFirstPut\"], 1, result)", retry_test)
 
 
+
+    def test_video_fingerprint_progress_cancel_and_memory_boundaries(self):
+        self.assertIn("function cancelMatchFingerprint()", HTML)
+        self.assertIn("onclick=" + chr(34) + "cancelMatchFingerprint()" + chr(34), HTML)
+        self.assertIn("matchFingerprintProgressBar", HTML)
+        self.assertIn("progress.completedBytes/progress.totalBytes*100", HTML)
+        self.assertIn("error.name='AbortError'", HTML)
+        self.assertIn("await new Promise(resolve=>setTimeout(resolve,0))", HTML)
+        self.assertIn("test_video_fingerprint_reports_progress_and_cancels_between_12mb_slices", RETRY_TEST)
+
     def test_resume_identity_requires_content_fingerprint_and_hashes_each_12mb_block(self):
         self.assertIn("async function getVideoContentFingerprint(file,chunkSize=12*1024*1024)", HTML)
         self.assertIn("crypto.subtle.digest('SHA-256',bytes)", HTML)
