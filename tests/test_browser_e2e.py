@@ -2050,5 +2050,39 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual(result["after"], result["before"])
         self.assertIn("保存に失敗", result["message"])
 
+    def test_integrity_scan_reports_orphan_video_and_chunk_without_deleting_them(self):
+        page = self.page
+        result = page.evaluate("""async () => {
+            state.clips = [];
+            state.forms = [];
+            state.matchAnalyses = [];
+            state.aiFormAnalyses = [];
+            await storeClipVideo('video-no-record', new Blob([new Uint8Array([1,2,3])], {type:'video/mp4'}));
+            const db = await openVideoDB();
+            try {
+                await new Promise((resolve, reject) => {
+                    const tx = db.transaction('videoChunks', 'readwrite');
+                    tx.objectStore('videoChunks').put(new Uint8Array([9,9]), 'missing-owner|old-generation|00000000');
+                    tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error);
+                });
+            } finally { db.close(); }
+            await scanAndRepairRecordIntegrity();
+            const video = await getClipVideo('video-no-record');
+            const checkDb = await openVideoDB();
+            let chunkExists = false;
+            try {
+                chunkExists = await new Promise((resolve, reject) => {
+                    const tx = checkDb.transaction('videoChunks', 'readonly');
+                    const req = tx.objectStore('videoChunks').get('missing-owner|old-generation|00000000');
+                    req.onsuccess = () => resolve(!!req.result); req.onerror = () => reject(req.error);
+                });
+            } finally { checkDb.close(); }
+            return {message:document.getElementById('videoIntegrityResult').textContent,videoSize:video.blob.size,chunkExists};
+        }""")
+        self.assertIn("記録なし動画 1件", result["message"])
+        self.assertIn("所有動画なしチャンク 1件", result["message"])
+        self.assertEqual(result["videoSize"], 3)
+        self.assertTrue(result["chunkExists"])
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
