@@ -712,6 +712,30 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertIn("正常動画", result["text"])
 
 
+    def test_backup_restore_does_not_play_video_with_mismatched_source_identity(self):
+        result = self.page.evaluate("""async () => {
+            await storeClipVideo('identity-mismatch', new File([
+                new Uint8Array([1, 2, 3, 4])
+            ], 'old-video.mp4', {type: 'video/mp4', lastModified: 123}));
+            state.clips = [{
+                id: 'identity-mismatch', title: '別動画が残った記録',
+                hasVideo: true,
+                sourceVideoKey: 'new-video.mp4|4|456|video/mp4'
+            }];
+            const output = document.getElementById('videoIntegrityResult');
+            await scanSavedVideoIntegrity();
+            return {
+                text: output.textContent,
+                playableCount: Number((output.textContent.match(/再生テスト（(\\d+)本）/) || [])[1] || -1),
+                storedStillExists: !!(await getClipVideo('identity-mismatch'))?.blob
+            };
+        }""")
+        self.assertIn("識別不一致 1件", result["text"])
+        self.assertIn("old-video.mp4", result["text"])
+        self.assertEqual(result["playableCount"], 0, result)
+        self.assertTrue(result["storedStillExists"], result)
+
+
     def test_webkit_safari_compatibility_smoke(self):
         browser = self.playwright.webkit.launch(headless=True)
         try:
