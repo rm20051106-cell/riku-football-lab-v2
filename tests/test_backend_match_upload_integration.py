@@ -351,6 +351,44 @@ class MatchUploadBackendIntegrationTest(unittest.TestCase):
         self.assertTrue(capture.released)
 
 
+    def test_completed_job_api_hides_candidate_clips_that_no_longer_exist(self):
+        if not Path("/app/main.py").exists():
+            self.skipTest("Run this integration test inside the backend Docker image")
+        sys.path.insert(0, "/app")
+        import main
+
+        job_id = "expired-clip-api-contract-test"
+        with tempfile.TemporaryDirectory() as directory:
+            available = Path(directory) / "available.mp4"
+            available.write_bytes(b"clip")
+            original_job = main.match_jobs.get(job_id)
+            main.match_jobs[job_id] = {
+                "job_id": job_id, "status": "completed", "progress": 100,
+                "result": {"job_id": job_id, "summary": {"candidate_events": [
+                    {"id": "available", "clip_available": True, "clip_url": "/available"},
+                    {"id": "missing", "clip_available": True, "clip_url": "/missing"},
+                ]}},
+                "clips": [
+                    {"id": "available", "path": str(available)},
+                    {"id": "missing", "path": str(Path(directory) / "missing.mp4")},
+                ],
+            }
+            try:
+                payload = main.get_match_job(job_id)
+                events = payload["result"]["summary"]["candidate_events"]
+                self.assertEqual([clip["id"] for clip in payload["clips"]], ["available"])
+                self.assertTrue(events[0]["clip_available"])
+                self.assertEqual(events[0]["clip_url"], "/available")
+                self.assertFalse(events[1]["clip_available"])
+                self.assertIsNone(events[1]["clip_url"])
+                self.assertTrue(main.match_jobs[job_id]["result"]["summary"]["candidate_events"][1]["clip_available"])
+            finally:
+                if original_job is None:
+                    main.match_jobs.pop(job_id, None)
+                else:
+                    main.match_jobs[job_id] = original_job
+
+
     def test_completed_job_api_returns_pose_inference_latency_metrics(self):
         if not Path("/app/main.py").exists():
             self.skipTest("Run this integration test inside the backend Docker image")
