@@ -73,11 +73,13 @@ def persist_match_job_state(job_id, job):
     try:
         temporary.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
         os.replace(temporary, target)
+        return True
     except (OSError, TypeError, ValueError):
         try:
             temporary.unlink(missing_ok=True)
         except OSError:
             pass
+        return False
 
 
 def restore_match_jobs():
@@ -2069,7 +2071,12 @@ async def complete_match_upload(upload_id: str, background_tasks: BackgroundTask
         "size_bytes": upload_state["total_size"], "result": None, "error": None,
         "source_path": temp_path, "upload_id": upload_id, "jersey_numbers": jersey_numbers,
     }
-    persist_match_job_state(job_id, match_jobs[job_id])
+    if not persist_match_job_state(job_id, match_jobs[job_id]):
+        match_jobs.pop(job_id, None)
+        raise HTTPException(
+            status_code=507,
+            detail="解析ジョブ情報を保存できません。動画の受信データは保持しています。通信を確認して再試行してください。",
+        )
     del match_uploads[upload_id]
     match_upload_manifest_path(upload_id).unlink(missing_ok=True)
     completed_match_uploads[upload_id] = job_id
