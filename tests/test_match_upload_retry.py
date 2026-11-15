@@ -75,8 +75,13 @@ class MatchUploadRetryTests(unittest.TestCase):
                                 serverNextChunk = 1;
                                 throw new TypeError('Load failed after server accepted the chunk');
                             }
-                            if (path.endsWith('/1')) serverNextChunk = 2;
-                            return new Response(JSON.stringify({ok: true}), {
+                            const index = Number(path.split('/').pop());
+                            if (index === 1) serverNextChunk = 2;
+                            return new Response(JSON.stringify({
+                                ok: true, chunk_index: index,
+                                received_bytes: Math.min(12 * 1024 * 1024 + 1, (index + 1) * 12 * 1024 * 1024),
+                                total_bytes: 12 * 1024 * 1024 + 1
+                            }), {
                                 status: 200, headers: {'Content-Type': 'application/json'}
                             });
                         }
@@ -173,7 +178,10 @@ class MatchUploadRetryTests(unittest.TestCase):
                                     }, {once: true});
                                 });
                             }
-                            return new Response(JSON.stringify({ok: true}), {status: 200});
+                            return new Response(JSON.stringify({
+                                ok: true, chunk_index: 0, received_bytes: 12 * 1024 * 1024,
+                                total_bytes: 12 * 1024 * 1024
+                            }), {status: 200});
                         }
                         if (path === '/analyze/match/uploads/timeout-session/complete' && options.method === 'POST') {
                             return new Response(JSON.stringify({
@@ -324,7 +332,12 @@ class MatchUploadRetryTests(unittest.TestCase):
                                     checkpointAtFirstPut = saved?.nextChunk ?? null;
                                     checkpointChunkSizeAtFirstPut = saved?.chunkSize ?? null;
                                 }
-                                return new Response(JSON.stringify({ok: true}), {status: 200});
+                                const index = Number(path.split('/').pop());
+                                return new Response(JSON.stringify({
+                                    ok: true, chunk_index: index,
+                                    received_bytes: Math.min(file.size, (index + 1) * (12 * 1024 * 1024)),
+                                    total_bytes: file.size
+                                }), {status: 200});
                             }
                             if (path === '/analyze/match/uploads/' + uploadId + '/complete' &&
                                 options.method === 'POST') {
@@ -439,7 +452,12 @@ class MatchUploadRetryTests(unittest.TestCase):
                                 checkpointAtFirstPut = checkpoint?.nextChunk ?? null;
                                 checkpointChunkSizeAtFirstPut = checkpoint?.chunkSize ?? null;
                                 checkpointTotalChunksAtFirstPut = checkpoint?.totalChunks ?? null;
-                                return new Response(JSON.stringify({ok: true}), {
+                                const index = Number(path.split('/').pop());
+                                return new Response(JSON.stringify({
+                                    ok: true, chunk_index: index,
+                                    received_bytes: Math.min(file.size, (index + 1) * (12 * 1024 * 1024)),
+                                    total_bytes: file.size
+                                }), {
                                     status: 200, headers: {'Content-Type': 'application/json'}
                                 });
                             }
@@ -594,7 +612,11 @@ class MatchUploadRetryTests(unittest.TestCase):
                                 const index = Number(path.split('/').pop());
                                 putIndexes.push(index);
                                 putSizes.push(options.body.get('file').size);
-                                return new Response(JSON.stringify({ok: true}), {
+                                return new Response(JSON.stringify({
+                                    ok: true, chunk_index: index,
+                                    received_bytes: Math.min(selected.size, (index + 1) * CHUNK),
+                                    total_bytes: selected.size
+                                }), {
                                     status: 200, headers: {'Content-Type': 'application/json'}
                                 });
                             }
