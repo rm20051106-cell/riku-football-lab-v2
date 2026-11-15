@@ -197,6 +197,78 @@ class MatchUploadRetryTests(unittest.TestCase):
             finally:
                 browser.close()
 
+    def test_retry_stops_when_server_chunk_size_changes_or_is_missing(self):
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(
+                headless=True, args=["--no-sandbox"]
+            )
+            try:
+                page = browser.new_page(viewport={"width": 390, "height": 844})
+                page.goto(self.url, wait_until="load")
+                page.wait_for_function(
+                    "typeof uploadMatchVideoInChunks === 'function'"
+                )
+                results = page.evaluate("""async () => {
+                    state.settings.apiBaseUrl = 'https://upload-invalid-status.test';
+                    const outcomes = [];
+                    for (const mode of ['changed', 'missing']) {
+                        let putAttempts = 0;
+                        let statusChecks = 0;
+                        let completeAttempts = 0;
+                        const uploadId = 'invalid-' + mode;
+                        window.fetch = async (url, options = {}) => {
+                            const path = new URL(url).pathname;
+                            if (path === '/analyze/match/uploads' && options.method === 'POST') {
+                                return new Response(JSON.stringify({
+                                    upload_id: uploadId, chunk_size: 12 * 1024 * 1024, total_chunks: 2
+                                }), {status: 201, headers: {'Content-Type': 'application/json'}});
+                            }
+                            if (path === '/analyze/match/uploads/' + uploadId + '/0' && options.method === 'PUT') {
+                                putAttempts++;
+                                throw new TypeError('Network disconnected');
+                            }
+                            if (path === '/analyze/match/uploads/' + uploadId && options.method === 'GET') {
+                                statusChecks++;
+                                const status = {
+                                    upload_id: uploadId, total_bytes: 12 * 1024 * 1024 + 1,
+                                    next_chunk: 0, total_chunks: mode === 'changed' ? 3 : 2
+                                };
+                                if (mode === 'changed') status.chunk_size = 6 * 1024 * 1024;
+                                return new Response(JSON.stringify(status), {
+                                    status: 200, headers: {'Content-Type': 'application/json'}
+                                });
+                            }
+                            if (path === '/analyze/match/uploads/' + uploadId + '/complete' && options.method === 'POST') {
+                                completeAttempts++;
+                                return new Response(JSON.stringify({job_id: 'unexpected'}), {status: 202});
+                            }
+                            throw new Error('Unexpected request: ' + options.method + ' ' + path);
+                        };
+                        const file = new File([new Uint8Array(12 * 1024 * 1024 + 1)], mode + '.mp4', {
+                            type: 'video/mp4'
+                        });
+                        const video = document.getElementById('matchVideo');
+                        Object.defineProperty(video, 'duration', {configurable: true, value: 60});
+                        let errorMessage = '';
+                        try {
+                            await uploadMatchVideoInChunks(file, ['10', '74'], document.createElement('div'));
+                        } catch (error) {
+                            errorMessage = error.message;
+                        }
+                        outcomes.push({mode, putAttempts, statusChecks, completeAttempts, errorMessage});
+                    }
+                    return outcomes;
+                }""")
+                self.assertEqual(len(results), 2, results)
+                for result in results:
+                    self.assertEqual(result["putAttempts"], 1, result)
+                    self.assertEqual(result["statusChecks"], 1, result)
+                    self.assertEqual(result["completeAttempts"], 0, result)
+                    self.assertIn("再開情報が送信中に変化しました", result["errorMessage"], result)
+            finally:
+                browser.close()
+
+
     def test_server_checkpoint_overrides_stale_indexeddb_checkpoint(self):
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(
