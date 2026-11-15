@@ -265,6 +265,13 @@ class Stage47VideoRecoveryTests(unittest.TestCase):
         self.assertEqual(result["matchClipId"], "4901", result)
         self.assertIn(4903, result["matchAiIds"], result)
         self.assertEqual(result["analysisMatchId"], "4902", result)
+        # Re-importing the same JSON must preserve the already restored video and links.
+        self.import_json_backup(self.backup_payload())
+        repeated = self.assert_analysis_links_and_video()
+        self.assertTrue(repeated["hasVideo"], repeated)
+        self.assertEqual(repeated["videoSize"], len(self.video_bytes), repeated)
+        self.assertEqual(repeated["matchClipId"], "4901", repeated)
+        self.assertEqual(repeated["analysisMatchId"], "4902", repeated)
 
     def test_video_first_is_safely_blocked_then_json_restore_retry_preserves_links(self):
         self.page.evaluate("() => { state.clips=[]; state.forms=[]; state.matchAnalyses=[]; state.aiFormAnalyses=[]; persist(); window.__stage48Intercept = true; window.alert = () => {}; }")
@@ -300,6 +307,35 @@ class Stage47VideoRecoveryTests(unittest.TestCase):
         self.assertIn(4903, result["matchAiIds"], result)
         self.assertEqual(result["analysisMatchId"], "4902", result)
 
+    def test_invalid_json_restore_keeps_existing_records_and_video(self):
+        page = self.page
+        page.evaluate("""async () => {
+            state.clips = [{id: 4991, title: 'Keep me', hasVideo: true}];
+            state.matchAnalyses = [{id: 4992, title: 'Keep analysis'}];
+            await storeClipVideo('4991', new Blob([new Uint8Array([4, 3, 2, 1])], {type:'video/webm'}));
+            persist();
+            window.__beforeInvalidJson = localStorage.getItem(KEY);
+            window.__invalidJsonAlert = '';
+            window.alert = message => { window.__invalidJsonAlert = String(message); };
+        }""")
+        page.locator("#importFile").set_input_files({
+            "name": "invalid-riku-backup.json",
+            "mimeType": "application/json",
+            "buffer": b'{"settings":{},"trainings":"not-an-array","measures":[]}'
+        })
+        page.wait_for_function("window.__invalidJsonAlert.includes('読み込めませんでした')")
+        result = page.evaluate("""async () => ({
+            unchanged: localStorage.getItem(KEY) === window.__beforeInvalidJson,
+            clipIds: state.clips.map(row => String(row.id)),
+            matchIds: state.matchAnalyses.map(row => String(row.id)),
+            hasVideo: state.clips[0]?.hasVideo,
+            storedVideo: !!(await getClipVideo('4991'))
+        })""")
+        self.assertTrue(result["unchanged"], result)
+        self.assertEqual(result["clipIds"], ["4991"], result)
+        self.assertEqual(result["matchIds"], ["4992"], result)
+        self.assertTrue(result["hasVideo"], result)
+        self.assertTrue(result["storedVideo"], result)
 
 if __name__ == "__main__":
     unittest.main()
