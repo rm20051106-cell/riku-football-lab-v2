@@ -1198,6 +1198,22 @@ class RikuBrowserE2ETests(unittest.TestCase):
             timeout=20000,
         )
         self.assertIn("このAI解析結果を履歴に保存", page.locator("#matchAiResult").inner_text())
+        # A local persistence failure must not discard the only recoverable job pointer.
+        page.evaluate("""() => {
+            window.__originalMatchPersist = window.persist;
+            window.persist = () => false;
+        }""")
+        page.get_by_role("button", name="このAI解析結果を履歴に保存").click()
+        failed_save = page.evaluate("""async () => ({
+            count: state.matchAnalyses.length,
+            pending: await getPendingMatchJob()
+        })""")
+        self.assertEqual(failed_save["count"], 0, failed_save)
+        self.assertEqual(failed_save["pending"]["jobId"], "restore-job-123", failed_save)
+        page.evaluate("""() => {
+            window.persist = window.__originalMatchPersist;
+            delete window.__originalMatchPersist;
+        }""")
         page.get_by_role("button", name="このAI解析結果を履歴に保存").click()
         saved = page.evaluate("""async () => ({
             count: state.matchAnalyses.length,
