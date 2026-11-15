@@ -861,6 +861,94 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertTrue(messages and "再読み込みせず" in messages[0], messages)
 
 
+    def test_delete_clip_detaches_match_and_ai_references_without_deleting_other_records(self):
+        page = self.page
+        page.evaluate("""async () => {
+            const key = 'clip-delete.mp4|4|123|video/mp4';
+            state.clips = [{id: 'clip-delete', sourceVideoKey: key, hasVideo: true, matchAnalysisIds: ['match-keep']}];
+            state.forms = [{id: 'form-keep', sourceVideoKey: 'form.mp4|4|124|video/mp4', hasVideo: false, aiAnalysisIds: ['ai-keep']}];
+            state.matchAnalyses = [{id: 'match-keep', sourceVideoKey: key, clipId: 'clip-delete', videoStorageKey: 'clip-delete', aiFormAnalysisIds: ['ai-keep']}];
+            state.aiFormAnalyses = [{id: 'ai-keep', sourceVideoKey: key, formId: 'form-keep', matchId: 'match-keep', matchClipId: 'clip-delete'}];
+            await storeClipVideo('clip-delete', new Blob([new Uint8Array([1,2,3,4])], {type: 'video/mp4'}));
+            persist();
+        }""")
+        page.once("dialog", lambda dialog: dialog.accept())
+        page.evaluate("deleteItem('clips', 'clip-delete')")
+        result = page.evaluate("""async () => ({
+            clipCount: state.clips.length,
+            matchClipId: state.matchAnalyses[0].clipId,
+            matchVideoStorageKey: state.matchAnalyses[0].videoStorageKey,
+            clipReverseIds: state.clips[0]?.matchAnalysisIds || [],
+            aiMatchClipId: state.aiFormAnalyses[0].matchClipId,
+            formStillExists: state.forms.some(x => x.id === 'form-keep'),
+            aiFormLink: state.forms[0].aiAnalysisIds,
+            videoStillExists: await getClipVideo('clip-delete')
+        })""")
+        self.assertEqual(result["clipCount"], 0, result)
+        self.assertIsNone(result["matchClipId"], result)
+        self.assertIsNone(result["matchVideoStorageKey"], result)
+        self.assertEqual(result["aiMatchClipId"], None, result)
+        self.assertTrue(result["formStillExists"], result)
+        self.assertEqual(result["aiFormLink"], ["ai-keep"], result)
+        self.assertIsNone(result["videoStillExists"], result)
+
+
+    def test_delete_match_detaches_ai_links_but_preserves_form_and_training_context(self):
+        page = self.page
+        page.evaluate("""() => {
+            state.matchAnalyses = [{id: 'match-delete', title: '削除対象', aiFormAnalysisIds: ['ai-keep']}];
+            state.clips = [{id: 'clip-keep', matchAnalysisIds: ['match-delete']}];
+            state.aiFormAnalyses = [{id: 'ai-keep', matchId: 'match-delete', matchTitle: '削除対象', matchDate: '2026-11-01', matchClipId: 'clip-keep'}];
+            state.forms = [{id: 'form-keep', aiAnalysisIds: ['ai-keep']}];
+            state.trainings = [{id: 'training-keep', linkedMatchEvents: [{matchId: 'match-delete', eventId: 'event-1'}], sourceMatch: {matchId: 'match-delete', eventId: 'event-2'}}];
+            persist();
+        }""")
+        page.once("dialog", lambda dialog: dialog.accept())
+        page.evaluate("deleteMatchScan('match-delete')")
+        result = page.evaluate("""() => ({
+            matchCount: state.matchAnalyses.length,
+            clipLinks: state.clips[0].matchAnalysisIds,
+            aiMatchId: state.aiFormAnalyses[0].matchId,
+            aiMatchClipId: state.aiFormAnalyses[0].matchClipId,
+            formLinks: state.forms[0].aiAnalysisIds,
+            trainingLinks: state.trainings[0].linkedMatchEvents,
+            trainingSourceDeleted: state.trainings[0].sourceMatch.matchRecordDeleted,
+            trainingStillExists: state.trainings.length === 1
+        })""")
+        self.assertEqual(result["matchCount"], 0, result)
+        self.assertEqual(result["clipLinks"], [], result)
+        self.assertIsNone(result["aiMatchId"], result)
+        self.assertIsNone(result["aiMatchClipId"], result)
+        self.assertEqual(result["formLinks"], ["ai-keep"], result)
+        self.assertEqual(result["trainingLinks"], [], result)
+        self.assertTrue(result["trainingSourceDeleted"], result)
+        self.assertTrue(result["trainingStillExists"], result)
+
+
+    def test_delete_ai_form_analysis_removes_reverse_links_and_keeps_source_records(self):
+        page = self.page
+        page.evaluate("""() => {
+            state.aiFormAnalyses = [{id: 'ai-delete'}];
+            state.forms = [{id: 'form-keep', aiAnalysisIds: ['ai-delete', 'ai-other']}];
+            state.matchAnalyses = [{id: 'match-keep', aiFormAnalysisIds: ['ai-delete', 'ai-other']}];
+            persist();
+        }""")
+        page.once("dialog", lambda dialog: dialog.accept())
+        page.evaluate("deleteAiFormAnalysis('ai-delete')")
+        result = page.evaluate("""() => ({
+            aiCount: state.aiFormAnalyses.length,
+            formLinks: state.forms[0].aiAnalysisIds,
+            matchLinks: state.matchAnalyses[0].aiFormAnalysisIds,
+            formCount: state.forms.length,
+            matchCount: state.matchAnalyses.length
+        })""")
+        self.assertEqual(result["aiCount"], 0, result)
+        self.assertEqual(result["formLinks"], ["ai-other"], result)
+        self.assertEqual(result["matchLinks"], ["ai-other"], result)
+        self.assertEqual(result["formCount"], 1, result)
+        self.assertEqual(result["matchCount"], 1, result)
+
+
     def test_restored_analysis_links_require_unique_identity_and_are_idempotent(self):
         result = self.page.evaluate("""() => {
             const key = 'same-source.mp4|5|123|video/mp4';
