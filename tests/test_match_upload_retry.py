@@ -584,5 +584,65 @@ class MatchUploadRetryTests(unittest.TestCase):
             finally:
                 browser.close()
 
+
+    def test_fingerprint_cancels_on_background_or_pagehide_and_can_restart(self):
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True, args=["--no-sandbox"])
+            try:
+                page = browser.new_page(viewport={"width": 390, "height": 844})
+                page.goto(self.url, wait_until="load")
+                page.wait_for_function("typeof uploadMatchVideoInChunks === 'function'")
+                results = page.evaluate("""async () => {
+                    const outcomes = [];
+                    for (const lifecycle of ['visibilitychange', 'pagehide']) {
+                        state.settings.apiBaseUrl = 'https://fingerprint-lifecycle.test';
+                        const videoElement = document.getElementById('matchVideo');
+                        Object.defineProperty(videoElement, 'duration', {configurable: true, value: 30});
+                        const file = new File([new Uint8Array(1024 * 1024)], 'resume.mp4',
+                            {type: 'video/mp4', lastModified: 1234});
+                        let fetchCalls = 0;
+                        window.fetch = async () => {
+                            fetchCalls++;
+                            throw new Error('intentional stop after fingerprint');
+                        };
+                        const pending = uploadMatchVideoInChunks(file, ['10', '74'], document.createElement('div'));
+                        if (lifecycle === 'visibilitychange') {
+                            Object.defineProperty(document, 'visibilityState', {
+                                configurable: true, value: 'hidden'
+                            });
+                            document.dispatchEvent(new Event('visibilitychange'));
+                        } else {
+                            window.dispatchEvent(new Event('pagehide'));
+                        }
+                        let firstError = null;
+                        try { await pending; } catch (error) { firstError = error.name; }
+                        const fetchCallsAfterInterruption = fetchCalls;
+                        Object.defineProperty(document, 'visibilityState', {
+                            configurable: true, value: 'visible'
+                        });
+                        let restartError = null;
+                        try {
+                            await uploadMatchVideoInChunks(file, ['10', '74'], document.createElement('div'));
+                        } catch (error) {
+                            restartError = error.message;
+                        }
+                        outcomes.push({
+                            lifecycle, firstError, fetchCallsAfterInterruption,
+                            restartFetchCalls: fetchCalls - fetchCallsAfterInterruption,
+                            restartError
+                        });
+                    }
+                    return outcomes;
+                }""")
+                self.assertEqual(len(results), 2, results)
+                for result in results:
+                    with self.subTest(lifecycle=result["lifecycle"]):
+                        self.assertEqual(result["firstError"], "AbortError", result)
+                        self.assertEqual(result["fetchCallsAfterInterruption"], 0, result)
+                        self.assertGreater(result["restartFetchCalls"], 0, result)
+                        self.assertIn("intentional stop", result["restartError"], result)
+            finally:
+                browser.close()
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
