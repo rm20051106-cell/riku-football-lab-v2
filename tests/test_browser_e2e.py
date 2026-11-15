@@ -534,6 +534,56 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertTrue(result["legacyBlobReadable"], result)
         self.assertEqual(result["legacyBytes"], 3)
 
+    def test_video_record_delete_rolls_back_when_local_record_persistence_fails(self):
+        page = self.page
+        page.evaluate("""async () => {
+            const blob = new Blob([new Uint8Array([1, 2, 3, 4])], {type: 'video/mp4'});
+            await storeClipVideo('delete-rollback-1', blob);
+            state.clips = [{id: 'delete-rollback-1', title: '削除保護', hasVideo: true}];
+            persist();
+            const originalSetItem = Storage.prototype.setItem;
+            Storage.prototype.setItem = function(key, value) {
+                if (key === 'rikuFootballLab_v3') throw new DOMException('simulated quota', 'QuotaExceededError');
+                return originalSetItem.call(this, key, value);
+            };
+            window.__restoreStorageSetItem = () => { Storage.prototype.setItem = originalSetItem; };
+        }""")
+        page.once("dialog", lambda dialog: dialog.accept())
+        page.evaluate("deleteItem('clips', 'delete-rollback-1')")
+        page.evaluate("window.__restoreStorageSetItem()")
+        result = page.evaluate("""async () => ({
+            recordExists: state.clips.some(x => String(x.id) === 'delete-rollback-1'),
+            videoBytes: (await getClipVideo('delete-rollback-1'))?.blob?.size || 0
+        })""")
+        self.assertTrue(result["recordExists"], result)
+        self.assertEqual(result["videoBytes"], 4, result)
+
+
+    def test_video_import_rejects_file_that_does_not_match_record_identity(self):
+        page = self.page
+        page.evaluate("""() => {
+            state.clips = [{
+                id: 'import-identity-1', title: '元動画照合',
+                hasVideo: false, sourceVideoKey: 'original.mp4|4|123|video/mp4'
+            }];
+            persist();
+        }""")
+        wrong_video = self.temp_path / "riku-video__import-identity-1__original.mp4"
+        wrong_video.write_bytes(b"wrong-size")
+        page.once("dialog", lambda dialog: dialog.accept())
+        page.locator("#videoImportFiles").set_input_files(str(wrong_video))
+        page.wait_for_function(
+            "document.getElementById('videoImportProgressText')?.textContent.includes('復元処理が終了')",
+            timeout=10000,
+        )
+        result = page.evaluate("""async () => ({
+            hasVideo: state.clips[0].hasVideo,
+            stored: await getClipVideo('import-identity-1')
+        })""")
+        self.assertFalse(result["hasVideo"], result)
+        self.assertIsNone(result["stored"])
+
+
     def test_video_integrity_scan_reports_corrupt_chunks_without_aborting_other_records(self):
         page = self.page
         result = page.evaluate("""async () => {
