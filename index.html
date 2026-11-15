@@ -485,7 +485,7 @@ async function saveMatchScanResult(){
  state.matchAnalyses.unshift(savedRecord);
  if(savedRecord.sourceVideoKey){const linkedClip=(state.clips||[]).find(clip=>clip.sourceVideoKey===savedRecord.sourceVideoKey);if(linkedClip)connectMatchAnalysisToClip(savedRecord,linkedClip);(state.aiFormAnalyses||[]).filter(analysis=>analysis.sourceVideoKey===savedRecord.sourceVideoKey).forEach(analysis=>connectAiFormAnalysisToMatch(analysis,savedRecord));}
  savedRecord.candidateEvents.forEach(ev=>syncTrainingMatchEventLink(savedRecord,ev));
- matchAiResult.dataset.savedId=String(id);if(!persist()){state.matchAnalyses=previousMatchAnalyses;state.clips=previousClips;state.trainings=previousTrainings;state.aiFormAnalyses=previousAiFormAnalyses;matchAiResult.textContent='解析結果は画面上に残っていますが、端末への履歴保存に失敗しました。既存の試合・動画・練習記録は変更していません。設定画面からバックアップを書き出してください。';return}renderAll();try{await clearPendingMatchJob()}catch(error){console.warn('保存済みジョブ情報の整理に失敗',error)}alert('AI試合スキャン結果を履歴に保存しました');
+ if(!persist()){state.matchAnalyses=previousMatchAnalyses;state.clips=previousClips;state.trainings=previousTrainings;state.aiFormAnalyses=previousAiFormAnalyses;matchAiResult.textContent='解析結果は画面上に残っていますが、端末への履歴保存に失敗しました。既存の試合・動画・練習記録は変更していません。設定画面からバックアップを書き出してください。';return}matchAiResult.dataset.savedId=String(id);renderAll();try{await clearPendingMatchJob()}catch(error){console.warn('保存済みジョブ情報の整理に失敗',error)}alert('AI試合スキャン結果を履歴に保存しました');
 }
 function formatMatchTime(seconds){
  if(seconds==null||!Number.isFinite(Number(seconds)))return '時間不明';
