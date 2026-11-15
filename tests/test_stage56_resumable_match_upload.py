@@ -209,7 +209,8 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn('async function clearPendingMatchUpload()', HTML)
         self.assertIn('saved.sourceKey===identity.sourceKey', HTML)
         self.assertIn("method:'GET',credentials:'omit',cache:'no-store'", HTML)
-        self.assertIn('nextChunk=Number(status.next_chunk)', HTML)
+        self.assertIn('const serverNextChunk=Number(status.next_chunk)', HTML)
+        self.assertIn('nextChunk=serverNextChunk', HTML)
         self.assertIn('中断しても同じ動画を再選択すると続きから再開できます', HTML)
         self.assertIn('clearPendingMatchUpload()', HTML)
         self.assertIn('return body', HTML)
@@ -324,7 +325,7 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn("test_video_fingerprint_reports_progress_and_cancels_between_12mb_slices", retry_test)
 
     def test_resume_identity_requires_content_fingerprint_and_hashes_each_12mb_block(self):
-        self.assertIn("async function getVideoContentFingerprint(file,chunkSize=12*1024*1024)", HTML)
+        self.assertIn("async function getVideoContentFingerprint(file,chunkSize=12*1024*1024,onProgress", HTML)
         self.assertIn("crypto.subtle.digest('SHA-256',bytes)", HTML)
         self.assertIn("saved.contentFingerprint===identity.contentFingerprint", HTML)
         self.assertIn("!/^[a-f0-9]{64}$/.test(saved.contentFingerprint)", HTML)
@@ -368,7 +369,7 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn("def test_fingerprint_cancels_on_background_or_pagehide_and_can_restart", retry_test)
         self.assertIn("fetchCallsAfterInterruption", retry_test)
         self.assertIn("restartFetchCalls", retry_test)
-        self.assertIn("12 * 1024 * 1024", HTML)
+        self.assertIn("12*1024*1024", HTML)
 
 if __name__ == "__main__":
     unittest.main()
