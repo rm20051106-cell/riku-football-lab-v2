@@ -218,6 +218,13 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn("self.assertEqual(result[\"checkpointAtFirstPut\"], 1, result)", retry_test)
 
 
+    def test_resume_identity_requires_content_fingerprint_and_hashes_each_12mb_block(self):
+        self.assertIn("async function getVideoContentFingerprint(file,chunkSize=12*1024*1024)", HTML)
+        self.assertIn("crypto.subtle.digest('SHA-256',bytes)", HTML)
+        self.assertIn("saved.contentFingerprint===identity.contentFingerprint", HTML)
+        self.assertIn("!/^[a-f0-9]{64}$/.test(saved.contentFingerprint)", HTML)
+        self.assertIn("const contentFingerprint=await getVideoContentFingerprint(file)", HTML)
+
     def test_resume_rejects_mismatched_or_corrupt_identity_before_reusing_session(self):
         html = (ROOT / "index.html").read_text(encoding="utf-8")
         retry_test = (ROOT / "tests" / "test_match_upload_retry.py").read_text(encoding="utf-8")
