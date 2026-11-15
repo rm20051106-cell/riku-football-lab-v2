@@ -783,6 +783,20 @@ class RikuBrowserE2ETests(unittest.TestCase):
         })""")
         self.assertEqual(first_restore, {"count": 1, "bytes": 5})
 
+        page.locator("#importFile").set_input_files(str(backup_path))
+        page.wait_for_function(
+            "state.clips.length === 1 && state.clips[0].hasVideo",
+            timeout=10000,
+        )
+        repeated_json = page.evaluate("""async () => ({
+            count: state.clips.length,
+            hasVideo: state.clips[0].hasVideo,
+            bytes: (await getClipVideo('restore-order-1'))?.blob?.size || 0
+        })""")
+        self.assertEqual(
+            repeated_json, {"count": 1, "hasVideo": True, "bytes": 5}
+        )
+
         page.locator("#videoImportFiles").set_input_files(str(video_path))
         page.wait_for_function(
             "document.getElementById('videoImportProgressText')?.textContent.includes('復元処理が終了')",
