@@ -235,6 +235,8 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn("アップロード再開情報の破損または必須項目不足を検出", html)
         self.assertIn("try{await clearPendingMatchUpload()}", html)
         self.assertIn("different_video", retry_test)
+        self.assertIn("different_content_same_metadata", retry_test)
+        self.assertIn("self.assertEqual(len(results), 13, results)", retry_test)
         self.assertIn("different_size", retry_test)
         self.assertIn("different_last_modified", retry_test)
         self.assertIn("different_mime_type", retry_test)
