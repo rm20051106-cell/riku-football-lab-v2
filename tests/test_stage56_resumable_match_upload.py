@@ -40,6 +40,35 @@ def load_append_helper():
     return namespace["append_match_upload_chunk"]
 
 
+def load_job_restore_helpers(directory):
+    names = {"match_job_manifest_path", "restore_match_jobs"}
+    nodes = [item for item in TREE.body
+             if isinstance(item, ast.FunctionDef) and item.name in names]
+    module = ast.Module(body=nodes, type_ignores=[])
+    namespace = {
+        "Path": pathlib.Path, "os": os, "json": json,
+        "MATCH_UPLOAD_SESSION_DIR": pathlib.Path(directory),
+    }
+    exec(compile(module, "<stage56-job-restore>", "exec"), namespace)
+    return namespace
+
+
+def load_resume_interrupted_jobs_helper(match_jobs, thread_factory, persisted):
+    node = next(item for item in TREE.body
+                if isinstance(item, ast.FunctionDef)
+                and item.name == "resume_interrupted_match_jobs")
+    module = ast.Module(body=[node], type_ignores=[])
+    namespace = {
+        "match_jobs": match_jobs,
+        "threading": type("ThreadingStub", (), {"Thread": thread_factory}),
+        "os": os,
+        "persist_match_job_state": lambda job_id, job: persisted.append((job_id, dict(job))),
+        "run_match_job": lambda *args: None,
+    }
+    exec(compile(module, "<stage56-resume-jobs>", "exec"), namespace)
+    return namespace["resume_interrupted_match_jobs"]
+
+
 class Stage56ResumableMatchUploadTests(unittest.TestCase):
     def test_ordered_chunks_reassemble_exact_original_bytes(self):
         append = load_append_helper()
@@ -102,6 +131,71 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
             with open(video_path, "rb") as saved:
                 self.assertEqual(saved.read(), b"committed")
             os.remove(video_path)
+
+    def test_interrupted_jobs_restore_from_manifests_and_missing_sources_fail_safely(self):
+        with tempfile.TemporaryDirectory() as directory:
+            helpers = load_job_restore_helpers(directory)
+            source = pathlib.Path(directory) / "recoverable.mp4"
+            source.write_bytes(b"synthetic-video")
+            queued = {
+                "job_id": "queued-job", "status": "queued", "progress": 42,
+                "stage": "途中", "source_path": str(source), "jersey_numbers": "10,74",
+            }
+            processing = {
+                "job_id": "processing-job", "status": "processing", "progress": 65,
+                "stage": "解析中", "source_path": str(pathlib.Path(directory) / "missing.mp4"),
+            }
+            helpers["match_job_manifest_path"]("queued-job").write_text(
+                json.dumps(queued), encoding="utf-8"
+            )
+            helpers["match_job_manifest_path"]("processing-job").write_text(
+                json.dumps(processing), encoding="utf-8"
+            )
+            corrupt_path = helpers["match_job_manifest_path"]("corrupt-job")
+            corrupt_path.write_text("{invalid-json", encoding="utf-8")
+
+            restored = helpers["restore_match_jobs"]()
+
+            self.assertEqual(restored["queued-job"]["status"], "queued")
+            self.assertEqual(restored["queued-job"]["progress"], 0)
+            self.assertEqual(restored["queued-job"]["stage"], "再起動後の解析再開待ち")
+            self.assertEqual(restored["processing-job"]["status"], "failed")
+            self.assertIn("元動画の一時ファイルが見つかりません", restored["processing-job"]["error"])
+            self.assertNotIn("corrupt-job", restored)
+            self.assertFalse(corrupt_path.exists())
+
+    def test_startup_resume_requeues_only_jobs_with_existing_source_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = pathlib.Path(directory) / "available.mp4"
+            source.write_bytes(b"synthetic-video")
+            jobs = {
+                "available-job": {
+                    "status": "queued", "source_path": str(source), "jersey_numbers": "10,74",
+                },
+                "missing-job": {
+                    "status": "queued", "source_path": str(pathlib.Path(directory) / "missing.mp4"),
+                },
+            }
+            started = []
+            persisted = []
+
+            class FakeThread:
+                def __init__(self, target, args, daemon):
+                    self.target, self.args, self.daemon = target, args, daemon
+
+                def start(self):
+                    started.append((self.target, self.args, self.daemon))
+
+            resume = load_resume_interrupted_jobs_helper(jobs, FakeThread, persisted)
+            resume()
+
+            self.assertEqual(len(started), 1)
+            self.assertEqual(started[0][1], ("available-job", str(source), "10,74"))
+            self.assertTrue(started[0][2])
+            self.assertEqual(jobs["missing-job"]["status"], "failed")
+            self.assertTrue(any(job_id == "missing-job" for job_id, _ in persisted))
+            self.assertIn('@app.on_event("startup")', SOURCE)
+            self.assertIn("resume_interrupted_match_jobs()", SOURCE)
 
     def test_upload_status_endpoint_and_manifest_cleanup_are_wired(self):
         self.assertIn('@app.get("/analyze/match/uploads/{upload_id}")', SOURCE)
