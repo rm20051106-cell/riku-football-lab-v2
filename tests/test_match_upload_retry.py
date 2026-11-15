@@ -116,7 +116,7 @@ class MatchUploadRetryTests(unittest.TestCase):
                 browser.close()
 
 
-    def test_timeout_aborts_chunk_and_retries_after_server_reconciliation(self):
+    def test_timeout_reconciles_chunk_committed_before_response_was_lost(self):
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(
                 headless=True, args=["--no-sandbox"]
@@ -575,7 +575,8 @@ class MatchUploadRetryTests(unittest.TestCase):
                                 staleStatusChecks++;
                                 return new Response(JSON.stringify({
                                     upload_id: 'unexpected-stale-session',
-                                    total_bytes: original.size, next_chunk: 1, total_chunks: 2
+                                    total_bytes: original.size, next_chunk: 1,
+                                    chunk_size: CHUNK, total_chunks: 2
                                 }), {status: 200, headers: {'Content-Type': 'application/json'}});
                             }
                             if (path === '/analyze/match/uploads/' + freshId &&
@@ -583,7 +584,8 @@ class MatchUploadRetryTests(unittest.TestCase):
                                 freshStatusChecks++;
                                 return new Response(JSON.stringify({
                                     upload_id: freshId, total_bytes: selected.size,
-                                    received_bytes: 0, next_chunk: 0, total_chunks: 2
+                                    received_bytes: 0, next_chunk: 0,
+                                    chunk_size: CHUNK, total_chunks: 2
                                 }), {status: 200, headers: {'Content-Type': 'application/json'}});
                             }
                             if ((path === '/analyze/match/uploads/' + freshId + '/0' ||
