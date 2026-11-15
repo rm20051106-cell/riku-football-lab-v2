@@ -127,28 +127,44 @@
         }
       }
       if(!paused && ready.length){
-        status("Stage 47の一括事前検査・復元・ロールバック処理を実行中…");
+        // Restore each video as its own atomic Stage 47 transaction. A corrupt or
+        // quota-failing file must not roll back videos that were already verified.
+        // This also makes the retry action genuinely per-file: only failed items
+        // remain eligible on the next selection.
         const priorBatchMode=window.__stage48BatchMode;
         const priorAlert=window.alert;
         window.__stage48BatchMode=true;
         window.alert=()=>{};
-        try{const outcome=await window.runStage47VideoRestore(ready);const preview=document.getElementById("videoRestorePreview")?.textContent||"";if(outcome?.ok===false||outcome===false||/^(復元中止|復元失敗|復元をキャンセル)/.test(preview))throw new Error(outcome?.error||preview.split("\n")[0]||"Stage 47の事前検査・保存に失敗しました");}
-        catch(error){for(const file of ready){const key=stableKey(file);const item=job.items.find(row=>stableKey(row)===key);if(item&&item.status!=="done"){item.status="failed";item.error=String(error?.message||error).slice(0,240);}}saveJob(job);report(job,"復元失敗レポート");}
-        finally{window.alert=priorAlert;if(priorBatchMode===undefined)delete window.__stage48BatchMode;else window.__stage48BatchMode=priorBatchMode;}
-        for(const file of ready){
-          const key=stableKey(file);
-          const item=job.items.find(row=>stableKey(row)===key);
-          try{
-            const match=file.name.match(/^riku-video__(.+?)__(.+)$/);
-            if(!match) throw new Error("動画バックアップのファイル名形式が不正です");
-            const storageKey=decodeURIComponent(match[1]);
-            const saved=await getClipVideo(storageKey);
-            if(!saved?.blob || saved.blob.size!==file.size) throw new Error("保存後の動画サイズ照合に失敗（Stage 47の復元処理が完了していない可能性）");
-            const savedHash=await hashBlob(saved.blob,p=>status("保存後SHA-256照合中："+file.name+" "+Math.round(p*100)+"%"));
-            if(savedHash!==item.hash) throw new Error("保存後SHA-256不一致");
-            item.savedHash=savedHash;item.status="done";item.error=null;
-          }catch(error){item.status="failed";item.error=String(error?.message||error).slice(0,240);}
-          saveJob(job);report(job,"復元の進行レポート");await yieldUI();
+        try{
+          for(let index=0;index<ready.length;index++){
+            const file=ready[index],key=stableKey(file);
+            const item=job.items.find(row=>stableKey(row)===key);
+            if(!item)continue;
+            if(paused){item.status="pending";item.error=null;saveJob(job);break;}
+            try{
+              status("動画を個別に事前検査・復元中："+file.name+"（"+(index+1)+"/"+ready.length+"）");
+              const outcome=await window.runStage47VideoRestore([file]);
+              const preview=document.getElementById("videoRestorePreview")?.textContent||"";
+              if(outcome?.ok===false||outcome===false||/^(復元中止|復元失敗|復元をキャンセル)/.test(preview)){
+                throw new Error(outcome?.error||preview.split("\n")[0]||"動画の事前検査・保存に失敗しました");
+              }
+              const match=file.name.match(/^riku-video__(.+?)__(.+)$/);
+              if(!match)throw new Error("動画バックアップのファイル名形式が不正です");
+              const storageKey=decodeURIComponent(match[1]);
+              const saved=await getClipVideo(storageKey);
+              if(!saved?.blob||saved.blob.size!==file.size)throw new Error("保存後の動画サイズ照合に失敗しました");
+              const savedHash=await hashBlob(saved.blob,p=>status("保存後SHA-256照合中："+file.name+" "+Math.round(p*100)+"%"));
+              if(savedHash!==item.hash)throw new Error("保存後SHA-256不一致");
+              item.savedHash=savedHash;item.status="done";item.error=null;
+            }catch(error){
+              item.status=paused?"pending":"failed";
+              item.error=paused?null:String(error?.message||error).slice(0,240);
+            }
+            saveJob(job);report(job,"復元の進行レポート");await yieldUI();
+          }
+        }finally{
+          window.alert=priorAlert;
+          if(priorBatchMode===undefined)delete window.__stage48BatchMode;else window.__stage48BatchMode=priorBatchMode;
         }
       }
       job.updatedAt=new Date().toISOString();saveJob(job);
