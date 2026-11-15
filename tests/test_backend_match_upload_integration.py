@@ -205,6 +205,8 @@ class MatchUploadBackendIntegrationTest(unittest.TestCase):
 
         async def run():
             chunk = main.MATCH_UPLOAD_CHUNK_BYTES
+            # Exact multiple: the final chunk must remain a full 12 MB.
+            await exercise(900, 2 * chunk, "synthetic-exact-boundary.mp4")
             # 15-minute synthetic file: two full chunks and an 11-byte tail.
             await exercise(900, 2 * chunk + 11, "synthetic-15min.mp4")
             # 20-minute synthetic file: three full chunks and a 123-byte tail.
