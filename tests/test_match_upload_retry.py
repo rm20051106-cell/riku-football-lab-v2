@@ -71,7 +71,7 @@ class MatchUploadRetryTests(unittest.TestCase):
                         if ((path === '/analyze/match/uploads/retry-session/0' || path === '/analyze/match/uploads/retry-session/1') && options.method === 'PUT') {
                             chunkAttempts++;
                             chunkSizes.push(options.body.get('file').size);
-                            if (path.endsWith('/0') && chunkSizes.filter(size => size === 12 * 1024 * 1024).length === 1) {
+                            if (path.endsWith('/0') && chunkSizes.filter(size => size === 12 * 1024 * 1024).length <= 2) {
                                 serverNextChunk = 1;
                                 throw new TypeError('Load failed after server accepted the chunk');
                             }
