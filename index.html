@@ -1226,6 +1226,10 @@ async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
  const cancelButton=document.getElementById('cancelMatchFingerprintButton');
  const controller=new AbortController();
  matchFingerprintController=controller;
+ const cancelFingerprintWhenHidden=()=>{if(document.visibilityState==='hidden'&&!controller.signal.aborted)controller.abort()};
+ const cancelFingerprintOnPageHide=()=>{if(!controller.signal.aborted)controller.abort()};
+ document.addEventListener('visibilitychange',cancelFingerprintWhenHidden);
+ window.addEventListener('pagehide',cancelFingerprintOnPageHide);
  if(progressWrap){progressWrap.hidden=false;progressBar.value=0;progressText.textContent='動画の内容を照合しています…';}
  if(cancelButton)cancelButton.hidden=false;
  let contentFingerprint;
@@ -1239,6 +1243,8 @@ async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
   if(progressText)progressText.textContent=error.name==='AbortError'?'動画内容の照合をキャンセルしました。前回のアップロード情報は変更していません。':'動画内容を照合できません：'+error.message;
   throw error;
  }finally{
+  document.removeEventListener('visibilitychange',cancelFingerprintWhenHidden);
+  window.removeEventListener('pagehide',cancelFingerprintOnPageHide);
   if(matchFingerprintController===controller)matchFingerprintController=null;
   if(cancelButton)cancelButton.hidden=true;
   if(progressWrap)progressWrap.hidden=true;
