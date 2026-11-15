@@ -424,9 +424,9 @@ function reconcileRecordReverseLinks(data){
 }
 async function scanAndRepairRecordIntegrity(){
  const output=document.getElementById('videoIntegrityResult');if(!output)return;output.textContent='孤立データと記録リンクを読み取り確認しています…';
- let db;const snapshot={clips:cloneRecordRows(state.clips),forms:cloneRecordRows(state.forms),matchAnalyses:cloneRecordRows(state.matchAnalyses),aiFormAnalyses:cloneRecordRows(state.aiFormAnalyses)};
+ let db;const originalState={clips:cloneRecordRows(state.clips),forms:cloneRecordRows(state.forms),matchAnalyses:cloneRecordRows(state.matchAnalyses),aiFormAnalyses:cloneRecordRows(state.aiFormAnalyses)};const workingState={clips:cloneRecordRows(originalState.clips),forms:cloneRecordRows(originalState.forms),matchAnalyses:cloneRecordRows(originalState.matchAnalyses),aiFormAnalyses:cloneRecordRows(originalState.aiFormAnalyses)};
  try{
-  const report=reconcileRecordReverseLinks({clips:snapshot.clips,forms:snapshot.forms,matchAnalyses:snapshot.matchAnalyses,aiFormAnalyses:snapshot.aiFormAnalyses});
+  const report=reconcileRecordReverseLinks(workingState);
   db=await openVideoDB();
   const stored=await new Promise((resolve,reject)=>{
    const tx=db.transaction(['videos','videoChunks'],'readonly'),videos=tx.objectStore('videos'),chunks=tx.objectStore('videoChunks'),vk=videos.getAllKeys(),vv=videos.getAll(),ck=chunks.getAllKeys();let videoKeys=[],videoValues=[],chunkKeys=[];
@@ -435,7 +435,7 @@ async function scanAndRepairRecordIntegrity(){
    tx.oncomplete=()=>resolve({videoKeys:videoKeys.map(String),videoValues,chunkKeys:chunkKeys.map(String)});
    tx.onerror=()=>reject(tx.error||new Error('IndexedDBの点検に失敗しました'));tx.onabort=()=>reject(tx.error||new Error('IndexedDB点検が中断されました'));
   });
-  const records=[...snapshot.clips.map(x=>({key:String(x.id),kind:'clip',id:String(x.id),hasVideo:!!x.hasVideo})),...snapshot.forms.map(x=>({key:'form-'+String(x.id),kind:'form',id:String(x.id),hasVideo:!!x.hasVideo}))];
+  const records=[...workingState.clips.map(x=>({key:String(x.id),kind:'clip',id:String(x.id),hasVideo:!!x.hasVideo})),...workingState.forms.map(x=>({key:'form-'+String(x.id),kind:'form',id:String(x.id),hasVideo:!!x.hasVideo}))];
   const keySet=new Set(stored.videoKeys),known=new Set(records.map(x=>x.key));
   const orphanVideos=stored.videoKeys.filter(key=>!known.has(key)&&!key.startsWith('__pending_'));
   const missingVideos=records.filter(x=>x.hasVideo&&!keySet.has(x.key)).map(x=>x.key);
@@ -451,9 +451,9 @@ async function scanAndRepairRecordIntegrity(){
   });
   const changed=report.repaired.length>0;
   if(changed){
-   state.clips=snapshot.clips;state.forms=snapshot.forms;state.matchAnalyses=snapshot.matchAnalyses;state.aiFormAnalyses=snapshot.aiFormAnalyses;
+   state.clips=workingState.clips;state.forms=workingState.forms;state.matchAnalyses=workingState.matchAnalyses;state.aiFormAnalyses=workingState.aiFormAnalyses;
    if(!persist()){
-    state.clips=snapshot.clips;state.forms=snapshot.forms;state.matchAnalyses=snapshot.matchAnalyses;state.aiFormAnalyses=snapshot.aiFormAnalyses;renderAll();
+    state.clips=originalState.clips;state.forms=originalState.forms;state.matchAnalyses=originalState.matchAnalyses;state.aiFormAnalyses=originalState.aiFormAnalyses;renderAll();
     throw new Error('逆リンクの保存に失敗したため、画面上の変更も元に戻しました');
    }
   }
