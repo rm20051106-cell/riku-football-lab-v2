@@ -121,6 +121,80 @@ class MatchUploadRetryTests(unittest.TestCase):
                 browser.close()
 
 
+    def test_multi_chunk_20_minute_upload_checks_every_byte_boundary_before_completion(self):
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(
+                headless=True, args=["--no-sandbox"]
+            )
+            try:
+                page = browser.new_page(viewport={"width": 390, "height": 844})
+                page.goto(self.url, wait_until="load")
+                page.wait_for_function(
+                    "typeof uploadMatchVideoInChunks === 'function'"
+                )
+                result = page.evaluate("""async () => {
+                    state.settings.apiBaseUrl = 'https://upload-boundaries.test';
+                    const CHUNK = 12 * 1024 * 1024;
+                    const TOTAL = CHUNK * 3 + 123;
+                    const chunkIndexes = [];
+                    const chunkSizes = [];
+                    const receivedBytes = [];
+                    let completeCalls = 0;
+                    let initPayload = null;
+                    window.fetch = async (url, options = {}) => {
+                        const path = new URL(url).pathname;
+                        if (path === '/analyze/match/uploads' && options.method === 'POST') {
+                            initPayload = JSON.parse(options.body);
+                            return new Response(JSON.stringify({
+                                upload_id: 'boundary-session', chunk_size: CHUNK, total_chunks: 4
+                            }), {status: 201, headers: {'Content-Type': 'application/json'}});
+                        }
+                        if (path.startsWith('/analyze/match/uploads/boundary-session/') &&
+                            options.method === 'PUT' && !path.endsWith('/complete')) {
+                            const index = Number(path.split('/').pop());
+                            const size = options.body.get('file').size;
+                            chunkIndexes.push(index);
+                            chunkSizes.push(size);
+                            const received = Math.min(TOTAL, (index + 1) * CHUNK);
+                            receivedBytes.push(received);
+                            return new Response(JSON.stringify({
+                                ok: true, chunk_index: index, received_bytes: received, total_bytes: TOTAL
+                            }), {status: 200, headers: {'Content-Type': 'application/json'}});
+                        }
+                        if (path === '/analyze/match/uploads/boundary-session/complete' &&
+                            options.method === 'POST') {
+                            completeCalls++;
+                            return new Response(JSON.stringify({
+                                ok: true, job_id: 'boundary-job', status: 'queued'
+                            }), {status: 202, headers: {'Content-Type': 'application/json'}});
+                        }
+                        throw new Error('Unexpected request: ' + options.method + ' ' + path);
+                    };
+                    const video = document.getElementById('matchVideo');
+                    Object.defineProperty(video, 'duration', {configurable: true, value: 1200});
+                    const file = new File([new Uint8Array(TOTAL)], 'twenty-minute.mp4', {
+                        type: 'video/mp4', lastModified: 123
+                    });
+                    const response = await uploadMatchVideoInChunks(
+                        file, ['10', '74'], document.createElement('div')
+                    );
+                    return {chunkIndexes, chunkSizes, receivedBytes, completeCalls,
+                        initDuration: initPayload.duration_seconds, initSize: initPayload.size_bytes,
+                        response};
+                }""")
+                chunk = 12 * 1024 * 1024
+                total = chunk * 3 + 123
+                self.assertEqual(result["chunkIndexes"], [0, 1, 2, 3], result)
+                self.assertEqual(result["chunkSizes"], [chunk, chunk, chunk, 123], result)
+                self.assertEqual(result["receivedBytes"], [chunk, chunk * 2, chunk * 3, total], result)
+                self.assertEqual(result["completeCalls"], 1, result)
+                self.assertEqual(result["initDuration"], 1200, result)
+                self.assertEqual(result["initSize"], total, result)
+                self.assertEqual(result["response"]["job_id"], "boundary-job", result)
+            finally:
+                browser.close()
+
+
     def test_timeout_reconciles_chunk_committed_before_response_was_lost(self):
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(
