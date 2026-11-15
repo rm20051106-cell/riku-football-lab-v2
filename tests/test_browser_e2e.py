@@ -2216,5 +2216,34 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual(result["snapshotIds"], ["before"])
         self.assertEqual(result["liveIds"], ["before", "after"])
 
+    def test_reimporting_same_video_backup_twice_skips_without_duplicate_storage(self):
+        page = self.page
+        page.evaluate("""() => {
+            state.clips = [{id:'repeat-video', title:'同一動画', hasVideo:false, sourceVideoKey:'repeat.mp4|4|123|video/mp4'}];
+            state.forms = []; persist();
+        }""")
+        video = self.temp_path / "riku-video__repeat-video__repeat.mp4"
+        video.write_bytes(b"same")
+        for _ in range(2):
+            page.once("dialog", lambda dialog: dialog.accept())
+            page.locator("#videoImportFiles").set_input_files(str(video))
+            page.wait_for_function("document.getElementById('videoImportProgressText')?.textContent.includes('復元処理が終了') || document.getElementById('videoImportProgressText')?.textContent.includes('すべての動画')")
+        result = page.evaluate("""async () => {
+            const stored = await getClipVideo('repeat-video');
+            const db = await openVideoDB();
+            try {
+                const count = await new Promise((resolve, reject) => {
+                    const tx = db.transaction('videos', 'readonly');
+                    const req = tx.objectStore('videos').count();
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => reject(req.error);
+                });
+                return {hasVideo:state.clips[0].hasVideo, size:stored?.blob?.size || 0, count};
+            } finally { db.close(); }
+        }""")
+        self.assertTrue(result["hasVideo"], result)
+        self.assertEqual(result["size"], 4, result)
+        self.assertEqual(result["count"], 1, result)
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
