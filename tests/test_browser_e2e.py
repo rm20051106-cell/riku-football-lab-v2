@@ -1993,5 +1993,42 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertFalse(playback["paused"])
         self.assertGreaterEqual(playback["readyState"], 2)
 
+    def test_record_link_integrity_rebuilds_only_deterministic_reverse_links(self):
+        page = self.page
+        result = page.evaluate("""() => {
+            const data = {
+                clips: [{id:'clip-a', matchAnalysisIds:['missing-match','match-bad']}],
+                forms: [{id:'form-a', aiAnalysisIds:['ai-a','missing-ai']}],
+                matchAnalyses: [{id:'match-bad', clipId:'clip-b', aiFormAnalysisIds:['missing-ai']}],
+                aiFormAnalyses: [{id:'ai-a', formId:'form-a', matchId:'missing-match', matchClipId:'clip-gone'}]
+            };
+            const report = reconcileRecordReverseLinks(data);
+            const again = reconcileRecordReverseLinks(data);
+            return {data, report, again};
+        }""")
+        self.assertEqual(result["data"]["clips"][0]["matchAnalysisIds"], [])
+        self.assertEqual(result["data"]["forms"][0]["aiAnalysisIds"], ["ai-a"])
+        self.assertEqual(result["data"]["matchAnalyses"][0]["aiFormAnalysisIds"], [])
+        self.assertTrue(any("matchId" in x for x in result["report"]["danglingForward"]))
+        self.assertTrue(any("matchClipId" in x for x in result["report"]["danglingForward"]))
+        self.assertEqual(result["again"]["repaired"], [])
+
+    def test_record_link_integrity_keeps_forward_references_and_does_not_delete_video_data(self):
+        page = self.page
+        result = page.evaluate("""async () => {
+            state.clips = [{id:'orphan-clip', hasVideo:false, matchAnalysisIds:[]}];
+            state.forms = [];
+            state.matchAnalyses = [{id:'match-orphan-ref', clipId:'missing-clip', aiFormAnalysisIds:[]}];
+            state.aiFormAnalyses = [{id:'ai-orphan-ref', formId:'missing-form', matchId:'missing-match'}];
+            await storeClipVideo('video-without-record', new Blob([new Uint8Array([1,2,3])], {type:'video/mp4'}));
+            const before = await getClipVideo('video-without-record');
+            const links = reconcileRecordReverseLinks(state);
+            const after = await getClipVideo('video-without-record');
+            return {links, videoSize:after.blob.size, matchClipId:state.matchAnalyses[0].clipId, formId:state.aiFormAnalyses[0].formId};
+        }""")
+        self.assertEqual(result["videoSize"], 3)
+        self.assertEqual(result["matchClipId"], "missing-clip")
+        self.assertEqual(result["formId"], "missing-form")
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
