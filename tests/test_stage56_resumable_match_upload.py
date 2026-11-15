@@ -341,6 +341,7 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn("savedChunkSize", retry_test)
         self.assertIn("receivedBytes", retry_test)
         self.assertIn("chunk * 3 + 123", retry_test)
+        self.assertIn("await exercise(900, 2 * chunk,", backend_test)
         self.assertIn("await exercise(900, 2 * chunk + 11", backend_test)
         self.assertIn("await exercise(1200, 3 * chunk + 123", backend_test)
         self.assertIn("incomplete.exception.status_code, 409", backend_test)
