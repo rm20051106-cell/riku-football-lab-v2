@@ -534,6 +534,56 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertTrue(result["legacyBlobReadable"], result)
         self.assertEqual(result["legacyBytes"], 3)
 
+    def test_video_integrity_scan_reports_corrupt_chunks_without_aborting_other_records(self):
+        page = self.page
+        result = page.evaluate("""async () => {
+            await storeClipVideo('integrity-good', new Blob([
+                new Uint8Array([1, 2, 3, 4])
+            ], {type: 'video/mp4'}));
+            await storeClipVideo('integrity-bad', new Blob([
+                new Uint8Array([5, 6, 7, 8])
+            ], {type: 'video/mp4'}));
+            const db = await openVideoDB();
+            try {
+                const record = await new Promise((resolve, reject) => {
+                    const tx = db.transaction('videos', 'readonly');
+                    const req = tx.objectStore('videos').get('integrity-bad');
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => reject(req.error);
+                });
+                await new Promise((resolve, reject) => {
+                    const tx = db.transaction('videoChunks', 'readwrite');
+                    tx.objectStore('videoChunks').delete(
+                        record.chunkPrefix + '00000000'
+                    );
+                    tx.oncomplete = resolve;
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                });
+            } finally { db.close(); }
+            state.clips = [
+                {id: 'integrity-good', title: '正常動画', hasVideo: true},
+                {id: 'integrity-bad', title: '破損動画', hasVideo: true}
+            ];
+            const output = document.getElementById('videoIntegrityResult');
+            if (!output) return {outputMissing: true};
+            await scanSavedVideoIntegrity();
+            let badError = '';
+            try { await getClipVideo('integrity-bad'); }
+            catch (error) { badError = String(error.message || error); }
+            return {
+                text: output.textContent,
+                goodPlayable: output.innerHTML.includes('正常動画'),
+                badReported: output.textContent.includes('破損動画'),
+                badError
+            };
+        }""")
+        self.assertFalse(result.get("outputMissing"), result)
+        self.assertTrue(result.get("badReported"), result)
+        self.assertIn("チャンク", result["badError"])
+        self.assertIn("正常動画", result["text"])
+
+
     def test_webkit_safari_compatibility_smoke(self):
         browser = self.playwright.webkit.launch(headless=True)
         try:
