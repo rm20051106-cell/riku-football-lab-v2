@@ -209,7 +209,9 @@ class Stage47VideoRecoveryTests(unittest.TestCase):
             "measures": [],
             "clips": [{
                 "id": 4901, "date": "2026-11-15", "title": "Restore order test",
-                "hasVideo": False, "sourceVideoKey": "video-source-4901"
+                "hasVideo": False,
+                # Match the metadata embedded in the test video backup filename.
+                "sourceVideoKey": f"ordered.webm|{len(self.video_bytes)}|2000|video%2Fwebm"
             }],
             "forms": [],
             "matchAnalyses": [{
