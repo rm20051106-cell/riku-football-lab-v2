@@ -295,11 +295,18 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn("async function resumePendingMatchJob()", HTML)
         self.assertIn("setTimeout(()=>resumePendingMatchJob(),800)", HTML)
         self.assertIn("postMatchJobToAI(null,resultElement,{...pending,apiBaseUrl:savedBase})", HTML)
+        self.assertIn("sourceKey:getVideoSourceKey(file)||String(existingJob?.sourceKey||'')", HTML)
+        self.assertIn("sourceVideoKey:getVideoSourceKey(sourceFile)||String(pendingJob?.sourceKey||'')", HTML)
+        self.assertIn("pendingJob?.filename||'試合動画'", HTML)
+        self.assertIn("二重登録は行いません", HTML)
+        self.assertIn("この解析ジョブの結果は履歴に保存済みです", HTML)
+        self.assertIn("renderAll();try{await clearPendingMatchJob()}", HTML)
         self.assertIn("existingJob?.apiBaseUrl||getApiUrl()", HTML)
         self.assertIn("await clearPendingMatchJob()", HTML)
         completed_branch = HTML.split("if(status.status==='completed'){", 1)[1].split("return;", 1)[0]
         self.assertNotIn("clearPendingMatchJob()", completed_branch)
         saved_result = HTML.split("async function saveMatchScanResult()", 1)[1].split("function formatMatchTime", 1)[0]
+        self.assertIn("def test_completed_match_job_restores_and_saves_result_once_after_reload", (ROOT / "tests" / "test_browser_e2e.py").read_text(encoding="utf-8"))
         self.assertIn("if(!persist())", saved_result)
         self.assertIn("await clearPendingMatchJob()", saved_result)
 
