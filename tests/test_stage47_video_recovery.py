@@ -255,7 +255,7 @@ class Stage47VideoRecoveryTests(unittest.TestCase):
         self.import_json_backup(self.backup_payload())
         self.page.evaluate("() => { window.__stage48Intercept = true; window.alert = () => {}; }")
         self.page.evaluate("""bytes => runStage48VideoRestore([
-            new File([bytes], 'riku-video__4901__ordered.webm', {type:'video/webm', lastModified:2000})
+            new File([Uint8Array.from(bytes)], 'riku-video__4901__ordered.webm', {type:'video/webm', lastModified:2000})
         ])""", list(self.video_bytes))
         self.page.wait_for_function("JSON.parse(localStorage.getItem('rikuVideoRestoreJob_v1')).items[0].status === 'done'")
         result = self.assert_analysis_links_and_video()
@@ -269,7 +269,7 @@ class Stage47VideoRecoveryTests(unittest.TestCase):
     def test_video_first_is_safely_blocked_then_json_restore_retry_preserves_links(self):
         self.page.evaluate("() => { state.clips=[]; state.forms=[]; state.matchAnalyses=[]; state.aiFormAnalyses=[]; persist(); window.__stage48Intercept = true; window.alert = () => {}; }")
         self.page.evaluate("""bytes => runStage48VideoRestore([
-            new File([bytes], 'riku-video__4901__ordered.webm', {type:'video/webm', lastModified:2000})
+            new File([Uint8Array.from(bytes)], 'riku-video__4901__ordered.webm', {type:'video/webm', lastModified:2000})
         ])""", list(self.video_bytes))
         self.page.wait_for_function("JSON.parse(localStorage.getItem('rikuVideoRestoreJob_v1')).items[0].status === 'failed'")
         self.assertFalse(self.page.evaluate("async () => !!(await getClipVideo('4901'))"))
@@ -289,7 +289,7 @@ class Stage47VideoRecoveryTests(unittest.TestCase):
         self.assertEqual(before_retry["matchClipId"], "4901", before_retry)
         self.assertEqual(before_retry["analysisMatchId"], "4902", before_retry)
         self.page.evaluate("""bytes => retryStage48FailedVideos([
-            new File([bytes], 'riku-video__4901__ordered.webm', {type:'video/webm', lastModified:2000})
+            new File([Uint8Array.from(bytes)], 'riku-video__4901__ordered.webm', {type:'video/webm', lastModified:2000})
         ])""", list(self.video_bytes))
         self.page.wait_for_function("JSON.parse(localStorage.getItem('rikuVideoRestoreJob_v1')).items[0].status === 'done'")
         result = self.assert_analysis_links_and_video()
