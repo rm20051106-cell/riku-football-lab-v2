@@ -1194,7 +1194,8 @@ async function savePendingMatchJob(record){const db=await openVideoDB();try{awai
 async function clearPendingMatchJob(){const db=await openVideoDB();try{await new Promise((resolve,reject)=>{const tx=db.transaction('videos','readwrite');tx.objectStore('videos').delete('__pending_match_job__');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||new Error('解析ジョブ情報を削除できません'));tx.onabort=()=>reject(tx.error||new Error('解析ジョブ情報の削除が中断されました'))})}finally{db.close()}}
 async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
  const chunkSizeDefault=6*1024*1024,sourceKey=getVideoSourceKey(file),duration=Number(matchVideo.duration||0),api=getApiUrl();
- const identity={sourceKey,size:file.size,name:file.name||'match-video.mp4',lastModified:Number(file.lastModified||0),jerseyNumbers};
+ const contentFingerprint=await getVideoContentFingerprint(file);
+ const identity={sourceKey,size:file.size,name:file.name||'match-video.mp4',lastModified:Number(file.lastModified||0),jerseyNumbers,contentFingerprint};
  let saved=null,session=null,chunkSize=chunkSizeDefault,total=0,nextChunk=0,resumeStorageAvailable=true;
  const persistResume=async record=>{
   if(!resumeStorageAvailable)return false;
