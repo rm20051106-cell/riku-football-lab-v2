@@ -1251,7 +1251,7 @@ async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
   if(cancelButton)cancelButton.hidden=true;
   if(progressWrap)progressWrap.hidden=true;
  }
- const identity={sourceKey,size:file.size,name:file.name||'match-video.mp4',lastModified:Number(file.lastModified||0),jerseyNumbers,contentFingerprint};
+ const identity={sourceKey,size:file.size,name:file.name||'match-video.mp4',lastModified:Number(file.lastModified||0),jerseyNumbers:normalizedJerseyNumbers,contentFingerprint};
  let saved=null,session=null,chunkSize=chunkSizeDefault,total=0,nextChunk=0,resumeStorageAvailable=true;
  const persistResume=async record=>{
   if(!resumeStorageAvailable)return false;
