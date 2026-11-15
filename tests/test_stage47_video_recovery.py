@@ -201,6 +201,9 @@ class Stage47VideoRecoveryTests(unittest.TestCase):
         self.assertEqual(result["flags"], [True, True], result)
 
 
+    def restore_source_video_key(self):
+        return f"ordered.webm|{len(self.video_bytes)}|2000|video%2Fwebm"
+
     def backup_payload(self):
         return {
             "settings": {"name": "陸玖", "jersey1": 10, "jersey2": 74, "apiBaseUrl": ""},
@@ -211,15 +214,15 @@ class Stage47VideoRecoveryTests(unittest.TestCase):
                 "id": 4901, "date": "2026-11-15", "title": "Restore order test",
                 "hasVideo": False,
                 # Match the metadata embedded in the test video backup filename.
-                "sourceVideoKey": f"ordered.webm|{len(self.video_bytes)}|2000|video%2Fwebm"
+                "sourceVideoKey": self.restore_source_video_key()
             }],
             "forms": [],
             "matchAnalyses": [{
                 "id": 4902, "date": "2026-11-15", "title": "Linked match analysis",
-                "sourceVideoKey": "video-source-4901"
+                "sourceVideoKey": self.restore_source_video_key()
             }],
             "aiFormAnalyses": [{
-                "id": 4903, "date": "2026-11-15", "sourceVideoKey": "video-source-4901"
+                "id": 4903, "date": "2026-11-15", "sourceVideoKey": self.restore_source_video_key()
             }]
         }
 
