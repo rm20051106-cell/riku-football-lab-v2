@@ -1972,6 +1972,7 @@ def get_match_upload_status(upload_id: str):
     return {
         "ok": True, "upload_id": upload_id,
         "next_chunk": upload_state["next_chunk"],
+        "chunk_size": upload_state["chunk_size"],
         "total_chunks": upload_state["total_chunks"],
         "received_bytes": upload_state["received_bytes"],
         "total_bytes": upload_state["total_size"],
