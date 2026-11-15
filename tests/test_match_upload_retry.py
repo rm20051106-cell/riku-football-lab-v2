@@ -200,6 +200,7 @@ class MatchUploadRetryTests(unittest.TestCase):
                         type: 'video/mp4', lastModified: 12345
                     });
                     const sourceKey = getVideoSourceKey(file);
+                    const contentFingerprint = await getVideoContentFingerprint(file);
                     const cases = [
                         {id: 'local-behind', localNext: 0, serverNext: 1},
                         {id: 'local-ahead', localNext: 2, serverNext: 0}
@@ -208,7 +209,7 @@ class MatchUploadRetryTests(unittest.TestCase):
                     for (const item of cases) {
                         const uploadId = 'reconcile-' + item.id;
                         await savePendingMatchUpload({
-                            sourceKey, size: file.size, name: file.name,
+                            sourceKey, contentFingerprint, size: file.size, name: file.name,
                             lastModified: file.lastModified, jerseyNumbers: ['10', '74'],
                             uploadId, chunkSize: 12 * 1024 * 1024,
                             totalChunks: 2, nextChunk: item.localNext, createdAt: 1
@@ -281,8 +282,9 @@ class MatchUploadRetryTests(unittest.TestCase):
                             {type: 'video/mp4', lastModified: 12345}
                         );
                         const sourceKey = getVideoSourceKey(file);
+                        const contentFingerprint = await getVideoContentFingerprint(file);
                         await savePendingMatchUpload({
-                            sourceKey, size: file.size, name: file.name,
+                            sourceKey, contentFingerprint, size: file.size, name: file.name,
                             lastModified: file.lastModified, jerseyNumbers: '10,74',
                             uploadId: 'restart-session', chunkSize: 12 * 1024 * 1024,
                             totalChunks: 2, nextChunk: 0, createdAt: 123
@@ -425,7 +427,7 @@ class MatchUploadRetryTests(unittest.TestCase):
                         await clearPendingMatchUpload();
                         const originalKey = getVideoSourceKey(original);
                         const stale = {
-                            sourceKey: originalKey, size: original.size, name: original.name,
+                            sourceKey: originalKey, contentFingerprint: await getVideoContentFingerprint(original), size: original.size, name: original.name,
                             lastModified: original.lastModified, jerseyNumbers: '10,74',
                             uploadId: 'stale-' + caseName, chunkSize: CHUNK,
                             totalChunks: 2, nextChunk: 1, createdAt: 123
