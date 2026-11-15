@@ -195,6 +195,82 @@ class MatchUploadRetryTests(unittest.TestCase):
                 browser.close()
 
 
+    def test_resume_from_middle_of_20_minute_video_sends_only_remaining_chunks(self):
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(
+                headless=True, args=["--no-sandbox"]
+            )
+            try:
+                page = browser.new_page(viewport={"width": 390, "height": 844})
+                page.goto(self.url, wait_until="load")
+                page.wait_for_function(
+                    "typeof uploadMatchVideoInChunks === 'function' && typeof savePendingMatchUpload === 'function'"
+                )
+                result = page.evaluate("""async () => {
+                    state.settings.apiBaseUrl = 'https://upload-resume-boundaries.test';
+                    const CHUNK = 12 * 1024 * 1024;
+                    const TOTAL = CHUNK * 3 + 123;
+                    const file = new File([new Uint8Array(TOTAL)], 'resume-twenty-minute.mp4', {
+                        type: 'video/mp4', lastModified: 456
+                    });
+                    const sourceKey = getVideoSourceKey(file);
+                    const contentFingerprint = await getVideoContentFingerprint(file);
+                    await savePendingMatchUpload({
+                        sourceKey, contentFingerprint, size: file.size, name: file.name,
+                        lastModified: file.lastModified, jerseyNumbers: '10,74',
+                        uploadId: 'resume-boundary-session', chunkSize: 6 * 1024 * 1024,
+                        totalChunks: 6, nextChunk: 1, createdAt: 123
+                    });
+                    const putIndexes = [];
+                    const putSizes = [];
+                    let completeCalls = 0;
+                    window.fetch = async (url, options = {}) => {
+                        const path = new URL(url).pathname;
+                        if (path === '/analyze/match/uploads/resume-boundary-session' &&
+                            options.method === 'GET') {
+                            return new Response(JSON.stringify({
+                                upload_id: 'resume-boundary-session', total_bytes: TOTAL,
+                                received_bytes: CHUNK * 2, next_chunk: 2,
+                                chunk_size: CHUNK, total_chunks: 4
+                            }), {status: 200, headers: {'Content-Type': 'application/json'}});
+                        }
+                        if (path.startsWith('/analyze/match/uploads/resume-boundary-session/') &&
+                            options.method === 'PUT' && !path.endsWith('/complete')) {
+                            const index = Number(path.split('/').pop());
+                            putIndexes.push(index);
+                            putSizes.push(options.body.get('file').size);
+                            const received = Math.min(TOTAL, (index + 1) * CHUNK);
+                            return new Response(JSON.stringify({
+                                ok: true, chunk_index: index, received_bytes: received, total_bytes: TOTAL
+                            }), {status: 200, headers: {'Content-Type': 'application/json'}});
+                        }
+                        if (path === '/analyze/match/uploads/resume-boundary-session/complete' &&
+                            options.method === 'POST') {
+                            completeCalls++;
+                            return new Response(JSON.stringify({
+                                ok: true, job_id: 'resumed-boundary-job', status: 'queued'
+                            }), {status: 202, headers: {'Content-Type': 'application/json'}});
+                        }
+                        throw new Error('Unexpected request: ' + options.method + ' ' + path);
+                    };
+                    const video = document.getElementById('matchVideo');
+                    Object.defineProperty(video, 'duration', {configurable: true, value: 1200});
+                    const response = await uploadMatchVideoInChunks(
+                        file, ['10', '74'], document.createElement('div')
+                    );
+                    const saved = await getPendingMatchUpload();
+                    return {putIndexes, putSizes, completeCalls, savedChunkSize: saved?.chunkSize,
+                        savedNextChunk: saved?.nextChunk, response};
+                }""")
+                chunk = 12 * 1024 * 1024
+                self.assertEqual(result["putIndexes"], [2, 3], result)
+                self.assertEqual(result["putSizes"], [chunk, 123], result)
+                self.assertEqual(result["completeCalls"], 1, result)
+                self.assertEqual(result["response"]["job_id"], "resumed-boundary-job", result)
+            finally:
+                browser.close()
+
+
     def test_timeout_reconciles_chunk_committed_before_response_was_lost(self):
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(
