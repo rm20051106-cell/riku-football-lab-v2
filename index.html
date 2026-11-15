@@ -1282,17 +1282,18 @@ async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
   if(statusResponse.ok){
    const raw=await statusResponse.text();let status;try{status=JSON.parse(raw)}catch(e){status=null}
    if(!status||status.upload_id!==saved.uploadId||Number(status.total_bytes)!==file.size||!Number.isInteger(Number(status.next_chunk)))throw Error('サーバーの再開情報が一致しません。元動画を変更せず再試行してください。');
-   const serverNextChunk=Number(status.next_chunk),serverTotalChunks=Number(status.total_chunks);
-   if(!Number.isInteger(serverTotalChunks)||serverTotalChunks<1||!Number.isInteger(serverNextChunk)||serverNextChunk<0||serverNextChunk>serverTotalChunks)throw Error('サーバーの分割進捗が不正です。再開情報は保持しています。');
-   const localNextChunk=Number(saved.nextChunk);
+   const serverNextChunk=Number(status.next_chunk),serverTotalChunks=Number(status.total_chunks),serverChunkSize=Number(status.chunk_size);
+   if(!Number.isInteger(serverChunkSize)||serverChunkSize<1||!Number.isInteger(serverTotalChunks)||serverTotalChunks<1||serverTotalChunks!==Math.ceil(file.size/serverChunkSize)||!Number.isInteger(serverNextChunk)||serverNextChunk<0||serverNextChunk>serverTotalChunks)throw Error('サーバーの分割サイズまたは進捗が不正です。再開情報は保持しています。');
+   const localNextChunk=Number(saved.nextChunk),localChunkSize=Number(saved.chunkSize);
    const checkpointMismatch=Number.isInteger(localNextChunk)&&localNextChunk!==serverNextChunk;
+   const chunkSizeMismatch=Number.isInteger(localChunkSize)&&localChunkSize!==serverChunkSize;
    session={upload_id:saved.uploadId,total_chunks:serverTotalChunks};
-   chunkSize=Number(saved.chunkSize)||chunkSizeDefault;total=serverTotalChunks;nextChunk=serverNextChunk;
+   chunkSize=serverChunkSize;total=serverTotalChunks;nextChunk=serverNextChunk;
    if(checkpointMismatch){
     console.warn('アップロード再開位置の不一致を検出。サーバー側の受信位置を優先します。',{localNextChunk,serverNextChunk,totalChunks:serverTotalChunks});
     await persistResume({...identity,uploadId:session.upload_id,chunkSize,totalChunks:total,nextChunk,createdAt:saved.createdAt||Date.now()});
    }
-   resultElement.textContent='前回の続きから再開します：'+Math.round((nextChunk/Math.max(1,total))*100)+'%（'+nextChunk+'/'+total+'）'+(checkpointMismatch?'｜端末保存位置の不一致を検出し、サーバー側の受信位置に同期しました。':'');
+   resultElement.textContent='前回の続きから再開します：'+Math.round((nextChunk/Math.max(1,total))*100)+'%（'+nextChunk+'/'+total+'）'+(checkpointMismatch||chunkSizeMismatch?'｜端末とサーバーの差異を検出し、サーバー側の分割サイズ・受信位置に同期しました。':'');
   }else if(statusResponse.status===404){try{await clearPendingMatchUpload()}catch(_){}saved=null}
   else throw Error('前回のアップロード状態を取得できません HTTP '+statusResponse.status+'。再開情報は保持しています。');
  }else if(saved){try{await clearPendingMatchUpload()}catch(_){}saved=null}
@@ -1317,7 +1318,7 @@ async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
     lastError=e;
     try{
      const check=await fetch(api+'/analyze/match/uploads/'+encodeURIComponent(session.upload_id),{method:'GET',credentials:'omit',cache:'no-store'});
-     if(check.ok){const current=await check.json();if(Number(current.total_bytes)===file.size&&Number.isInteger(Number(current.next_chunk))){nextChunk=Number(current.next_chunk);await persistResume({...identity,uploadId:session.upload_id,chunkSize,totalChunks:total,nextChunk,createdAt:saved?.createdAt||Date.now()});if(nextChunk>i)succeeded=true;}}
+     if(check.ok){const current=await check.json(),currentChunkSize=Number(current.chunk_size),currentTotalChunks=Number(current.total_chunks),currentNextChunk=Number(current.next_chunk);if(current.upload_id!==session.upload_id||Number(current.total_bytes)!==file.size||!Number.isInteger(currentChunkSize)||currentChunkSize!==chunkSize||!Number.isInteger(currentTotalChunks)||currentTotalChunks!==total||!Number.isInteger(currentNextChunk)||currentNextChunk<0||currentNextChunk>total)throw Error('サーバーの再開情報が送信中に変化しました。安全のため停止しました。');nextChunk=currentNextChunk;await persistResume({...identity,uploadId:session.upload_id,chunkSize,totalChunks:total,nextChunk,createdAt:saved?.createdAt||Date.now()});if(nextChunk>i)succeeded=true;}}
      else if(check.status===404)throw Error('サーバー側のアップロード情報が消失しました。元動画から新規送信が必要です。');
     }catch(statusError){if(statusError.message&&statusError.message.includes('消失しました'))throw statusError}
     if(!succeeded&&attempt<3){resultElement.textContent='通信状態を確認して再試行しています… '+(i+1)+'/'+total+'（'+attempt+'/3）';await new Promise(resolve=>setTimeout(resolve,1200*attempt));}
