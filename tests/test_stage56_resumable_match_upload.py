@@ -218,6 +218,8 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn('"next_chunk": upload_state["next_chunk"]', SOURCE)
         self.assertIn('"chunk_size": chunk_size', SOURCE)
         self.assertIn('createdTotalChunks!==Math.ceil(file.size/createdChunkSize)', HTML)
+        self.assertIn('serverReceivedBytes=Number(status.received_bytes)', HTML)
+        self.assertIn('serverReceivedBytes!==expectedServerReceivedBytes', HTML)
         self.assertIn('body.chunk_index!==i||body.received_bytes!==expectedReceivedBytes||body.total_bytes!==file.size', HTML)
         status = load_upload_status_helper("status-session", {
             "next_chunk": 2, "chunk_size": 12 * 1024 * 1024,
@@ -230,6 +232,14 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
             load_upload_status_helper("invalid-session", {
                 "next_chunk": 0, "total_chunks": 2, "total_size": 48 * 1024 * 1024,
             })
+        with self.assertRaises(Exception):
+            load_upload_status_helper("byte-drift-session", {
+                "next_chunk": 2, "chunk_size": 12 * 1024 * 1024,
+                "total_chunks": 4, "received_bytes": 12 * 1024 * 1024,
+                "total_size": 48 * 1024 * 1024,
+            })
+        self.assertIn('"received_bytes": received_bytes', SOURCE)
+        self.assertIn('received_bytes != min(next_chunk * chunk_size, total_size)', SOURCE)
         self.assertIn("persist_match_upload_state(upload_id, match_uploads[upload_id])", SOURCE)
         self.assertIn("match_upload_manifest_path(upload_id).unlink(missing_ok=True)", SOURCE)
 
@@ -298,6 +308,7 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn("chunkSize=createdChunkSize", HTML)
         self.assertIn("createdTotalChunks!==Math.ceil(file.size/createdChunkSize)", HTML)
         self.assertIn("expectedReceivedBytes=Math.min(file.size,(i+1)*chunkSize)", HTML)
+        self.assertIn("expectedCurrentReceivedBytes=Math.min(file.size,currentNextChunk*chunkSize)", HTML)
         retry_test = (ROOT / "tests" / "test_match_upload_retry.py").read_text(encoding="utf-8")
         self.assertIn("chunk_size: 12 * 1024 * 1024", retry_test)
         self.assertIn("new Uint8Array(12 * 1024 * 1024 + 1)", retry_test)
