@@ -270,7 +270,7 @@ function detachDeletedRecordLinks(type,record){
    });
   }
  }
- (state.clips||[]).forEach(clip=>{clip.matchAnalysisIds=(clip.matchAnalysisIds||[]).filter(linkId=>!(state.matchAnalyses||[]).some(match=>String(match.id)===String(linkId)&&!match.clipId))});
+ (state.clips||[]).forEach(clip=>{clip.matchAnalysisIds=(clip.matchAnalysisIds||[]).filter(linkId=>(state.matchAnalyses||[]).some(match=>String(match.id)===String(linkId)&&String(match.clipId||'')===String(clip.id)))});
  (state.forms||[]).forEach(form=>{form.aiAnalysisIds=(form.aiAnalysisIds||[]).filter(linkId=>(state.aiFormAnalyses||[]).some(analysis=>String(analysis.id)===String(linkId)&&String(analysis.formId||'')===String(form.id)))});
  (state.matchAnalyses||[]).forEach(match=>{match.aiFormAnalysisIds=(match.aiFormAnalysisIds||[]).filter(linkId=>(state.aiFormAnalyses||[]).some(analysis=>String(analysis.id)===String(linkId)&&String(analysis.matchId||'')===String(match.id)))});
 }
