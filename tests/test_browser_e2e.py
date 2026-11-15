@@ -2245,5 +2245,23 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual(result["size"], 4, result)
         self.assertEqual(result["count"], 1, result)
 
+    def test_backup_diagnostics_report_duplicate_video_keys_and_dangling_links_read_only(self):
+        result = self.page.evaluate("""() => {
+            const data = {
+                clips: [
+                    {id:'clip-a', sourceVideoKey:'same.mp4|4|1|video/mp4', matchAnalysisIds:['missing-match']},
+                    {id:'clip-b', sourceVideoKey:'same.mp4|4|1|video/mp4', matchAnalysisIds:[]}
+                ],
+                forms: [], matchAnalyses: [], aiFormAnalyses: []
+            };
+            const before = JSON.stringify(data);
+            const diagnostics = getBackupIdentityDiagnostics(data);
+            return {before, after:JSON.stringify(data), diagnostics};
+        }""")
+        self.assertEqual(result["before"], result["after"])
+        self.assertEqual(len(result["diagnostics"]["duplicateSourceKeys"]), 1)
+        self.assertTrue(result["diagnostics"]["staleReverse"])
+        self.assertEqual(result["diagnostics"]["danglingForward"], [])
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
