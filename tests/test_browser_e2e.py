@@ -818,6 +818,35 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual(after, before)
 
 
+    def test_json_restore_storage_failure_keeps_memory_and_reports_storage_uncertainty(self):
+        page = self.page
+        page.evaluate("""() => {
+            state.clips = [{id: 'storage-keep', title: '保存保護', hasVideo: false}];
+            persist();
+            window.__originalStorageSetItem = Storage.prototype.setItem;
+            Storage.prototype.setItem = function(key, value) {
+                if (key === KEY) throw new DOMException('quota simulated', 'QuotaExceededError');
+                return window.__originalStorageSetItem.call(this, key, value);
+            };
+        }""")
+        before = page.evaluate("() => ({state: JSON.stringify(state), stored: localStorage.getItem(KEY)})")
+        backup_path = self.temp_path / "storage-failure-restore.json"
+        backup_path.write_text(json.dumps({
+            "settings": {"name": "別データ"},
+            "trainings": [], "measures": [], "clips": [], "forms": []
+        }, ensure_ascii=False), encoding="utf-8")
+        messages = []
+        page.once("dialog", lambda dialog: (messages.append(dialog.message), dialog.accept()))
+        page.locator("#importFile").set_input_files(str(backup_path))
+        page.wait_for_function("document.getElementById('importFile').value === ''", timeout=10000)
+        after = page.evaluate("""() => {
+            Storage.prototype.setItem = window.__originalStorageSetItem;
+            return {state: JSON.stringify(state), stored: localStorage.getItem(KEY)};
+        }""")
+        self.assertEqual(after, before)
+        self.assertTrue(messages and "再読み込みせず" in messages[0], messages)
+
+
     def test_webkit_safari_compatibility_smoke(self):
         browser = self.playwright.webkit.launch(headless=True)
         try:
