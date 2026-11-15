@@ -1219,6 +1219,8 @@ async function getPendingMatchJob(){const db=await openVideoDB();try{return awai
 async function savePendingMatchJob(record){const db=await openVideoDB();try{await new Promise((resolve,reject)=>{const tx=db.transaction('videos','readwrite');tx.objectStore('videos').put(record,'__pending_match_job__');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||new Error('解析ジョブ情報を保存できません'));tx.onabort=()=>reject(tx.error||new Error('解析ジョブ情報の保存が中断されました'))})}finally{db.close()}}
 async function clearPendingMatchJob(){const db=await openVideoDB();try{await new Promise((resolve,reject)=>{const tx=db.transaction('videos','readwrite');tx.objectStore('videos').delete('__pending_match_job__');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||new Error('解析ジョブ情報を削除できません'));tx.onabort=()=>reject(tx.error||new Error('解析ジョブ情報の削除が中断されました'))})}finally{db.close()}}
 async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
+ const normalizeJerseyNumbers=value=>(Array.isArray(value)?value:[value]).map(item=>String(item??'').trim()).filter(Boolean).join(',');
+ const normalizedJerseyNumbers=normalizeJerseyNumbers(jerseyNumbers);
  const chunkSizeDefault=6*1024*1024,sourceKey=getVideoSourceKey(file),duration=Number(matchVideo.duration||0),api=getApiUrl();
  const progressWrap=document.getElementById('matchFingerprintProgress');
  const progressText=document.getElementById('matchFingerprintProgressText');
@@ -1266,13 +1268,13 @@ async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
   console.warn('保存済みアップロード再開情報を読み込めません',error);
   resultElement.textContent='端末の保存領域を利用できないため、今回の動画はこの画面を開いている間だけアップロードできます。再読み込み後は動画の再選択が必要で、自動再開はできません。';
  }
- const savedRecordValid=!!saved&&typeof saved==='object'&&typeof saved.uploadId==='string'&&saved.uploadId.trim().length>0&&typeof saved.sourceKey==='string'&&typeof saved.contentFingerprint==='string'&&/^[a-f0-9]{64}$/.test(saved.contentFingerprint)&&typeof saved.size==='number'&&Number.isSafeInteger(saved.size)&&saved.size>0&&saved.jerseyNumbers===identity.jerseyNumbers&&typeof saved.nextChunk==='number'&&Number.isInteger(saved.nextChunk)&&saved.nextChunk>=0&&(!('chunkSize'in saved)||(typeof saved.chunkSize==='number'&&Number.isInteger(saved.chunkSize)&&saved.chunkSize>0))&&(!('totalChunks'in saved)||(typeof saved.totalChunks==='number'&&Number.isInteger(saved.totalChunks)&&saved.totalChunks>=1));
+ const savedRecordValid=!!saved&&typeof saved==='object'&&typeof saved.uploadId==='string'&&saved.uploadId.trim().length>0&&typeof saved.sourceKey==='string'&&typeof saved.contentFingerprint==='string'&&/^[a-f0-9]{64}$/.test(saved.contentFingerprint)&&typeof saved.size==='number'&&Number.isSafeInteger(saved.size)&&saved.size>0&&normalizeJerseyNumbers(saved.jerseyNumbers)===identity.jerseyNumbers&&typeof saved.nextChunk==='number'&&Number.isInteger(saved.nextChunk)&&saved.nextChunk>=0&&(!('chunkSize'in saved)||(typeof saved.chunkSize==='number'&&Number.isInteger(saved.chunkSize)&&saved.chunkSize>0))&&(!('totalChunks'in saved)||(typeof saved.totalChunks==='number'&&Number.isInteger(saved.totalChunks)&&saved.totalChunks>=1));
  if(saved&&!savedRecordValid){
   console.warn('アップロード再開情報の破損または必須項目不足を検出。古いセッションを再利用せず、新規アップロードを開始します。');
   try{await clearPendingMatchUpload()}catch(error){console.warn('破損した再開情報を削除できません',error)}
   saved=null;
  }
- if(saved&&saved.sourceKey===identity.sourceKey&&saved.size===identity.size&&saved.jerseyNumbers===identity.jerseyNumbers&&saved.contentFingerprint===identity.contentFingerprint){
+ if(saved&&saved.sourceKey===identity.sourceKey&&saved.size===identity.size&&normalizeJerseyNumbers(saved.jerseyNumbers)===identity.jerseyNumbers&&saved.contentFingerprint===identity.contentFingerprint){
   resultElement.textContent='前回のアップロード状態を確認しています…';
   let statusResponse;
   try{statusResponse=await fetch(api+'/analyze/match/uploads/'+encodeURIComponent(saved.uploadId),{method:'GET',credentials:'omit',cache:'no-store'})}
@@ -1295,7 +1297,7 @@ async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
   else throw Error('前回のアップロード状態を取得できません HTTP '+statusResponse.status+'。再開情報は保持しています。');
  }else if(saved){try{await clearPendingMatchUpload()}catch(_){}saved=null}
  if(!session){
-  const init=await fetch(api+'/analyze/match/uploads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:identity.name,size_bytes:file.size,duration_seconds:Number.isFinite(duration)&&duration>0?duration:null,jersey_numbers:jerseyNumbers}),credentials:'omit',cache:'no-store'});
+  const init=await fetch(api+'/analyze/match/uploads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:identity.name,size_bytes:file.size,duration_seconds:Number.isFinite(duration)&&duration>0?duration:null,jersey_numbers:identity.jerseyNumbers}),credentials:'omit',cache:'no-store'});
   const initRaw=await init.text();let created;try{created=JSON.parse(initRaw)}catch(e){created=null}
   if(!init.ok||!created?.upload_id)throw Error('分割アップロード開始 HTTP '+init.status+'：'+(created?.detail||initRaw.slice(0,180)));
   session=created;chunkSize=Number(created.chunk_size)||chunkSizeDefault;total=Number(created.total_chunks)||Math.ceil(file.size/chunkSize);nextChunk=0;
