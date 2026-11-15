@@ -1160,7 +1160,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             page.evaluate("""() => { state.settings.apiBaseUrl = 'https://riku-resume-mock.invalid'; persist(); }""")
             page.locator("#videoFile").set_input_files({
                 "name": "resume-after-reload.mp4", "mimeType": "video/mp4",
-                "buffer": b"R" * (6 * 1024 * 1024 + 23),
+                "buffer": b"\\xab" * (6 * 1024 * 1024 + 23),
             })
             page.wait_for_function("() => document.getElementById('videoFile').files.length === 1")
             original = page.evaluate("""async () => {
@@ -1174,7 +1174,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             }""")
             page.reload(wait_until="load")
             page.wait_for_function("typeof uploadMatchVideoInChunks === 'function'")
-            counters = {"status": 0, "created": 0, "puts": [], "completed": 0}
+            counters = {"status": 0, "created": 0, "puts": [], "putMarkerBytes": 0, "completed": 0}
             def mock_api(route):
                 request = route.request
                 if not request.url.startswith("https://riku-resume-mock.invalid/"):
@@ -1195,6 +1195,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                                                    "total_bytes":original["size"],"complete":False}))
                 elif path == "/analyze/match/uploads/resume-upload/1" and request.method == "PUT":
                     counters["puts"].append(1)
+                    counters["putMarkerBytes"] = (request.post_data_buffer or b"").count(b"\\xab")
                     route.fulfill(status=200, headers=headers, content_type="application/json",
                                   body=json.dumps({"ok":True,"chunk_index":1}))
                 elif path == "/analyze/match/uploads/resume-upload/complete" and request.method == "POST":
@@ -1215,7 +1216,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             self.assertEqual(result["jobId"], "resume-job", result)
             self.assertEqual(result["size"], original["size"], result)
             self.assertIsNone(result["pending"], result)
-            self.assertEqual(counters, {"status":1,"created":0,"puts":[1],"completed":1})
+            self.assertEqual(counters, {"status":1,"created":0,"puts":[1],"putMarkerBytes":23,"completed":1})
         finally:
             context.close()
             browser.close()
