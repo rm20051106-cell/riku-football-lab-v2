@@ -4671,7 +4671,18 @@ function renderAiFormCompare(){
  function fmtPair(a,b){return (a==null?'—':a.toFixed(1)+'°')+' / '+(b==null?'—':b.toFixed(1)+'°')}
  el.innerHTML='<div class="tiny muted">比較条件：'+esc(newer.cameraAngle||'未選択')+'・'+esc(newer.cameraDistance||'未設定')+'・'+esc(newer.framing||'未設定')+'・'+esc(newer.kind||'シュート')+'・'+esc(newer.foot||'右足')+'（5条件が同じ記録のみ）</div><div class="tiny muted">新しい記録：'+esc(newer.date)+'　／　前回：'+esc(older.date)+'</div><div class="tiny muted">角度の差を示すだけで、改善・悪化の判定ではありません。撮影位置・距離・動作中のタイミングもそろえてください。</div>'+summaryHtml+historyHtml+manualPhaseHtml+qualityHtml+phaseHtml+'<div class="tiny muted">※全動画の平均値と、動画全体の相対位置を合わせたサンプル値です。蹴る瞬間だけを切り出した比較ではありません。</div>';
 }
-function deleteAiFormAnalysis(id){if(!confirm('このAI解析履歴を削除しますか？'))return;state.aiFormAnalyses=(state.aiFormAnalyses||[]).filter(x=>x.id!==id);persist()}
+function deleteAiFormAnalysis(id){
+ if(!confirm('このAI解析履歴を削除しますか？'))return;
+ const key=String(id);if(!(state.aiFormAnalyses||[]).some(x=>String(x.id)===key))return;
+ const original={aiFormAnalyses:cloneRecordRows(state.aiFormAnalyses),forms:cloneRecordRows(state.forms),matchAnalyses:cloneRecordRows(state.matchAnalyses)};
+ state.aiFormAnalyses=state.aiFormAnalyses.filter(x=>String(x.id)!==key);
+ (state.forms||[]).forEach(form=>{form.aiAnalysisIds=(form.aiAnalysisIds||[]).filter(linkId=>String(linkId)!==key)});
+ (state.matchAnalyses||[]).forEach(match=>{match.aiFormAnalysisIds=(match.aiFormAnalysisIds||[]).filter(linkId=>String(linkId)!==key)});
+ if(!persist()){
+  state.aiFormAnalyses=original.aiFormAnalyses;state.forms=original.forms;state.matchAnalyses=original.matchAnalyses;renderAll();
+  alert('AI解析履歴と関連リンクを保存できなかったため、削除を取り消しました。');return;
+ }
+}
 function deleteMeasure(d,t,v){if(!confirm('この測定記録を削除しますか？'))return;let idx=state.measures.findIndex(x=>x.date===d&&x.type===t&&x.value===v);if(idx>=0)state.measures.splice(idx,1);persist()}
 async function preflightMatchVideoStorage(file){
  if(!navigator.storage||typeof navigator.storage.estimate!=='function')return {ok:true,checked:false};
