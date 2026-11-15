@@ -121,7 +121,7 @@ class MatchUploadBackendIntegrationTest(unittest.TestCase):
             self.skipTest("Run this integration test inside the backend Docker image")
         sys.path.insert(0, "/app")
         import main
-        from fastapi import BackgroundTasks
+        from fastapi import BackgroundTasks, HTTPException
         from starlette.datastructures import UploadFile
 
         async def exercise(duration_seconds, total_size, filename):
@@ -156,6 +156,10 @@ class MatchUploadBackendIntegrationTest(unittest.TestCase):
                 self.assertEqual(status["complete"], offset + expected_size == total_size)
 
                 if index == 0:
+                    # Completion must be rejected until every expected chunk is present.
+                    with self.assertRaises(HTTPException) as incomplete:
+                        await main.complete_match_upload(upload_id, BackgroundTasks())
+                    self.assertEqual(incomplete.exception.status_code, 409)
                     retry = UploadFile(filename="chunk-0-retry.bin", file=io.BytesIO(payload))
                     duplicate = await main.upload_match_chunk(upload_id, index, retry)
                     self.assertTrue(duplicate["duplicate_retry"])
@@ -168,6 +172,14 @@ class MatchUploadBackendIntegrationTest(unittest.TestCase):
 
             state = main.match_uploads[upload_id]
             self.assertEqual(state["received_bytes"], total_size)
+            self.assertEqual(state["next_chunk"], init["total_chunks"])
+            self.assertEqual(os.path.getsize(state["path"]), total_size)
+            final_chunk_size = total_size - (init["total_chunks"] - 1) * chunk_size
+            final_payload = bytes([init["total_chunks"]]) * final_chunk_size
+            final_retry = UploadFile(filename="final-chunk-retry.bin", file=io.BytesIO(final_payload))
+            duplicate_final = await main.upload_match_chunk(upload_id, init["total_chunks"] - 1, final_retry)
+            self.assertTrue(duplicate_final["duplicate_retry"])
+            self.assertEqual(duplicate_final["received_bytes"], total_size)
             self.assertEqual(os.path.getsize(state["path"]), total_size)
             with open(state["path"], "rb") as received:
                 self.assertEqual(received.read(16), bytes([1]) * 16)
@@ -192,8 +204,11 @@ class MatchUploadBackendIntegrationTest(unittest.TestCase):
             os.remove(state["path"])
 
         async def run():
-            await exercise(900, 7 * 1024 * 1024 + 11, "synthetic-15min.mp4")
-            await exercise(1200, 13 * 1024 * 1024 + 123, "synthetic-20min.mp4")
+            chunk = main.MATCH_UPLOAD_CHUNK_BYTES
+            # 15-minute synthetic file: two full chunks and an 11-byte tail.
+            await exercise(900, 2 * chunk + 11, "synthetic-15min.mp4")
+            # 20-minute synthetic file: three full chunks and a 123-byte tail.
+            await exercise(1200, 3 * chunk + 123, "synthetic-20min.mp4")
 
         asyncio.run(run())
 
