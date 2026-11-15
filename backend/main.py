@@ -2173,8 +2173,26 @@ def get_match_job(job_id: str):
         raise HTTPException(status_code=404, detail="解析ジョブが見つかりません。サーバー再起動後は再送信が必要です。")
     payload = {key: value for key, value in job.items() if key not in {"result", "clips"}}
     if job.get("status") == "completed":
-        payload["result"] = job["result"]
-        payload["clips"] = [{key: value for key, value in clip.items() if key != "path"} for clip in job.get("clips", [])]
+        payload["result"] = json.loads(json.dumps(job.get("result") or {}, ensure_ascii=False))
+        stored_clips = job.get("clips") if isinstance(job.get("clips"), list) else []
+        available_clips = [
+            clip for clip in stored_clips
+            if isinstance(clip, dict) and clip.get("id") is not None
+            and isinstance(clip.get("path"), str) and os.path.isfile(clip["path"])
+        ]
+        available_ids = {str(clip["id"]) for clip in available_clips}
+        summary = payload["result"].get("summary")
+        if isinstance(summary, dict):
+            events = summary.get("candidate_events")
+            if isinstance(events, list):
+                for event in events:
+                    if isinstance(event, dict) and str(event.get("id")) not in available_ids:
+                        event["clip_available"] = False
+                        event["clip_url"] = None
+        payload["clips"] = [
+            {key: value for key, value in clip.items() if key != "path"}
+            for clip in available_clips
+        ]
     return payload
 
 @app.post("/analyze/jobs/{job_id}/highlights")
