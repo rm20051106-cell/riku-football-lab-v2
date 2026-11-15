@@ -201,5 +201,105 @@ class Stage47VideoRecoveryTests(unittest.TestCase):
         self.assertEqual(result["flags"], [True, True], result)
 
 
+    def backup_payload(self):
+        return {
+            "settings": {"name": "陸玖", "jersey1": 10, "jersey2": 74, "apiBaseUrl": ""},
+            "menus": [],
+            "trainings": [],
+            "measures": [],
+            "clips": [{
+                "id": 4901, "date": "2026-11-15", "title": "Restore order test",
+                "hasVideo": False, "sourceVideoKey": "video-source-4901"
+            }],
+            "forms": [],
+            "matchAnalyses": [{
+                "id": 4902, "date": "2026-11-15", "title": "Linked match analysis",
+                "sourceVideoKey": "video-source-4901"
+            }],
+            "aiFormAnalyses": [{
+                "id": 4903, "date": "2026-11-15", "sourceVideoKey": "video-source-4901"
+            }]
+        }
+
+    def import_json_backup(self, payload):
+        import json
+        self.page.evaluate("""() => {
+            window.__jsonRestoreAlert = '';
+            window.alert = message => { window.__jsonRestoreAlert = String(message); };
+        }""")
+        self.page.locator("#importFile").set_input_files({
+            "name": "riku-restore-order-test.json",
+            "mimeType": "application/json",
+            "buffer": json.dumps(payload).encode("utf-8")
+        })
+        self.page.wait_for_function("window.__jsonRestoreAlert.includes('バックアップを読み込みました')")
+
+    def assert_analysis_links_and_video(self):
+        return self.page.evaluate("""async () => {
+            const clip = state.clips.find(row => String(row.id) === '4901');
+            const match = state.matchAnalyses.find(row => String(row.id) === '4902');
+            const analysis = state.aiFormAnalyses.find(row => String(row.id) === '4903');
+            const stored = await getClipVideo('4901');
+            return {
+                hasVideo: clip?.hasVideo,
+                clipMatchIds: clip?.matchAnalysisIds || [],
+                matchClipId: match?.clipId || null,
+                matchAiIds: match?.aiFormAnalysisIds || [],
+                analysisMatchId: analysis?.matchId || null,
+                videoSize: stored?.blob?.size || 0
+            };
+        }""")
+
+    def test_json_first_then_video_restore_preserves_analysis_links(self):
+        self.page.evaluate("() => { state.clips=[]; state.forms=[]; state.matchAnalyses=[]; state.aiFormAnalyses=[]; persist(); }")
+        self.import_json_backup(self.backup_payload())
+        self.page.evaluate("() => { window.__stage48Intercept = true; window.alert = () => {}; }")
+        self.page.evaluate("""bytes => runStage48VideoRestore([
+            new File([bytes], 'riku-video__4901__ordered.webm', {type:'video/webm', lastModified:2000})
+        ])""", list(self.video_bytes))
+        self.page.wait_for_function("JSON.parse(localStorage.getItem('rikuVideoRestoreJob_v1')).items[0].status === 'done'")
+        result = self.assert_analysis_links_and_video()
+        self.assertTrue(result["hasVideo"], result)
+        self.assertEqual(result["videoSize"], len(self.video_bytes), result)
+        self.assertIn(4902, result["clipMatchIds"], result)
+        self.assertEqual(result["matchClipId"], "4901", result)
+        self.assertIn(4903, result["matchAiIds"], result)
+        self.assertEqual(result["analysisMatchId"], "4902", result)
+
+    def test_video_first_is_safely_blocked_then_json_restore_retry_preserves_links(self):
+        self.page.evaluate("() => { state.clips=[]; state.forms=[]; state.matchAnalyses=[]; state.aiFormAnalyses=[]; persist(); window.__stage48Intercept = true; window.alert = () => {}; }")
+        self.page.evaluate("""bytes => runStage48VideoRestore([
+            new File([bytes], 'riku-video__4901__ordered.webm', {type:'video/webm', lastModified:2000})
+        ])""", list(self.video_bytes))
+        self.page.wait_for_function("JSON.parse(localStorage.getItem('rikuVideoRestoreJob_v1')).items[0].status === 'failed'")
+        self.assertFalse(self.page.evaluate("async () => !!(await getClipVideo('4901'))"))
+        self.import_json_backup(self.backup_payload())
+        before_retry = self.page.evaluate("""() => ({
+            clipCount: state.clips.length,
+            matchCount: state.matchAnalyses.length,
+            aiCount: state.aiFormAnalyses.length,
+            hasVideo: state.clips[0].hasVideo,
+            matchClipId: state.matchAnalyses[0].clipId || null,
+            analysisMatchId: state.aiFormAnalyses[0].matchId || null
+        })""")
+        self.assertEqual(before_retry["clipCount"], 1, before_retry)
+        self.assertEqual(before_retry["matchCount"], 1, before_retry)
+        self.assertEqual(before_retry["aiCount"], 1, before_retry)
+        self.assertFalse(before_retry["hasVideo"], before_retry)
+        self.assertEqual(before_retry["matchClipId"], "4901", before_retry)
+        self.assertEqual(before_retry["analysisMatchId"], "4902", before_retry)
+        self.page.evaluate("""bytes => retryStage48FailedVideos([
+            new File([bytes], 'riku-video__4901__ordered.webm', {type:'video/webm', lastModified:2000})
+        ])""", list(self.video_bytes))
+        self.page.wait_for_function("JSON.parse(localStorage.getItem('rikuVideoRestoreJob_v1')).items[0].status === 'done'")
+        result = self.assert_analysis_links_and_video()
+        self.assertTrue(result["hasVideo"], result)
+        self.assertEqual(result["videoSize"], len(self.video_bytes), result)
+        self.assertIn(4902, result["clipMatchIds"], result)
+        self.assertEqual(result["matchClipId"], "4901", result)
+        self.assertIn(4903, result["matchAiIds"], result)
+        self.assertEqual(result["analysisMatchId"], "4902", result)
+
+
 if __name__ == "__main__":
     unittest.main()
