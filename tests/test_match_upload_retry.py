@@ -29,6 +29,66 @@ class MatchUploadRetryTests(unittest.TestCase):
         cls.server.shutdown()
         cls.server.server_close()
 
+    def test_analysis_status_rejects_wrong_job_identity_and_malformed_completion(self):
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True, args=["--no-sandbox"])
+            try:
+                page = browser.new_page()
+                page.goto(self.url, wait_until="load")
+                page.wait_for_function("typeof fetchMatchJobStatusWithRetry === 'function'")
+                result = page.evaluate("""async () => {
+                    let calls = 0;
+                    window.fetch = async () => {
+                        calls++;
+                        return new Response(JSON.stringify({
+                            job_id: 'different-job', status: 'completed',
+                            result: {summary: {}}
+                        }), {status: 200, headers: {'Content-Type': 'application/json'}});
+                    };
+                    let mismatch = '';
+                    try {
+                        await fetchMatchJobStatusWithRetry('https://job-status.test', 'expected-job',
+                            {retryLimit: 3, retryDelayMs: 0});
+                    } catch (error) { mismatch = error.message; }
+                    const mismatchCalls = calls;
+
+                    calls = 0;
+                    window.fetch = async () => {
+                        calls++;
+                        return new Response(JSON.stringify({
+                            job_id: 'expected-job', status: 'completed',
+                            result: {job_id: 'expected-job'}
+                        }), {status: 200, headers: {'Content-Type': 'application/json'}});
+                    };
+                    let malformed = '';
+                    try {
+                        await fetchMatchJobStatusWithRetry('https://job-status.test', 'expected-job',
+                            {retryLimit: 3, retryDelayMs: 0});
+                    } catch (error) { malformed = error.message; }
+                    const malformedCalls = calls;
+
+                    calls = 0;
+                    window.fetch = async () => {
+                        calls++;
+                        return new Response(JSON.stringify({
+                            job_id: 'expected-job', status: 'processing', progress: 45
+                        }), {status: 200, headers: {'Content-Type': 'application/json'}});
+                    };
+                    const valid = await fetchMatchJobStatusWithRetry('https://job-status.test', 'expected-job',
+                        {retryLimit: 3, retryDelayMs: 0});
+                    return {mismatch, mismatchCalls, malformed, malformedCalls,
+                        validStatus: valid.status, validCalls: calls};
+                }""")
+                self.assertIn("別のジョブID", result["mismatch"], result)
+                self.assertEqual(result["mismatchCalls"], 1, result)
+                self.assertIn("形式が不正", result["malformed"], result)
+                self.assertEqual(result["malformedCalls"], 1, result)
+                self.assertEqual(result["validStatus"], "processing", result)
+                self.assertEqual(result["validCalls"], 1, result)
+            finally:
+                browser.close()
+
+
     def test_chunk_and_completion_lost_responses_are_retried_idempotently(self):
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(
