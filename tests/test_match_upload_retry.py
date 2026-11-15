@@ -221,6 +221,7 @@ class MatchUploadRetryTests(unittest.TestCase):
                         const putIndexes = [];
                         const putSizes = [];
                         let checkpointAtFirstPut = null;
+                        let checkpointChunkSizeAtFirstPut = null;
                         window.fetch = async (url, options = {}) => {
                             const path = new URL(url).pathname;
                             if (path === '/analyze/match/uploads/' + uploadId && options.method === 'GET') {
@@ -237,6 +238,7 @@ class MatchUploadRetryTests(unittest.TestCase):
                                 if (checkpointAtFirstPut === null) {
                                     const saved = await getPendingMatchUpload();
                                     checkpointAtFirstPut = saved?.nextChunk ?? null;
+                                    checkpointChunkSizeAtFirstPut = saved?.chunkSize ?? null;
                                 }
                                 return new Response(JSON.stringify({ok: true}), {status: 200});
                             }
@@ -251,7 +253,7 @@ class MatchUploadRetryTests(unittest.TestCase):
                         await uploadMatchVideoInChunks(file, ['10', '74'], document.createElement('div'));
                         observed.push({
                             id: item.id, localNext: item.localNext,
-                            serverNext: item.serverNext, putIndexes, putSizes, checkpointAtFirstPut
+                            serverNext: item.serverNext, putIndexes, putSizes, checkpointAtFirstPut, checkpointChunkSizeAtFirstPut
                         });
                     }
                     return observed;
@@ -259,9 +261,11 @@ class MatchUploadRetryTests(unittest.TestCase):
                 self.assertEqual(results[0]["putIndexes"], [1], results)
                 self.assertEqual(results[0]["putSizes"], [1], results)
                 self.assertEqual(results[0]["checkpointAtFirstPut"], 1, results)
+                self.assertEqual(results[0]["checkpointChunkSizeAtFirstPut"], 12 * 1024 * 1024, results)
                 self.assertEqual(results[1]["putIndexes"], [0, 1], results)
                 self.assertEqual(results[1]["putSizes"], [12 * 1024 * 1024, 1], results)
                 self.assertEqual(results[1]["checkpointAtFirstPut"], 0, results)
+                self.assertEqual(results[1]["checkpointChunkSizeAtFirstPut"], 12 * 1024 * 1024, results)
             finally:
                 browser.close()
 
