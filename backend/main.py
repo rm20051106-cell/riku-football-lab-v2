@@ -1972,18 +1972,25 @@ def get_match_upload_status(upload_id: str):
     chunk_size = upload_state.get("chunk_size")
     total_size = upload_state.get("total_size")
     total_chunks = upload_state.get("total_chunks")
+    next_chunk = upload_state.get("next_chunk")
+    received_bytes = upload_state.get("received_bytes")
     if (not isinstance(chunk_size, int) or isinstance(chunk_size, bool) or chunk_size < 1
-            or not isinstance(total_size, int) or total_size < 1
-            or total_chunks != (total_size + chunk_size - 1) // chunk_size):
+            or not isinstance(total_size, int) or isinstance(total_size, bool) or total_size < 1
+            or not isinstance(total_chunks, int) or isinstance(total_chunks, bool)
+            or total_chunks != (total_size + chunk_size - 1) // chunk_size
+            or not isinstance(next_chunk, int) or isinstance(next_chunk, bool)
+            or next_chunk < 0 or next_chunk > total_chunks
+            or not isinstance(received_bytes, int) or isinstance(received_bytes, bool)
+            or received_bytes != min(next_chunk * chunk_size, total_size)):
         raise HTTPException(status_code=409, detail="アップロードの分割情報が不正です。安全のため再開を停止しました。")
     return {
         "ok": True, "upload_id": upload_id,
-        "next_chunk": upload_state["next_chunk"],
+        "next_chunk": next_chunk,
         "chunk_size": chunk_size,
         "total_chunks": total_chunks,
-        "received_bytes": upload_state["received_bytes"],
-        "total_bytes": upload_state["total_size"],
-        "complete": upload_state["received_bytes"] == upload_state["total_size"],
+        "received_bytes": received_bytes,
+        "total_bytes": total_size,
+        "complete": next_chunk == total_chunks and received_bytes == total_size,
     }
 
 
