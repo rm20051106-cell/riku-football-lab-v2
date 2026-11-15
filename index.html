@@ -1301,7 +1301,9 @@ async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
   const init=await fetch(api+'/analyze/match/uploads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:identity.name,size_bytes:file.size,duration_seconds:Number.isFinite(duration)&&duration>0?duration:null,jersey_numbers:identity.jerseyNumbers}),credentials:'omit',cache:'no-store'});
   const initRaw=await init.text();let created;try{created=JSON.parse(initRaw)}catch(e){created=null}
   if(!init.ok||!created?.upload_id)throw Error('分割アップロード開始 HTTP '+init.status+'：'+(created?.detail||initRaw.slice(0,180)));
-  session=created;chunkSize=Number(created.chunk_size)||chunkSizeDefault;total=Number(created.total_chunks)||Math.ceil(file.size/chunkSize);nextChunk=0;
+  const createdChunkSize=Number(created.chunk_size),createdTotalChunks=Number(created.total_chunks);
+  if(!Number.isInteger(createdChunkSize)||createdChunkSize<1||!Number.isInteger(createdTotalChunks)||createdTotalChunks<1||createdTotalChunks!==Math.ceil(file.size/createdChunkSize))throw Error('サーバーが返した分割サイズまたは分割数が不正です。安全のため送信を停止しました。');
+  session=created;chunkSize=createdChunkSize;total=createdTotalChunks;nextChunk=0;
   await persistResume({...identity,uploadId:session.upload_id,chunkSize,totalChunks:total,nextChunk,createdAt:Date.now()});
  }
  for(let i=nextChunk;i<total;i++){
@@ -1313,6 +1315,8 @@ async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
     const response=await fetch(api+'/analyze/match/uploads/'+encodeURIComponent(session.upload_id)+'/'+i,{method:'PUT',body:fd,signal:controller.signal,credentials:'omit',cache:'no-store'});
     const raw=await response.text();let body;try{body=JSON.parse(raw)}catch(e){body=null}
     if(!response.ok)throw Error('分割 '+(i+1)+'/'+total+' HTTP '+response.status+'：'+(body?.detail||raw.slice(0,160)));
+    const expectedReceivedBytes=Math.min(file.size,(i+1)*chunkSize);
+    if(!body||body.chunk_index!==i||body.received_bytes!==expectedReceivedBytes||body.total_bytes!==file.size)throw Error('サーバーの受信確認が分割 '+(i+1)+'/'+total+' と一致しません。再開状態を確認してから再試行します。');
     succeeded=true;
    }catch(e){
     lastError=e;
