@@ -722,10 +722,13 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 hasVideo: true,
                 sourceVideoKey: 'new-video.mp4|4|456|video/mp4'
             }];
+            const flagCheck = await reconcileRestoredVideoFlags(state);
             const output = document.getElementById('videoIntegrityResult');
             await scanSavedVideoIntegrity();
             return {
                 text: output.textContent,
+                flagCheck,
+                hasVideo: state.clips[0].hasVideo,
                 playableCount: Number((output.textContent.match(/再生テスト（(\\d+)本）/) || [])[1] || -1),
                 storedStillExists: !!(await getClipVideo('identity-mismatch'))?.blob
             };
@@ -733,6 +736,8 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertIn("識別不一致 1件", result["text"])
         self.assertIn("old-video.mp4", result["text"])
         self.assertEqual(result["playableCount"], 0, result)
+        self.assertFalse(result["hasVideo"], result)
+        self.assertTrue(result["flagCheck"]["ok"], result)
         self.assertTrue(result["storedStillExists"], result)
 
 
