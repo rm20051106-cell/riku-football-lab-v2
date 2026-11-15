@@ -2037,6 +2037,17 @@ async def complete_match_upload(upload_id: str, background_tasks: BackgroundTask
     # A client may lose the HTTP response after the job was queued. Return the
     # original job on retry instead of creating duplicate analysis work.
     completed_job_id = completed_match_uploads.get(upload_id)
+    if not completed_job_id:
+        # The in-memory cache is lost on process restart. Completed job manifests
+        # retain upload_id, so recover the original job instead of accepting a
+        # duplicate analysis for an upload that has already been finalized.
+        completed_job_id = next(
+            (job_id for job_id, job in match_jobs.items()
+             if job.get("upload_id") == upload_id),
+            None,
+        )
+        if completed_job_id:
+            completed_match_uploads[upload_id] = completed_job_id
     if completed_job_id:
         job = match_jobs.get(completed_job_id)
         if job:
