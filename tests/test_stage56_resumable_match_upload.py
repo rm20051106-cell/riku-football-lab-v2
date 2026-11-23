@@ -41,6 +41,9 @@ def load_upload_status_helper(upload_id, upload_state):
             self.status_code = status_code
             self.detail = detail
 
+    # The extracted helper is unit-tested without importing FastAPI's app/router.
+    # Strip the route decorator so compilation does not evaluate @app.get(...).
+    node.decorator_list = []
     module = ast.Module(body=[node], type_ignores=[])
     namespace = {"match_uploads": {upload_id: upload_state}, "HTTPException": HTTPExceptionStub}
     exec(compile(module, "<stage56-upload-status>", "exec"), namespace)
@@ -458,7 +461,7 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn("crypto.subtle.digest('SHA-256',bytes)", HTML)
         self.assertIn("saved.contentFingerprint===identity.contentFingerprint", HTML)
         self.assertIn("&&/^[a-f0-9]{64}$/.test(saved.contentFingerprint)", HTML)
-        self.assertIn("const contentFingerprint=await getVideoContentFingerprint(file)", HTML)
+        self.assertIn("contentFingerprint=await getVideoContentFingerprint(file,12*1024*1024", HTML)
 
     def test_resume_rejects_mismatched_or_corrupt_identity_before_reusing_session(self):
         html = (ROOT / "index.html").read_text(encoding="utf-8")
