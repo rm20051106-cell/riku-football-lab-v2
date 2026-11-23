@@ -37,7 +37,7 @@ class Stage64PoseInferenceLatencyTests(unittest.TestCase):
         for key in ("pose_inference_sample_count", "pose_inference_p50_seconds", "pose_inference_p95_seconds", "pose_inference_max_seconds"):
             self.assertIn('"' + key + '"', run_job)
         endpoint = BACKEND[BACKEND.index('@app.get("/analyze/jobs/{job_id}")'):BACKEND.index('@app.post("/analyze/jobs/{job_id}/highlights")')]
-        self.assertIn('payload["result"] = job["result"]', endpoint)
+        self.assertIn('payload["result"] = json.loads(json.dumps(job.get("result") or {}, ensure_ascii=False))', endpoint)
 
     def test_frontend_displays_count_and_all_latency_percentiles(self):
         for key in (
