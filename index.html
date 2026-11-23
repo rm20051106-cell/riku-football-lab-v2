@@ -1541,7 +1541,9 @@ async function uploadMatchVideoInChunks(file, jerseyNumbers, resultElement){
   try{await clearPendingMatchUpload()}catch(error){console.warn('破損した再開情報を削除できません',error)}
   saved=null;
  }
- if(saved&&saved.sourceKey===identity.sourceKey&&saved.size===identity.size&&normalizeJerseyNumbers(saved.jerseyNumbers)===identity.jerseyNumbers&&saved.contentFingerprint===identity.contentFingerprint){
+ const savedIdentityMatches=!!saved&&saved.sourceKey===identity.sourceKey&&saved.size===identity.size&&normalizeJerseyNumbers(saved.jerseyNumbers)===identity.jerseyNumbers&&saved.contentFingerprint===identity.contentFingerprint;
+ if(saved&&!savedIdentityMatches){console.warn('保存済みアップロードの動画識別情報が一致しないため再利用しません。',{sourceKeyMatches:saved.sourceKey===identity.sourceKey,sizeMatches:saved.size===identity.size,jerseyNumbersMatch:normalizeJerseyNumbers(saved.jerseyNumbers)===identity.jerseyNumbers,fingerprintMatches:saved.contentFingerprint===identity.contentFingerprint,savedSize:saved.size,selectedSize:identity.size,savedSourceKey:saved.sourceKey,selectedSourceKey:identity.sourceKey,savedJerseyNumbers:saved.jerseyNumbers,selectedJerseyNumbers:identity.jerseyNumbers});}
+ if(savedIdentityMatches){
   resultElement.textContent='前回のアップロード状態を確認しています…';
   let statusResponse;
   try{statusResponse=await fetch(api+'/analyze/match/uploads/'+encodeURIComponent(saved.uploadId),{method:'GET',credentials:'omit',cache:'no-store'})}
