@@ -653,10 +653,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         page.locator("#videoImportFiles").set_input_files([
             str(good_video), str(missing_record_video)
         ])
-        page.wait_for_function(
-            "document.getElementById('videoImportProgressText')?.textContent.includes('復元処理が終了')",
-            timeout=10000,
-        )
+        self.wait_for_stage48_restore()
         result = page.evaluate("""async () => ({
             hasGoodVideo: state.clips[0].hasVideo,
             goodBytes: (await getClipVideo('batch-good'))?.blob?.size || 0,
@@ -776,10 +773,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         }, ensure_ascii=False), encoding="utf-8")
 
         page.locator("#videoImportFiles").set_input_files(str(video_path))
-        page.wait_for_function(
-            "document.getElementById('videoImportProgressText')?.textContent.includes('復元処理が終了')",
-            timeout=10000,
-        )
+        self.wait_for_stage48_restore()
         self.assertEqual(page.evaluate("lastVideoImportFiles.length"), 1)
         self.assertEqual(page.evaluate("state.clips.length"), 0)
 
@@ -814,10 +808,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         )
 
         page.locator("#videoImportFiles").set_input_files(str(video_path))
-        page.wait_for_function(
-            "document.getElementById('videoImportProgressText')?.textContent.includes('復元処理が終了')",
-            timeout=10000,
-        )
+        self.wait_for_stage48_restore()
         repeated = page.evaluate("""async () => ({
             count: state.clips.length,
             bytes: (await getClipVideo('restore-order-1'))?.blob?.size || 0,
@@ -2453,7 +2444,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         match_video.write_bytes(self.video_path.read_bytes())
         form_video.write_bytes(self.video_path.read_bytes())
         page.locator("#videoImportFiles").set_input_files([str(match_video),str(form_video)])
-        page.wait_for_function("document.getElementById('videoImportProgressText')?.textContent.includes('すべての動画の復元が完了')", timeout=10000)
+        self.wait_for_stage48_restore()
         result = page.evaluate("""async () => ({
             clipBytes:(await getClipVideo('early-clip'))?.blob?.size || 0,
             formBytes:(await getClipVideo('form-early-form'))?.blob?.size || 0,
@@ -2491,7 +2482,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         good.write_bytes(self.video_path.read_bytes())
         pending.write_bytes(self.video_path.read_bytes())
         page.locator("#videoImportFiles").set_input_files([str(good),str(pending)])
-        page.wait_for_function("document.getElementById('videoImportProgressText')?.textContent.includes('復元処理が終了')")
+        self.wait_for_stage48_restore()
         first = page.evaluate("""async () => ({
             goodSize:(await getClipVideo('partial-existing'))?.blob?.size || 0,
             retryNames:lastVideoImportFiles.map(f=>f.name),
@@ -2523,7 +2514,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         page.locator("#importFile").set_input_files(str(backup_path))
         page.wait_for_function("state.clips.length===2 && state.matchAnalyses.length===2")
         page.locator("#videoImportRetry").click()
-        page.wait_for_function("document.getElementById('videoImportProgressText')?.textContent.includes('すべての動画の復元が完了')", timeout=10000)
+        self.wait_for_stage48_restore()
         result = page.evaluate("""async () => ({
             retryCount:lastVideoImportFiles.length,
             firstBytes:(await getClipVideo('partial-existing'))?.blob?.size || 0,
