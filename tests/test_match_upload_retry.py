@@ -625,12 +625,18 @@ class MatchUploadRetryTests(unittest.TestCase):
                     page.wait_for_function(
                         "typeof uploadMatchVideoInChunks === 'function' && typeof getPendingMatchUpload === 'function'"
                     )
-                    page.set_input_files("#videoFile", {
-                        "name": "restart-resume.mp4",
-                        "mimeType": "video/mp4",
-                        "buffer": b"\x00" * (12 * 1024 * 1024 + 1),
-                        "last_modified": 12345
-                    })
+                    page.evaluate("""() => {
+                        const file = new File(
+                            [new Uint8Array(12 * 1024 * 1024 + 1)],
+                            'restart-resume.mp4',
+                            {type: 'video/mp4', lastModified: 12345}
+                        );
+                        const transfer = new DataTransfer();
+                        transfer.items.add(file);
+                        const input = document.getElementById('videoFile');
+                        input.files = transfer.files;
+                        input.dispatchEvent(new Event('change', {bubbles: true}));
+                    }""")
                     result = page.evaluate("""async () => {
                         await pendingMatchSave;
                         const file = document.getElementById('videoFile').files[0];
