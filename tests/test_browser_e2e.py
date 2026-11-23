@@ -1858,20 +1858,20 @@ class RikuBrowserE2ETests(unittest.TestCase):
                                   body=json.dumps({"ok": True}))
                 elif path == "/analyze/match/uploads" and request.method == "POST":
                     counters["created"] += 1
-                    size = request.post_data_json["size_bytes"]
-                    chunk_size = 6 * 1024 * 1024
+                    counters["size"] = request.post_data_json["size_bytes"]
+                    counters["chunk_size"] = 6 * 1024 * 1024
                     route.fulfill(status=201, headers=headers, content_type="application/json",
                                   body=json.dumps({"ok": True, "upload_id": "webkit-upload",
-                                                   "chunk_size": chunk_size,
-                                                   "total_chunks": (size + chunk_size - 1) // chunk_size}))
+                                                   "chunk_size": counters["chunk_size"],
+                                                   "total_chunks": (counters["size"] + counters["chunk_size"] - 1) // counters["chunk_size"]}))
                 elif path.startswith("/analyze/match/uploads/webkit-upload/") and request.method == "PUT":
                     counters["chunks"] += 1
                     index = int(path.rsplit("/", 1)[-1])
-                    received_bytes = min(size, (index + 1) * chunk_size)
+                    received_bytes = min(counters["size"], (index + 1) * counters["chunk_size"])
                     route.fulfill(status=200, headers=headers, content_type="application/json",
                                   body=json.dumps({"ok": True, "chunk_index": index,
                                                    "received_bytes": received_bytes,
-                                                   "total_bytes": size}))
+                                                   "total_bytes": counters["size"]}))
                 elif path == "/analyze/match/uploads/webkit-upload/complete" and request.method == "POST":
                     counters["completed"] += 1
                     route.fulfill(status=202, headers=headers, content_type="application/json",
