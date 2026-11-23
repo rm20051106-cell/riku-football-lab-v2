@@ -779,6 +779,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             }
         }, ensure_ascii=False), encoding="utf-8")
 
+        page.locator('.nav button[data-view="settings"]').click()
         page.locator("#videoImportFiles").set_input_files(str(video_path))
         self.wait_for_stage48_restore()
         self.assertEqual(page.evaluate("lastVideoImportFiles.length"), 1)
@@ -2410,6 +2411,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         }
         backup_path = self.temp_path / "late-video-json.json"
         backup_path.write_text(json.dumps(backup, ensure_ascii=False), encoding="utf-8")
+        page.locator('.nav button[data-view="settings"]').click()
         page.locator("#importFile").set_input_files(str(backup_path))
         page.wait_for_function("state.clips.some(x=>x.id==='late-clip') && state.matchAnalyses.some(x=>x.id==='late-match')")
         self.assertEqual(page.evaluate("lastVideoImportFiles.length"), 1)
@@ -2528,6 +2530,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         }
         backup_path = self.temp_path / "partial-video-json.json"
         backup_path.write_text(json.dumps(backup, ensure_ascii=False), encoding="utf-8")
+        page.locator('.nav button[data-view="settings"]').click()
         page.locator("#importFile").set_input_files(str(backup_path))
         page.wait_for_function("state.clips.length===2 && state.matchAnalyses.length===2")
         page.locator("#videoImportRetry").click()
