@@ -133,9 +133,9 @@ class FrontendDataFlowContracts(unittest.TestCase):
             self.assertIn(token, HTML)
 
     def test_corrupt_backup_does_not_replace_current_local_data(self):
-        self.assertIn("const previousState=state,previousStoredState=localStorage.getItem(KEY)", HTML)
+        self.assertIn("const previousState=state;let previousStoredState=null,storedSnapshotReady=false", HTML)
         self.assertIn("throw Error('バックアップの内容が書き出し後に変更・破損した可能性があります。現在の記録を保護するため復元を中止しました')", HTML)
-        self.assertIn("state=previousState;try{if(previousStoredState!==null)localStorage.setItem(KEY,previousStoredState)", HTML)
+        self.assertIn("state=previousState;let rollbackSucceeded=storedSnapshotReady", HTML)
 
     def test_positioning_review_uses_safe_persist_and_rolls_back(self):
         start = HTML.index("function updateMatchPositioning(")
@@ -196,8 +196,8 @@ class FrontendDataFlowContracts(unittest.TestCase):
         self.assertIn("backupVersion:3,recordCounts:", HTML)
         self.assertIn("バックアップ目録と一致しません", HTML)
         self.assertIn("if(isAppBackup&&parsed.backupVersion>3)", HTML)
-        self.assertIn("restored.aiFormAnalyses||[]).forEach(analysis=>", HTML)
-        self.assertIn("analysis.matchId=String(match.id)", HTML)
+        self.assertIn("reconcileRestoredAnalysisLinks(restored)", HTML)
+        self.assertIn("matches.forEach(match=>", HTML)
 
     def test_weekly_adjustment_includes_position_decision_training_candidate(self):
         self.assertIn("const positionPlan=getPositionDecisionTrainingPlan()", HTML)
@@ -264,12 +264,13 @@ class FrontendDataFlowContracts(unittest.TestCase):
         self.assertIn("stateSha256", backup_export)
         self.assertIn("videoFilesIncluded:false", backup_export)
         self.assertIn("state", backup_export)
-        self.assertIn("const previousState=state,previousStoredState=localStorage.getItem(KEY)", backup_import)
+        self.assertIn("const previousState=state;let previousStoredState=null,storedSnapshotReady=false", backup_import)
         self.assertIn("state=previousState", backup_import)
         self.assertIn("previousStoredState!==null", backup_import)
-        self.assertIn("analysis.matchId=String(match.id)", backup_import)
-        self.assertIn("match.aiFormAnalysisIds.push(analysis.id)", backup_import)
-        self.assertIn("localStorage.setItem(KEY,serialized);state=restored;renderAll()", backup_import)
+        self.assertIn("reconcileRestoredAnalysisLinks(restored)", backup_import)
+        self.assertIn("addReverse(match,'aiFormAnalysisIds',analysis.id)", HTML)
+        self.assertIn("localStorage.setItem(KEY,serialized);if(localStorage.getItem(KEY)!==serialized)", backup_import)
+        self.assertIn("state=restored;renderAll()", backup_import)
 
 
     def test_stage18_forecast_uses_robust_median_and_displays_uncertainty(self):
