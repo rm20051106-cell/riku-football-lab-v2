@@ -270,6 +270,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         result = page.evaluate("""async () => {
             const requests = [];
             state.settings.apiBaseUrl = 'https://api.test';
+            const totalBytes = document.getElementById('videoFile').files[0].size;
             window.getPendingMatchUpload = async () => {
                 throw new DOMException('simulated IndexedDB unavailable', 'QuotaExceededError');
             };
@@ -281,12 +282,19 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 requests.push({url: String(url), method});
                 if (method === 'POST' && String(url).endsWith('/uploads')) {
                     return new Response(JSON.stringify({
-                        upload_id: 'quota-fallback-upload',
+                        ok: true, upload_id: 'quota-fallback-upload',
                         chunk_size: 8,
-                        total_chunks: 3
+                        total_chunks: Math.ceil(totalBytes / 8)
+                    }), {status: 201, headers: {'Content-Type': 'application/json'}});
+                }
+                if (method === 'PUT') {
+                    const index = Number(String(url).split('/').pop());
+                    return new Response(JSON.stringify({
+                        ok: true, chunk_index: index,
+                        received_bytes: Math.min(totalBytes, (index + 1) * 8),
+                        total_bytes: totalBytes
                     }), {status: 200, headers: {'Content-Type': 'application/json'}});
                 }
-                if (method === 'PUT') return new Response('{}', {status: 200});
                 if (method === 'POST' && String(url).endsWith('/complete')) {
                     return new Response(JSON.stringify({job_id: 'quota-fallback-job'}), {
                         status: 200, headers: {'Content-Type': 'application/json'}
@@ -1463,6 +1471,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             state.settings.apiBaseUrl = 'https://upload.test';
             const received = [];
             const initPayloads = [];
+            const uploadSizes = {};
             let completed = 0;
             let activeUploadId = '';
             window.fetch = async (url, options = {}) => {
@@ -1471,6 +1480,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     const payload = JSON.parse(options.body);
                     initPayloads.push(payload);
                     activeUploadId = 'synthetic-' + initPayloads.length;
+                    uploadSizes[activeUploadId] = payload.size_bytes;
                     return new Response(JSON.stringify({
                         ok: true, upload_id: activeUploadId, chunk_size: 6 * 1024 * 1024,
                         total_chunks: Math.ceil(payload.size_bytes / (6 * 1024 * 1024))
@@ -1480,9 +1490,11 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 if (chunk && options.method === 'PUT') {
                     const part = options.body.get('file');
                     received.push({upload: chunk[1], index: Number(chunk[2]), size: part.size});
-                    return new Response(JSON.stringify({ok: true}), {
-                        status: 200, headers: {'Content-Type': 'application/json'}
-                    });
+                    return new Response(JSON.stringify({
+                        ok: true, chunk_index: Number(chunk[2]),
+                        received_bytes: Math.min(uploadSizes[chunk[1]], (Number(chunk[2]) + 1) * (6 * 1024 * 1024)),
+                        total_bytes: uploadSizes[chunk[1]]
+                    }), {status: 200, headers: {'Content-Type': 'application/json'}});
                 }
                 if (path.endsWith('/complete') && options.method === 'POST') {
                     completed++;
