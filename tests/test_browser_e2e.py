@@ -1773,7 +1773,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             }""")
             page.reload(wait_until="load")
             page.wait_for_function("typeof uploadMatchVideoInChunks === 'function'")
-            counters = {"status": 0, "created": 0, "puts": [], "putMarkerBytes": 0, "completed": 0}
+            counters = {"status": 0, "created": 0, "puts": [], "completed": 0}
             def mock_api(route):
                 request = route.request
                 if not request.url.startswith("https://riku-resume-mock.invalid/"):
@@ -1807,16 +1807,26 @@ class RikuBrowserE2ETests(unittest.TestCase):
                                   body=json.dumps({"detail":"unexpected request: "+path}))
             page.route("**/*", mock_api)
             result = page.evaluate("""async () => {
+                const originalFetch = window.fetch.bind(window);
+                window.__resumePutPartSizes = [];
+                window.fetch = async (url, options = {}) => {
+                    if (String(url).endsWith('/uploads/resume-upload/1') && options.method === 'PUT') {
+                        const part = options.body instanceof FormData ? options.body.get('file') : null;
+                        window.__resumePutPartSizes.push(part?.size || 0);
+                    }
+                    return originalFetch(url, options);
+                };
                 const stored = await getClipVideo('__pending_match_video__');
                 if (!stored || !(stored.blob instanceof Blob)) throw new Error('saved source video missing after reload');
                 const file = new File([stored.blob], stored.name, {type:stored.type, lastModified:stored.lastModified});
                 const response = await uploadMatchVideoInChunks(file, '10,74', document.getElementById('matchAiResult'));
-                return {jobId:response.job_id,size:file.size,pending:await getPendingMatchUpload()};
+                return {jobId:response.job_id,size:file.size,pending:await getPendingMatchUpload(),putPartSizes:window.__resumePutPartSizes};
             }""")
             self.assertEqual(result["jobId"], "resume-job", result)
             self.assertEqual(result["size"], original["size"], result)
             self.assertIsNone(result["pending"], result)
-            self.assertEqual(counters, {"status":1,"created":0,"puts":[1],"putMarkerBytes":23,"completed":1})
+            self.assertEqual(counters, {"status":1,"created":0,"puts":[1],"completed":1})
+            self.assertEqual(result["putPartSizes"], [23], result)
         finally:
             context.close()
             browser.close()
