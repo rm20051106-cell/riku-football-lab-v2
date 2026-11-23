@@ -71,6 +71,12 @@ class RikuBrowserE2ETests(unittest.TestCase):
     def accept_dialogs(self):
         self.page.on("dialog", lambda dialog: dialog.accept())
 
+    def wait_for_stage48_restore(self, timeout=30000):
+        self.page.wait_for_function("""() => {
+            const text = document.getElementById('stage48Status')?.textContent || '';
+            return /全動画の復元とSHA-256照合が完了|完了（一部失敗）|安全停止した動画があります|再開対象がありません/.test(text);
+        }""", timeout=timeout)
+
     def test_pwa_manifest_service_worker_and_offline_shell(self):
         page = self.page
         manifest = page.evaluate("""async () => {
@@ -580,10 +586,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         wrong_video.write_bytes(b"wrong-size")
         page.once("dialog", lambda dialog: dialog.accept())
         page.locator("#videoImportFiles").set_input_files(str(wrong_video))
-        page.wait_for_function(
-            "document.getElementById('videoImportProgressText')?.textContent.includes('復元処理が終了')",
-            timeout=10000,
-        )
+        self.wait_for_stage48_restore()
         result = page.evaluate("""async () => ({
             hasVideo: state.clips[0].hasVideo,
             stored: await getClipVideo('import-identity-1')
@@ -638,14 +641,14 @@ class RikuBrowserE2ETests(unittest.TestCase):
         page.evaluate("""() => {
             state.clips = [{
                 id: 'batch-good', title: '正常動画', hasVideo: false,
-                sourceVideoKey: 'good.mp4|4|123|video/mp4'
+                sourceVideoKey: ''
             }];
             persist();
         }""")
         good_video = self.temp_path / "riku-video__batch-good__good.mp4"
         missing_record_video = self.temp_path / "riku-video__missing-record__lost.mp4"
-        good_video.write_bytes(b"good")
-        missing_record_video.write_bytes(b"lost")
+        good_video.write_bytes(self.video_path.read_bytes())
+        missing_record_video.write_bytes(self.video_path.read_bytes())
         page.once("dialog", lambda dialog: dialog.accept())
         page.locator("#videoImportFiles").set_input_files([
             str(good_video), str(missing_record_video)
@@ -662,7 +665,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             retryButtonVisible: getComputedStyle(document.getElementById('videoImportRetry')).display !== 'none'
         })""")
         self.assertTrue(result["hasGoodVideo"], result)
-        self.assertEqual(result["goodBytes"], 4, result)
+        self.assertEqual(result["goodBytes"], self.video_path.stat().st_size, result)
         self.assertEqual(result["retryCount"], 1, result)
         self.assertEqual(
             result["retryNames"], ["riku-video__missing-record__lost.mp4"], result
@@ -753,7 +756,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         page = self.page
         self.accept_dialogs()
         video_path = self.temp_path / "riku-video__restore-order-1__order.mp4"
-        video_path.write_bytes(b"video")
+        video_path.write_bytes(self.video_path.read_bytes())
         backup_path = self.temp_path / "restore-order.json"
         backup_path.write_text(json.dumps({
             "backupFormat": "riku-football-lab",
@@ -766,7 +769,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 "clips": [{
                     "id": "restore-order-1", "title": "順序確認",
                     "hasVideo": True,
-                    "sourceVideoKey": "order.mp4|5|123|video/mp4"
+                    "sourceVideoKey": ""
                 }],
                 "forms": [], "matchAnalyses": [], "aiFormAnalyses": []
             }
@@ -794,7 +797,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             count: state.clips.length,
             bytes: (await getClipVideo('restore-order-1'))?.blob?.size || 0
         })""")
-        self.assertEqual(first_restore, {"count": 1, "bytes": 5})
+        self.assertEqual(first_restore, {"count": 1, "bytes": self.video_path.stat().st_size})
 
         page.locator("#importFile").set_input_files(str(backup_path))
         page.wait_for_function(
@@ -807,7 +810,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             bytes: (await getClipVideo('restore-order-1'))?.blob?.size || 0
         })""")
         self.assertEqual(
-            repeated_json, {"count": 1, "hasVideo": True, "bytes": 5}
+            repeated_json, {"count": 1, "hasVideo": True, "bytes": self.video_path.stat().st_size}
         )
 
         page.locator("#videoImportFiles").set_input_files(str(video_path))
@@ -2236,15 +2239,15 @@ class RikuBrowserE2ETests(unittest.TestCase):
     def test_reimporting_same_video_backup_twice_skips_without_duplicate_storage(self):
         page = self.page
         page.evaluate("""() => {
-            state.clips = [{id:'repeat-video', title:'同一動画', hasVideo:false, sourceVideoKey:'repeat.mp4|4|123|video/mp4'}];
+            state.clips = [{id:'repeat-video', title:'同一動画', hasVideo:false}];
             state.forms = []; persist();
         }""")
         video = self.temp_path / "riku-video__repeat-video__repeat.mp4"
-        video.write_bytes(b"same")
+        video.write_bytes(self.video_path.read_bytes())
         for _ in range(2):
             page.once("dialog", lambda dialog: dialog.accept())
             page.locator("#videoImportFiles").set_input_files(str(video))
-            page.wait_for_function("document.getElementById('videoImportProgressText')?.textContent.includes('復元処理が終了') || document.getElementById('videoImportProgressText')?.textContent.includes('すべての動画')")
+            self.wait_for_stage48_restore()
         result = page.evaluate("""async () => {
             const stored = await getClipVideo('repeat-video');
             const db = await openVideoDB();
@@ -2259,7 +2262,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             } finally { db.close(); }
         }""")
         self.assertTrue(result["hasVideo"], result)
-        self.assertEqual(result["size"], 4, result)
+        self.assertEqual(result["size"], self.video_path.stat().st_size, result)
         self.assertEqual(result["count"], 1, result)
 
     def test_backup_diagnostics_report_duplicate_video_keys_and_dangling_links_read_only(self):
@@ -2375,9 +2378,9 @@ class RikuBrowserE2ETests(unittest.TestCase):
         page = self.page
         self.accept_dialogs()
         video = self.temp_path / "riku-video__late-clip__late-match.mp4"
-        video.write_bytes(b"late")
+        video.write_bytes(self.video_path.read_bytes())
         page.locator("#videoImportFiles").set_input_files(str(video))
-        page.wait_for_function("document.getElementById('videoImportProgressText')?.textContent.includes('復元処理が終了')")
+        self.wait_for_stage48_restore()
         pending = page.evaluate("""() => ({
             count:lastVideoImportFiles.length,
             name:lastVideoImportFiles[0]?.name,
@@ -2403,7 +2406,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         page.wait_for_function("state.clips.some(x=>x.id==='late-clip') && state.matchAnalyses.some(x=>x.id==='late-match')")
         self.assertEqual(page.evaluate("lastVideoImportFiles.length"), 1)
         page.locator("#videoImportRetry").click()
-        page.wait_for_function("document.getElementById('videoImportProgressText')?.textContent.includes('すべての動画の復元が完了')", timeout=10000)
+        self.wait_for_stage48_restore()
         result = page.evaluate("""async () => ({
             retryCount:lastVideoImportFiles.length,
             videoSize:(await getClipVideo('late-clip'))?.blob?.size || 0,
@@ -2416,7 +2419,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             matchReverse:state.matchAnalyses[0].aiFormAnalysisIds
         })""")
         self.assertEqual(result["retryCount"], 0, result)
-        self.assertEqual(result["videoSize"], 4, result)
+        self.assertEqual(result["videoSize"], self.video_path.stat().st_size, result)
         self.assertTrue(result["hasVideo"], result)
         self.assertEqual(result["clipLink"], "late-clip", result)
         self.assertEqual(result["clipReverse"], ["late-match"], result)
@@ -2447,8 +2450,8 @@ class RikuBrowserE2ETests(unittest.TestCase):
         page.wait_for_function("state.clips.some(x=>x.id==='early-clip') && state.forms.some(x=>x.id==='early-form')")
         match_video = self.temp_path / "riku-video__early-clip__match.mp4"
         form_video = self.temp_path / "riku-video__form-early-form__form.mp4"
-        match_video.write_bytes(b"match")
-        form_video.write_bytes(b"form")
+        match_video.write_bytes(self.video_path.read_bytes())
+        form_video.write_bytes(self.video_path.read_bytes())
         page.locator("#videoImportFiles").set_input_files([str(match_video),str(form_video)])
         page.wait_for_function("document.getElementById('videoImportProgressText')?.textContent.includes('すべての動画の復元が完了')", timeout=10000)
         result = page.evaluate("""async () => ({
@@ -2462,8 +2465,8 @@ class RikuBrowserE2ETests(unittest.TestCase):
             formReverse:state.forms[0].aiAnalysisIds,
             matchReverse:state.matchAnalyses[0].aiFormAnalysisIds
         })""")
-        self.assertEqual(result["clipBytes"], 5, result)
-        self.assertEqual(result["formBytes"], 4, result)
+        self.assertEqual(result["clipBytes"], self.video_path.stat().st_size, result)
+        self.assertEqual(result["formBytes"], self.video_path.stat().st_size, result)
         self.assertTrue(result["clipHasVideo"], result)
         self.assertTrue(result["formHasVideo"], result)
         self.assertEqual(result["matchClipId"], "early-clip", result)
@@ -2485,8 +2488,8 @@ class RikuBrowserE2ETests(unittest.TestCase):
         }""")
         good = self.temp_path / "riku-video__partial-existing__good.mp4"
         pending = self.temp_path / "riku-video__partial-later__later.mp4"
-        good.write_bytes(b"good")
-        pending.write_bytes(b"later")
+        good.write_bytes(self.video_path.read_bytes())
+        pending.write_bytes(self.video_path.read_bytes())
         page.locator("#videoImportFiles").set_input_files([str(good),str(pending)])
         page.wait_for_function("document.getElementById('videoImportProgressText')?.textContent.includes('復元処理が終了')")
         first = page.evaluate("""async () => ({
@@ -2494,7 +2497,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             retryNames:lastVideoImportFiles.map(f=>f.name),
             goodFlag:state.clips[0].hasVideo
         })""")
-        self.assertEqual(first["goodSize"], 4, first)
+        self.assertEqual(first["goodSize"], self.video_path.stat().st_size, first)
         self.assertTrue(first["goodFlag"], first)
         self.assertEqual(first["retryNames"], ["riku-video__partial-later__later.mp4"], first)
         backup = {
@@ -2531,8 +2534,8 @@ class RikuBrowserE2ETests(unittest.TestCase):
             aiReverse:state.matchAnalyses[1].aiFormAnalysisIds
         })""")
         self.assertEqual(result["retryCount"], 0, result)
-        self.assertEqual(result["firstBytes"], 4, result)
-        self.assertEqual(result["secondBytes"], 5, result)
+        self.assertEqual(result["firstBytes"], self.video_path.stat().st_size, result)
+        self.assertEqual(result["secondBytes"], self.video_path.stat().st_size, result)
         self.assertEqual(result["flags"], [True,True], result)
         self.assertEqual(result["matchLinks"], ["partial-existing","partial-later"], result)
         self.assertEqual(result["aiMatch"], "partial-match-later", result)
