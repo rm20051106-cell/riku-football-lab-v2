@@ -276,7 +276,9 @@ class RikuBrowserE2ETests(unittest.TestCase):
         result = page.evaluate("""async () => {
             const requests = [];
             state.settings.apiBaseUrl = 'https://api.test';
-            const totalBytes = document.getElementById('videoFile').files[0].size;
+            const uploadFile = new File([new Uint8Array(12 * 1024 * 1024 + 1)], 'quota-large.mp4', {type:'video/mp4'});
+            const totalBytes = uploadFile.size;
+            const chunkSize = 6 * 1024 * 1024;
             window.getPendingMatchUpload = async () => {
                 throw new DOMException('simulated IndexedDB unavailable', 'QuotaExceededError');
             };
@@ -289,15 +291,15 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 if (method === 'POST' && String(url).endsWith('/uploads')) {
                     return new Response(JSON.stringify({
                         ok: true, upload_id: 'quota-fallback-upload',
-                        chunk_size: 8,
-                        total_chunks: Math.ceil(totalBytes / 8)
+                        chunk_size: chunkSize,
+                        total_chunks: Math.ceil(totalBytes / chunkSize)
                     }), {status: 201, headers: {'Content-Type': 'application/json'}});
                 }
                 if (method === 'PUT') {
                     const index = Number(String(url).split('/').pop());
                     return new Response(JSON.stringify({
                         ok: true, chunk_index: index,
-                        received_bytes: Math.min(totalBytes, (index + 1) * 8),
+                        received_bytes: Math.min(totalBytes, (index + 1) * chunkSize),
                         total_bytes: totalBytes
                     }), {status: 200, headers: {'Content-Type': 'application/json'}});
                 }
@@ -309,7 +311,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 return new Response('{}', {status: 404});
             };
             const output = document.createElement('div');
-            const completed = await uploadMatchVideoInChunks(videoFile.files[0], '10,74', output);
+            const completed = await uploadMatchVideoInChunks(uploadFile, '10,74', output);
             return {
                 jobId: completed.job_id,
                 putCount: requests.filter(x => x.method === 'PUT').length,
@@ -857,7 +859,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             "trainings": [], "measures": [], "clips": [], "forms": []
         }, ensure_ascii=False), encoding="utf-8")
         messages = []
-        page.once("dialog", lambda dialog: (messages.append(dialog.message), dialog.accept()))
+        page.on("dialog", lambda dialog: (messages.append(dialog.message), dialog.accept()))
         page.locator("#importFile").set_input_files(str(backup_path))
         page.wait_for_function("document.getElementById('importFile').value === ''", timeout=10000)
         after = page.evaluate("""() => {
@@ -1396,7 +1398,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual(result["matchIds"], ["9601"], result)
         self.assertEqual(result["links"], ["9601:linked-event"], result)
         self.assertFalse(result["sourceDeleted"], result)
-        self.assertIn("元の状態に戻しました", result["alert"])
+        self.assertIn("削除を取り消しました", result["alert"])
 
 
     def test_webkit_settings_backup_export_and_restore_interaction(self):
@@ -2116,13 +2118,13 @@ class RikuBrowserE2ETests(unittest.TestCase):
             const restored = {
                 clips: [{id:'clip-a', sourceVideoKey:'same-source', matchAnalysisIds:[]}, {id:'clip-b', sourceVideoKey:'same-source', matchAnalysisIds:[]}],
                 forms: [],
-                matches: [{id:'match-a', sourceVideoKey:'same-source'}],
+                matchAnalyses: [{id:'match-a', sourceVideoKey:'same-source'}],
                 analyses: []
             };
             const links = reconcileRestoredAnalysisLinks(restored);
             const duplicateIdRestore = reconcileRestoredAnalysisLinks({
                 clips: [{id:'same-id', sourceVideoKey:'one', matchAnalysisIds:[]}, {id:'same-id', sourceVideoKey:'one', matchAnalysisIds:[]}],
-                forms: [], matches: [{id:'match-b', clipId:'same-id', sourceVideoKey:'one'}], analyses:[]
+                forms: [], matchAnalyses: [{id:'match-b', clipId:'same-id', sourceVideoKey:'one'}], aiFormAnalyses:[]
             });
             return {links, duplicateIdRestore};
         }""")
