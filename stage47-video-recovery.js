@@ -37,6 +37,10 @@
     const record = (isForm ? state.forms : state.clips).find(row => String(row.id) === String(id));
     if (!record) throw new Error(file.name + "：対応する分析記録がありません。先にJSONバックアップを読み込んでください");
     if (!(file instanceof Blob) || !Number(file.size)) throw new Error(file.name + "：動画ファイルが空です");
+    if (typeof validateRestoredVideoIdentity === "function") {
+      const identity = validateRestoredVideoIdentity(record.sourceVideoKey, name, file.size, file.type);
+      if (!identity.ok) throw new Error(file.name + "：" + identity.reason + "。別動画の誤登録を防ぐため復元しません");
+    }
     return { file, key, name, record, kind: isForm ? "フォーム分析" : "プレー分析" };
   }
 
