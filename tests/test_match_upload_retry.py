@@ -636,6 +636,24 @@ class MatchUploadRetryTests(unittest.TestCase):
                         const file = document.getElementById('videoFile').files[0];
                         const restored = await getPendingMatchUpload();
                         const sourceKey = getVideoSourceKey(file);
+                        const selectedFingerprint = await getVideoContentFingerprint(file);
+                        const identityDiagnostics = {
+                            sourceKeyMatches: restored?.sourceKey === sourceKey,
+                            sizeMatches: restored?.size === file.size,
+                            lastModifiedMatches: restored?.lastModified === file.lastModified,
+                            jerseyNumbersMatch: restored?.jerseyNumbers === '10,74',
+                            fingerprintMatches: restored?.contentFingerprint === selectedFingerprint,
+                            restoredSourceKey: restored?.sourceKey || null,
+                            selectedSourceKey: sourceKey,
+                            restoredSize: restored?.size ?? null,
+                            selectedSize: file.size,
+                            restoredLastModified: restored?.lastModified ?? null,
+                            selectedLastModified: file.lastModified
+                        };
+                        if (!identityDiagnostics.sourceKeyMatches || !identityDiagnostics.sizeMatches ||
+                            !identityDiagnostics.jerseyNumbersMatch || !identityDiagnostics.fingerprintMatches) {
+                            throw new Error('Saved resume identity mismatch: ' + JSON.stringify(identityDiagnostics));
+                        }
                         const putIndexes = [];
                         const putSizes = [];
                         let checkpointAtFirstPut = null;
