@@ -107,7 +107,7 @@
       await yieldUI();
     }
     const work=job.items.filter(item=>byKey.has(stableKey(item))&&item.status!=="done"&&item.status!=="blocked"&&(retryOnly?item.status==="failed":true));
-    if(!work.length){const blockedCount=job.items.filter(item=>item.status==="blocked").length;report(job,"復元チェックポイント確認結果");status(blockedCount?"安全停止した動画があります。既存動画を確認し、必要な場合だけ手動で整理してください。":"再開対象がありません。中断した動画ファイルを選び直してください。");active=false;return true;}
+    if(!work.length){const blockedCount=job.items.filter(item=>item.status==="blocked").length;lastVideoImportFiles=[];const retryButton=document.getElementById("videoImportRetry");if(retryButton)retryButton.style.display="none";report(job,"復元チェックポイント確認結果");status(blockedCount?"安全停止した動画があります。既存動画を確認し、必要な場合だけ手動で整理してください。":"再開対象がありません。中断した動画ファイルを選び直してください。");active=false;return true;}
     saveJob(job);
     try{
       // Hash every selected source first. The existing Stage 47 batch transaction then
