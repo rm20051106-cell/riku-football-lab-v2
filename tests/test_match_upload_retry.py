@@ -543,7 +543,6 @@ class MatchUploadRetryTests(unittest.TestCase):
                                     checkpointAtFirstPut = saved?.nextChunk ?? null;
                                     checkpointChunkSizeAtFirstPut = saved?.chunkSize ?? null;
                                 }
-                                const index = Number(path.split('/').pop());
                                 return new Response(JSON.stringify({
                                     ok: true, chunk_index: index,
                                     received_bytes: Math.min(file.size, (index + 1) * (12 * 1024 * 1024)),
