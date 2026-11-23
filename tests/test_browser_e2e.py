@@ -72,10 +72,15 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.page.on("dialog", lambda dialog: dialog.accept())
 
     def wait_for_stage48_restore(self, timeout=30000):
-        self.page.wait_for_function("""() => {
+        terminal = "全動画の復元とSHA-256照合が完了|完了（一部失敗）|安全停止した動画があります|再開対象がありません";
+        self.page.wait_for_function("""(terminal) => {
             const text = document.getElementById('stage48Status')?.textContent || '';
-            return /全動画の復元とSHA-256照合が完了|完了（一部失敗）|安全停止した動画があります|再開対象がありません/.test(text);
-        }""", timeout=timeout)
+            return !!text && !new RegExp(terminal).test(text);
+        }""", arg=terminal, timeout=timeout)
+        self.page.wait_for_function("""(terminal) => {
+            const text = document.getElementById('stage48Status')?.textContent || '';
+            return new RegExp(terminal).test(text);
+        }""", arg=terminal, timeout=timeout)
 
     def test_pwa_manifest_service_worker_and_offline_shell(self):
         page = self.page
