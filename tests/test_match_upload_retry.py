@@ -645,7 +645,7 @@ class MatchUploadRetryTests(unittest.TestCase):
                         window.fetch = async (url, options = {}) => {
                             const path = new URL(url).pathname;
                             if (path === '/analyze/match/uploads/restart-session' &&
-                                options.method === 'GET') {
+                                (!options.method || options.method === 'GET')) {
                                 statusChecks++;
                                 return new Response(JSON.stringify({
                                     upload_id: 'restart-session',
