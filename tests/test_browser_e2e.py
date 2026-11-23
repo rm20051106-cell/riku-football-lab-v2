@@ -822,7 +822,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             bytes: (await getClipVideo('restore-order-1'))?.blob?.size || 0,
             retryCount: lastVideoImportFiles.length
         })""")
-        self.assertEqual(repeated, {"count": 1, "bytes": 5, "retryCount": 0})
+        self.assertEqual(repeated, {"count": 1, "bytes": self.video_path.stat().st_size, "retryCount": 0})
 
 
     def test_invalid_json_restore_preserves_current_state_and_storage(self):
