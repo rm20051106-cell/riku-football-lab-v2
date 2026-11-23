@@ -605,11 +605,13 @@ function reconcileRestoredAnalysisLinks(restored){
  clips.forEach(clip=>{clip.matchAnalysisIds=Array.isArray(clip.matchAnalysisIds)?clip.matchAnalysisIds:[]});
  forms.forEach(form=>{form.aiAnalysisIds=Array.isArray(form.aiAnalysisIds)?form.aiAnalysisIds:[]});
  matches.forEach(match=>{
-  if(ids.matches.get(String(match.id))!==1)return;
+  // Ambiguous owner IDs or clip IDs must never retain stale references.
+  if(ids.matches.get(String(match.id))!==1){match.clipId=null;match.videoStorageKey=null;return;}
   const explicit=match.clipId?uniqueById(clips,match.clipId,ids.clips):null;
   const candidate=uniqueBySource(clips,match.sourceVideoKey,ids.clips);
+  // An explicit but ambiguous/mismatched clipId blocks source-key fallback.
   const clip=match.clipId?(explicit&&(!match.sourceVideoKey||explicit.sourceVideoKey===match.sourceVideoKey)?explicit:null):candidate;
-  if(!clip)return;
+  if(!clip){match.clipId=null;match.videoStorageKey=null;return;}
   match.clipId=String(clip.id);match.videoStorageKey=String(clip.id);addReverse(clip,'matchAnalysisIds',match.id);
  });
  analyses.forEach(analysis=>{
@@ -618,10 +620,12 @@ function reconcileRestoredAnalysisLinks(restored){
   const formCandidate=uniqueBySource(forms,analysis.sourceVideoKey,ids.forms);
   const form=analysis.formId?(explicitForm&&(!analysis.sourceVideoKey||explicitForm.sourceVideoKey===analysis.sourceVideoKey)?explicitForm:null):formCandidate;
   if(form){analysis.formId=String(form.id);analysis.videoStorageKey=form.hasVideo?'form-'+form.id:null;addReverse(form,'aiAnalysisIds',analysis.id)}
+  else if(analysis.formId){analysis.formId=null;analysis.videoStorageKey=null;}
   const explicitMatch=analysis.matchId?uniqueById(matches,analysis.matchId,ids.matches):null;
   const matchCandidate=uniqueBySource(matches,analysis.sourceVideoKey,ids.matches);
   const match=analysis.matchId?(explicitMatch&&(!analysis.sourceVideoKey||explicitMatch.sourceVideoKey===analysis.sourceVideoKey)?explicitMatch:null):matchCandidate;
   if(match){analysis.matchId=String(match.id);analysis.matchTitle=String(match.title||'試合');analysis.matchDate=String(match.date||'');analysis.matchClipId=match.clipId?String(match.clipId):null;addReverse(match,'aiFormAnalysisIds',analysis.id)}
+  else if(analysis.matchId){analysis.matchId=null;analysis.matchClipId=null;}
  });
  return {clips,forms,matches,analyses};
 }
