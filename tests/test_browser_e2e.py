@@ -1242,7 +1242,23 @@ class RikuBrowserE2ETests(unittest.TestCase):
         page.evaluate("renderMatchLibrary()")
         self.assertIn("端末内動画を再生", page.locator("#matchLibrary").inner_text())
         page.get_by_role("button", name="端末内動画を再生").first.click()
-        page.wait_for_function("document.getElementById('matchVideo').readyState >= 2", timeout=10000)
+        page.wait_for_function(
+            "() => { const v = document.getElementById('matchVideo'); return v.readyState >= 2 || !!v.error; }",
+            timeout=15000,
+        )
+        playback_diagnostics = page.evaluate("""async () => {
+            const v = document.getElementById('matchVideo');
+            const saved = await getClipVideo(state.clips[0].id);
+            return {
+                readyState: v.readyState, networkState: v.networkState,
+                errorCode: v.error?.code || null, errorMessage: v.error?.message || null,
+                currentSrc: v.currentSrc, videoMeta: document.getElementById('videoMeta').textContent,
+                saved: saved ? {size: saved.blob?.size, type: saved.blob?.type,
+                    storageFormat: saved.storageFormat, chunkCount: saved.chunkCount,
+                    name: saved.name} : null
+            };
+        }""")
+        self.assertGreaterEqual(playback_diagnostics["readyState"], 2, playback_diagnostics)
 
 
     def test_positioning_summary_and_weekly_plan_use_only_confirmed_manual_reviews(self):
@@ -1679,26 +1695,30 @@ class RikuBrowserE2ETests(unittest.TestCase):
         page = self.page
         self.accept_dialogs()
         api_base = "https://restore-match-job-mock.invalid"
-        page.route(api_base + "/**", lambda route: route.fulfill(
-            status=200,
-            headers={"Access-Control-Allow-Origin": "*"},
-            content_type="application/json",
-            body=json.dumps(
-                {"ok": True} if route.request.url.endswith("/health") else {
-                    "status": "completed", "progress": 100, "stage": "完了",
-                    "result": {
-                        "job_id": "restore-job-123",
-                        "requested_jersey_numbers": "10,74",
-                        "summary": {
-                            "duration_seconds": 1200, "sampled_pose_frames": 0,
-                            "frames": [], "candidate_events": [], "feedback": [],
-                            "person_detection_summary": {}, "person_track_summary": {},
-                            "jersey_ocr_summary": {}
+        job_requests = []
+        def mock_restore_job(route):
+            job_requests.append({"method": route.request.method, "url": route.request.url})
+            route.fulfill(
+                status=200,
+                headers={"Access-Control-Allow-Origin": "*"},
+                content_type="application/json",
+                body=json.dumps(
+                    {"ok": True} if route.request.url.endswith("/health") else {
+                        "job_id": "restore-job-123", "status": "completed", "progress": 100, "stage": "完了",
+                        "result": {
+                            "job_id": "restore-job-123",
+                            "requested_jersey_numbers": "10,74",
+                            "summary": {
+                                "duration_seconds": 1200, "sampled_pose_frames": 0,
+                                "frames": [], "candidate_events": [], "feedback": [],
+                                "person_detection_summary": {}, "person_track_summary": {},
+                                "jersey_ocr_summary": {}
+                            }
                         }
-                    }
-                },
-            ),
-        ))
+                    },
+                ),
+            )
+        page.route(api_base + "/**", mock_restore_job)
         metadata = page.evaluate("""async (apiBase) => {
             state.matchAnalyses = [];
             state.settings.apiBaseUrl = apiBase;
@@ -1715,9 +1735,17 @@ class RikuBrowserE2ETests(unittest.TestCase):
         }""", api_base)
         page.reload(wait_until="load")
         page.wait_for_function(
-            "() => document.getElementById('matchAiResult').textContent.includes('全編スキャンが完了しました')",
-            timeout=20000,
+            "() => { const t = document.getElementById('matchAiResult').textContent; return t.includes('全編スキャンが完了しました') || t.includes('試合動画の解析に失敗：'); }",
+            timeout=25000,
         )
+        restore_diagnostics = page.evaluate("""async () => ({
+            text: document.getElementById('matchAiResult').textContent,
+            apiBaseUrl: state.settings.apiBaseUrl,
+            pending: await getPendingMatchJob(),
+            savedMatches: state.matchAnalyses.length
+        })""")
+        self.assertIn("全編スキャンが完了しました", restore_diagnostics["text"],
+                      {"diagnostics": restore_diagnostics, "requests": job_requests})
         self.assertIn("このAI解析結果を履歴に保存", page.locator("#matchAiResult").inner_text())
         # A local persistence failure must not discard the only recoverable job pointer.
         page.evaluate("""() => {
