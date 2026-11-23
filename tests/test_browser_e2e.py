@@ -652,8 +652,8 @@ class RikuBrowserE2ETests(unittest.TestCase):
             }];
             persist();
         }""")
-        good_video = self.temp_path / "riku-video__batch-good__good.mp4"
-        missing_record_video = self.temp_path / "riku-video__missing-record__lost.mp4"
+        good_video = self.temp_path / "riku-video__batch-good__good.webm"
+        missing_record_video = self.temp_path / "riku-video__missing-record__lost.webm"
         good_video.write_bytes(self.video_path.read_bytes())
         missing_record_video.write_bytes(self.video_path.read_bytes())
         page.once("dialog", lambda dialog: dialog.accept())
@@ -672,7 +672,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual(result["goodBytes"], self.video_path.stat().st_size, result)
         self.assertEqual(result["retryCount"], 1, result)
         self.assertEqual(
-            result["retryNames"], ["riku-video__missing-record__lost.mp4"], result
+            result["retryNames"], ["riku-video__missing-record__lost.webm"], result
         )
         self.assertTrue(result["retryButtonVisible"], result)
 
@@ -759,7 +759,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
     def test_video_first_restore_can_retry_after_json_and_repeat_safely(self):
         page = self.page
         self.accept_dialogs()
-        video_path = self.temp_path / "riku-video__restore-order-1__order.mp4"
+        video_path = self.temp_path / "riku-video__restore-order-1__order.webm"
         video_path.write_bytes(self.video_path.read_bytes())
         backup_path = self.temp_path / "restore-order.json"
         backup_path.write_text(json.dumps({
@@ -1622,7 +1622,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             })
             page.get_by_role("button", name="AIサーバーで動画解析").click()
             page.wait_for_function(
-                "() => document.getElementById('matchAiResult').textContent.includes('全編スキャンが完了しました')",
+                "() => document.querySelector('#matchAiResult button')?.textContent.includes('このAI解析結果を履歴に保存')",
                 timeout=30000,
             )
             self.assertTrue(page.locator("#video").evaluate("(el) => el.classList.contains('active')"))
@@ -2250,7 +2250,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             state.clips = [{id:'repeat-video', title:'同一動画', hasVideo:false}];
             state.forms = []; persist();
         }""")
-        video = self.temp_path / "riku-video__repeat-video__repeat.mp4"
+        video = self.temp_path / "riku-video__repeat-video__repeat.webm"
         video.write_bytes(self.video_path.read_bytes())
         for _ in range(2):
             page.once("dialog", lambda dialog: dialog.accept())
@@ -2385,7 +2385,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         import json
         page = self.page
         self.accept_dialogs()
-        video = self.temp_path / "riku-video__late-clip__late-match.mp4"
+        video = self.temp_path / "riku-video__late-clip__late-match.webm"
         video.write_bytes(self.video_path.read_bytes())
         page.locator("#videoImportFiles").set_input_files(str(video))
         self.wait_for_stage48_restore()
@@ -2456,8 +2456,8 @@ class RikuBrowserE2ETests(unittest.TestCase):
         backup_path.write_text(json.dumps(backup, ensure_ascii=False), encoding="utf-8")
         page.locator("#importFile").set_input_files(str(backup_path))
         page.wait_for_function("state.clips.some(x=>x.id==='early-clip') && state.forms.some(x=>x.id==='early-form')")
-        match_video = self.temp_path / "riku-video__early-clip__match.mp4"
-        form_video = self.temp_path / "riku-video__form-early-form__form.mp4"
+        match_video = self.temp_path / "riku-video__early-clip__match.webm"
+        form_video = self.temp_path / "riku-video__form-early-form__form.webm"
         match_video.write_bytes(self.video_path.read_bytes())
         form_video.write_bytes(self.video_path.read_bytes())
         page.locator("#videoImportFiles").set_input_files([str(match_video),str(form_video)])
@@ -2494,8 +2494,8 @@ class RikuBrowserE2ETests(unittest.TestCase):
             state.aiFormAnalyses=[];
             persist();
         }""")
-        good = self.temp_path / "riku-video__partial-existing__good.mp4"
-        pending = self.temp_path / "riku-video__partial-later__later.mp4"
+        good = self.temp_path / "riku-video__partial-existing__good.webm"
+        pending = self.temp_path / "riku-video__partial-later__later.webm"
         good.write_bytes(self.video_path.read_bytes())
         pending.write_bytes(self.video_path.read_bytes())
         page.locator("#videoImportFiles").set_input_files([str(good),str(pending)])
@@ -2507,7 +2507,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         })""")
         self.assertEqual(first["goodSize"], self.video_path.stat().st_size, first)
         self.assertTrue(first["goodFlag"], first)
-        self.assertEqual(first["retryNames"], ["riku-video__partial-later__later.mp4"], first)
+        self.assertEqual(first["retryNames"], ["riku-video__partial-later__later.webm"], first)
         backup = {
             "backupFormat":"riku-football-lab", "backupVersion":3,
             "videoFilesIncluded":False,
