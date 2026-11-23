@@ -438,7 +438,7 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn("checkpointChunkSizeAtFirstPut", retry_test)
         self.assertIn("checkpointTotalChunksAtFirstPut", retry_test)
         self.assertIn("self.assertEqual(result[\"restoredChunkSize\"], 6 * 1024 * 1024, result)", retry_test)
-        self.assertIn("self.assertEqual(result[\"putIndexes\"], [1], result)")
+        self.assertIn("self.assertEqual(result[\"putIndexes\"], [1], result)", retry_test)
         self.assertIn("self.assertEqual(result[\"checkpointAtFirstPut\"], 1, result)", retry_test)
 
 
