@@ -258,7 +258,7 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn("if not persist_match_job_state(job_id, match_jobs[job_id]):", SOURCE)
         self.assertIn("status_code=507", SOURCE)
         self.assertIn("動画の受信データは保持しています", SOURCE)
-        self.assertIn('"next_chunk": upload_state["next_chunk"]', SOURCE)
+        self.assertIn('"next_chunk": next_chunk', SOURCE)
         self.assertIn('"chunk_size": chunk_size', SOURCE)
         self.assertIn('createdTotalChunks!==Math.ceil(file.size/createdChunkSize)', HTML)
         self.assertIn('serverReceivedBytes=Number(status.received_bytes)', HTML)
@@ -375,7 +375,7 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn("method:'GET',credentials:'omit',cache:'no-store'", upload)
         self.assertIn("currentChunkSize=Number(current.chunk_size)", upload)
         self.assertIn("currentChunkSize!==chunkSize", upload)
-        self.assertIn("nextChunk=Number(current.next_chunk)", upload)
+        self.assertIn("currentNextChunk=Number(current.next_chunk)", upload)
         self.assertIn("再開情報が送信中に変化しました", upload)
 
     def test_resume_detects_local_server_checkpoint_mismatch_and_syncs_to_server(self):
@@ -457,7 +457,7 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn("async function getVideoContentFingerprint(file,chunkSize=12*1024*1024,onProgress", HTML)
         self.assertIn("crypto.subtle.digest('SHA-256',bytes)", HTML)
         self.assertIn("saved.contentFingerprint===identity.contentFingerprint", HTML)
-        self.assertIn("!/^[a-f0-9]{64}$/.test(saved.contentFingerprint)", HTML)
+        self.assertIn("&&/^[a-f0-9]{64}$/.test(saved.contentFingerprint)", HTML)
         self.assertIn("const contentFingerprint=await getVideoContentFingerprint(file)", HTML)
 
     def test_resume_rejects_mismatched_or_corrupt_identity_before_reusing_session(self):
