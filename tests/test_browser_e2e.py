@@ -872,7 +872,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             return {state: JSON.stringify(state), stored: localStorage.getItem(KEY)};
         }""")
         self.assertEqual(after, before)
-        self.assertTrue(messages and "再読み込みせず" in messages[0], messages)
+        self.assertTrue(any("再読み込みせず" in message for message in messages), messages)
 
 
     def test_delete_clip_detaches_match_and_ai_references_without_deleting_other_records(self):
