@@ -176,7 +176,7 @@
       const done=job.items.filter(item=>item.status==="done").length;
       lastVideoImportFiles=failedItems.map(item=>byKey.get(stableKey(item))).filter(Boolean);
       const retryButton=document.getElementById("videoImportRetry");
-      if(retryButton){retryButton.style.display=failed?"inline-flex":"none";if(failed)retryButton.textContent="失敗した動画を再試行（"+failed+"本）";}
+      if(retryButton){retryButton.style.display=failed?"inline-flex":"none";if(failed)retryButton.textContent="失敗した動画をJSON復元後に再試行（"+failed+"本）";}
       const skipped=job.items.filter(item=>item.status==="done"&&item.duplicate===true).length;
       const imported=done-skipped;
       if(!pending && !paused){
