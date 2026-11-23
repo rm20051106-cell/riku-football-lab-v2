@@ -53,6 +53,7 @@
   async function run(files, retryOnly){
     if(active || !files?.length) return true;
     active=true;paused=false;selectedFiles=[...files];panel();
+    lastVideoImportFiles=[...files];
     // iOS/Safari may assign a different lastModified when the same backup is selected again.
     // Locate checkpoints by filename + size, then use SHA-256 to prove the bytes are identical.
     const stableKey=value=>value.name+"|"+value.size;
@@ -169,9 +170,13 @@
       }
       job.updatedAt=new Date().toISOString();saveJob(job);
       const pending=job.items.some(item=>item.status==="pending"||item.status==="verifying");
-      const failed=job.items.filter(item=>item.status==="failed").length;
+      const failedItems=job.items.filter(item=>item.status==="failed"&&byKey.has(stableKey(item)));
+      const failed=failedItems.length;
       const blocked=job.items.filter(item=>item.status==="blocked").length;
       const done=job.items.filter(item=>item.status==="done").length;
+      lastVideoImportFiles=failedItems.map(item=>byKey.get(stableKey(item))).filter(Boolean);
+      const retryButton=document.getElementById("videoImportRetry");
+      if(retryButton){retryButton.style.display=failed?"inline-flex":"none";if(failed)retryButton.textContent="失敗した動画を再試行（"+failed+"本）";}
       const skipped=job.items.filter(item=>item.status==="done"&&item.duplicate===true).length;
       const imported=done-skipped;
       if(!pending && !paused){
@@ -193,6 +198,12 @@
   window.pauseStage48Restore=()=>{paused=true;};
   window.runStage48VideoRestore=files=>run(files,false);
   window.retryStage48FailedVideos=files=>run(files,true);
+  if(typeof window.retryFailedVideoImport==="function"){
+    window.retryFailedVideoImport=async function(){
+      const retry=[...lastVideoImportFiles];
+      if(retry.length) await run(retry,true);
+    };
+  }
   window.addEventListener("change",event=>{
     if(event.target?.id!=="videoImportFiles")return;
     const files=[...(event.target.files||[])];if(!files.length)return;
