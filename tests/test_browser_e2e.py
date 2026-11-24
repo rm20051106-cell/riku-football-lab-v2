@@ -1749,7 +1749,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         }""", api_base)
         page.reload(wait_until="load")
         page.wait_for_timeout(6000)
-        restore_diagnostics = page.evaluate("""async () => ({
+        restore_diagnostics = page.evaluate("""async (diagnostics) => ({
             text: document.getElementById('matchAiResult').textContent,
             apiBaseUrl: state.settings.apiBaseUrl,
             pending: await getPendingMatchJob(),
@@ -1760,9 +1760,9 @@ class RikuBrowserE2ETests(unittest.TestCase):
             restoreDiagnostics: window.__matchRestoreDiagnostics || null,
             restoreFunctionType: typeof resumePendingMatchJob,
             resultElementCount: document.querySelectorAll('#matchAiResult').length,
-            pageErrors: ${json.dumps(page_errors)},
-            consoleErrors: ${json.dumps(console_errors)}
-        })""")
+            pageErrors: diagnostics.pageErrors,
+            consoleErrors: diagnostics.consoleErrors
+        })""", {"pageErrors": page_errors, "consoleErrors": console_errors})
         self.assertIn("全編スキャンが完了しました", restore_diagnostics["text"],
                       {"diagnostics": restore_diagnostics, "requests": job_requests})
         self.assertIn("このAI解析結果を履歴に保存", page.locator("#matchAiResult").inner_text())
