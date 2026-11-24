@@ -1728,6 +1728,10 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     },
                 ),
             )
+        page_errors = []
+        console_errors = []
+        page.on("pageerror", lambda error: page_errors.append(str(error)))
+        page.on("console", lambda message: console_errors.append(message.text) if message.type == "error" else None)
         page.route(api_base + "/**", mock_restore_job)
         metadata = page.evaluate("""async (apiBase) => {
             state.matchAnalyses = [];
@@ -1755,7 +1759,9 @@ class RikuBrowserE2ETests(unittest.TestCase):
             startupReady: document.readyState,
             restoreDiagnostics: window.__matchRestoreDiagnostics || null,
             restoreFunctionType: typeof resumePendingMatchJob,
-            resultElementCount: document.querySelectorAll('#matchAiResult').length
+            resultElementCount: document.querySelectorAll('#matchAiResult').length,
+            pageErrors: ${json.dumps(page_errors)},
+            consoleErrors: ${json.dumps(console_errors)}
         })""")
         self.assertIn("全編スキャンが完了しました", restore_diagnostics["text"],
                       {"diagnostics": restore_diagnostics, "requests": job_requests})
