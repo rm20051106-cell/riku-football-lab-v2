@@ -1828,7 +1828,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         }""")
         retry_button.click()
         page.wait_for_function("""async () => state.matchAnalyses.length === 1 && (await getPendingMatchJob()) === null""", timeout=10000)
-        saved = page.evaluate("""async () => {
+        saved = page.evaluate("""async (diagnostics) => {
             const persisted = JSON.parse(localStorage.getItem(KEY) || '{}');
             return {
                 count: state.matchAnalyses.length,
@@ -1840,11 +1840,11 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 savedId: document.getElementById('matchAiResult').dataset.savedId || null,
                 restoreDiagnostics: window.__matchRestoreDiagnostics || null,
                 saveTrace: window.__matchSaveTrace || [],
-                pageErrors: pageErrors,
-                consoleErrors: consoleErrors,
+                pageErrors: diagnostics.pageErrors,
+                consoleErrors: diagnostics.consoleErrors,
                 historyText: document.getElementById('matchScanRecords').innerText
             };
-        }""")
+        }""", {"pageErrors": page_errors, "consoleErrors": console_errors})
         self.assertEqual(saved["count"], 1, saved)
         self.assertEqual(saved["savedId"], str(saved["record"]["id"]), saved)
         self.assertEqual(saved["record"]["jobId"], "restore-job-123", saved)
