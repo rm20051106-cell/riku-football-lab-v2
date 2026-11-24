@@ -6,7 +6,7 @@ on:
       - feature/stage56-resumable-long-video-upload-20261105
 
 concurrency:
-  group: stage56-video-form-quality-v7-\${{ github.ref }}
+  group: stage56-video-form-quality-v7-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
