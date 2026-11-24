@@ -1195,7 +1195,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         page.locator("#videoTitle").fill("同一動画の試合分析")
         page.locator("#videoFile").set_input_files(str(self.video_path))
         page.evaluate("pendingMatchSave")
-        page.evaluate("""() => {
+        page.evaluate("""async () => {
             window.alert = () => {};
             const result = {
                 requested_jersey_numbers: "10,74",
@@ -1849,7 +1849,9 @@ class RikuBrowserE2ETests(unittest.TestCase):
             };
         }""")
         retry_button.click()
-        page.wait_for_function("""async () => state.matchAnalyses.length === 1 && (await getPendingMatchJob()) === null""", timeout=10000)
+        page.wait_for_function("""async () => state.matchAnalyses.length === 1 &&
+            (window.__matchSaveTrace || []).some(item => item.op === 'clear-end') &&
+            (await getPendingMatchJob()) === null""", timeout=15000)
         saved = page.evaluate("""async (diagnostics) => {
             const persisted = JSON.parse(localStorage.getItem(KEY) || '{}');
             return {
