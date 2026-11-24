@@ -1802,13 +1802,20 @@ class RikuBrowserE2ETests(unittest.TestCase):
         }""")
         retry_button.click()
         page.wait_for_function("""async () => state.matchAnalyses.length === 1 && (await getPendingMatchJob()) === null""", timeout=10000)
-        saved = page.evaluate("""async () => ({
-            count: state.matchAnalyses.length,
-            record: state.matchAnalyses[0],
-            pending: await getPendingMatchJob(),
-            savedId: document.getElementById('matchAiResult').dataset.savedId || null,
-            historyText: document.getElementById('matchScanRecords').innerText
-        })""")
+        saved = page.evaluate("""async () => {
+            const persisted = JSON.parse(localStorage.getItem(KEY) || '{}');
+            return {
+                count: state.matchAnalyses.length,
+                stateMatchIds: (state.matchAnalyses || []).map(row => row.id),
+                persistedCount: (persisted.matchAnalyses || []).length,
+                persistedMatchIds: (persisted.matchAnalyses || []).map(row => row.id),
+                record: state.matchAnalyses[0] || null,
+                pending: await getPendingMatchJob(),
+                savedId: document.getElementById('matchAiResult').dataset.savedId || null,
+                restoreDiagnostics: window.__matchRestoreDiagnostics || null,
+                historyText: document.getElementById('matchScanRecords').innerText
+            };
+        }""")
         self.assertEqual(saved["count"], 1, saved)
         self.assertEqual(saved["savedId"], str(saved["record"]["id"]), saved)
         self.assertEqual(saved["record"]["jobId"], "restore-job-123", saved)
