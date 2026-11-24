@@ -1806,6 +1806,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             count: state.matchAnalyses.length,
             record: state.matchAnalyses[0],
             pending: await getPendingMatchJob(),
+            savedId: document.getElementById('matchAiResult').dataset.savedId || null,
             historyText: document.getElementById('matchScanRecords').innerText
         })""")
         self.assertEqual(saved["count"], 1, saved)
