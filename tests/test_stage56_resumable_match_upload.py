@@ -347,7 +347,9 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn("pendingJob?.filename||'試合動画'", HTML)
         self.assertIn("二重登録は行いません", HTML)
         self.assertIn("この解析ジョブの結果は履歴に保存済みです", HTML)
-        self.assertIn("renderAll();try{await clearPendingMatchJob()}", HTML)
+        self.assertIn("try{renderAll()}catch(renderError)", HTML)
+        self.assertIn("try{await clearPendingMatchJob()}", HTML)
+        self.assertLess(HTML.index("try{renderAll()}catch(renderError)"), HTML.index("try{await clearPendingMatchJob()}", HTML.index("async function saveMatchScanResult()")))
         self.assertIn("existingJob?.apiBaseUrl||getApiUrl()", HTML)
         self.assertIn("await clearPendingMatchJob()", HTML)
         status_helper = HTML.split("async function fetchMatchJobStatusWithRetry", 1)[1].split(
