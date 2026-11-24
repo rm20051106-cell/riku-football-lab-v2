@@ -4886,8 +4886,8 @@ videoFile.addEventListener('change',()=>{
 let pendingFormSave=Promise.resolve(null);formFile.addEventListener('change',()=>{let f=formFile.files[0];if(!f)return;const phaseStatus=document.getElementById('formPhaseMarkerStatus');if(phaseStatus)phaseStatus.textContent='動画を読み込みました。AI解析後、節目を手動登録できます。';formVideo.src=URL.createObjectURL(f);pendingFormSave=storeClipVideo('__pending_form_video__',f).then(()=>f).catch(e=>{console.error('フォーム動画の仮保存失敗',e);return null})})
 formKind.addEventListener('change',renderChecks);
 load();renderChecks();renderAll();renderKickManualReview();if(typeof apiBaseUrl!=='undefined'){apiBaseUrl.value=state.settings.apiBaseUrl||'';apiStatus.textContent=state.settings.apiBaseUrl?'保存済み：'+state.settings.apiBaseUrl:'未設定'}
-// Start restoring immediately; IndexedDB readiness is handled by the bounded read retries above.
-void resumePendingMatchJob();
+// Restore only after the document load event, when the page and its persisted browser state are ready.
+window.addEventListener('load',()=>{void resumePendingMatchJob()},{once:true});
 </script>
 <script>
 if("serviceWorker" in navigator && window.isSecureContext){
