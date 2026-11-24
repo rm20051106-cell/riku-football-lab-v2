@@ -1210,7 +1210,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 }
             };
             document.getElementById("matchAiResult").dataset.result = JSON.stringify(result);
-            saveMatchScanResult();
+            await saveMatchScanResult();
         }""")
         self.assertEqual(page.evaluate("state.matchAnalyses.length"), 1)
         self.assertIsNone(page.evaluate("state.matchAnalyses[0].clipId"))
