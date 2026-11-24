@@ -339,7 +339,7 @@ class Stage56ResumableMatchUploadTests(unittest.TestCase):
         self.assertIn("async function clearPendingMatchJob()", HTML)
         self.assertIn("await savePendingMatchJob({jobId:body.job_id", HTML)
         self.assertIn("async function resumePendingMatchJob()", HTML)
-        self.assertIn("setTimeout(()=>resumePendingMatchJob(),800)", HTML)
+        self.assertIn("window.addEventListener('load',()=>{void resumePendingMatchJob()},{once:true})", HTML)
         self.assertIn("postMatchJobToAI(null,resultElement,{...pending,apiBaseUrl:savedBase})", HTML)
         self.assertIn("sourceKey:getVideoSourceKey(file)||String(existingJob?.sourceKey||'')", HTML)
         self.assertIn("sourceVideoKey:getVideoSourceKey(sourceFile)||String(pendingJob?.sourceKey||'')", HTML)
