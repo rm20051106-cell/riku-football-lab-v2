@@ -1798,7 +1798,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             window.persist = window.__originalMatchPersist;
             delete window.__originalMatchPersist;
         }""")
-        page.locator("#matchAiResult button").last.click()
+        page.locator("#matchAiResult button").last.evaluate("(button) => button.click()")
         saved = page.evaluate("""async () => ({
             count: state.matchAnalyses.length,
             record: state.matchAnalyses[0],
