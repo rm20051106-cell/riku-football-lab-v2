@@ -1241,11 +1241,19 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual(linked["savedVideoName"], "同一動画の端末保存", linked)
         page.evaluate("renderMatchLibrary()")
         self.assertIn("端末内動画を再生", page.locator("#matchLibrary").inner_text())
+        playback_events = []
+        page.evaluate("""() => {
+            const v = document.getElementById('matchVideo');
+            window.__savedPlaybackEvents = [];
+            ['loadstart','loadedmetadata','loadeddata','canplay','canplaythrough','error','abort','stalled','suspend'].forEach(name =>
+                v.addEventListener(name, () => window.__savedPlaybackEvents.push({
+                    name, readyState: v.readyState, networkState: v.networkState,
+                    errorCode: v.error?.code || null, currentSrc: v.currentSrc
+                }))
+            );
+        }""")
         page.get_by_role("button", name="端末内動画を再生").first.click()
-        page.wait_for_function(
-            "() => { const v = document.getElementById('matchVideo'); return v.readyState >= 2 || !!v.error; }",
-            timeout=15000,
-        )
+        page.wait_for_timeout(2500)
         playback_diagnostics = page.evaluate("""async () => {
             const v = document.getElementById('matchVideo');
             const saved = await getClipVideo(state.clips[0].id);
@@ -1253,6 +1261,8 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 readyState: v.readyState, networkState: v.networkState,
                 errorCode: v.error?.code || null, errorMessage: v.error?.message || null,
                 currentSrc: v.currentSrc, videoMeta: document.getElementById('videoMeta').textContent,
+                srcAssigned: !!v.src, paused: v.paused, duration: v.duration,
+                events: window.__savedPlaybackEvents || [],
                 saved: saved ? {size: saved.blob?.size, type: saved.blob?.type,
                     storageFormat: saved.storageFormat, chunkCount: saved.chunkCount,
                     name: saved.name} : null
@@ -1734,15 +1744,15 @@ class RikuBrowserE2ETests(unittest.TestCase):
             return {sourceKey, filename: source.name};
         }""", api_base)
         page.reload(wait_until="load")
-        page.wait_for_function(
-            "() => { const t = document.getElementById('matchAiResult').textContent; return t.includes('全編スキャンが完了しました') || t.includes('試合動画の解析に失敗：'); }",
-            timeout=25000,
-        )
+        page.wait_for_timeout(6000)
         restore_diagnostics = page.evaluate("""async () => ({
             text: document.getElementById('matchAiResult').textContent,
             apiBaseUrl: state.settings.apiBaseUrl,
             pending: await getPendingMatchJob(),
-            savedMatches: state.matchAnalyses.length
+            savedMatches: state.matchAnalyses.length,
+            requestSeen: performance.getEntriesByType('resource').map(x => x.name).filter(x => x.includes('restore-match-job-mock.invalid')),
+            settingsRaw: localStorage.getItem(KEY),
+            startupReady: document.readyState
         })""")
         self.assertIn("全編スキャンが完了しました", restore_diagnostics["text"],
                       {"diagnostics": restore_diagnostics, "requests": job_requests})
