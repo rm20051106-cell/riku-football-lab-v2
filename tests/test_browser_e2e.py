@@ -1570,6 +1570,18 @@ class RikuBrowserE2ETests(unittest.TestCase):
         page.evaluate("""() => {
             state.settings.apiBaseUrl = 'https://riku-upload-mock.invalid';
             persist();
+            window.__matchStatusFetchTrace = [];
+            const originalFetch = window.fetch.bind(window);
+            window.fetch = function(input, init) {
+                const url = typeof input === 'string' ? input : input?.url || '';
+                if (String(url).includes('/analyze/jobs/')) {
+                    window.__matchStatusFetchTrace.push({
+                        at: performance.now(), url: String(url),
+                        stack: String(new Error().stack || '').split('\\n').slice(0, 6)
+                    });
+                }
+                return originalFetch(input, init);
+            };
         }""")
 
         counters = {"created": 0, "chunks": 0, "completed": 0, "status": 0}
@@ -1800,6 +1812,16 @@ class RikuBrowserE2ETests(unittest.TestCase):
             window.persist = window.__originalMatchPersist;
             delete window.__originalMatchPersist;
             window.__matchSaveTrace = [];
+            window.__matchSaveSnapshots = [];
+            window.__matchSaveMonitor = setInterval(() => {
+                let stored = [];
+                try { stored = (JSON.parse(localStorage.getItem(KEY) || '{}').matchAnalyses || []).map(row => row.id); } catch (_) {}
+                window.__matchSaveSnapshots.push({
+                    at: performance.now(),
+                    ids: (state.matchAnalyses || []).map(row => row.id),
+                    stored
+                });
+            }, 250);
             const originalPersist = window.persist;
             window.persist = function() {
                 const before = (state.matchAnalyses || []).map(row => row.id);
@@ -1840,6 +1862,8 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 savedId: document.getElementById('matchAiResult').dataset.savedId || null,
                 restoreDiagnostics: window.__matchRestoreDiagnostics || null,
                 saveTrace: window.__matchSaveTrace || [],
+                saveSnapshots: window.__matchSaveSnapshots || [],
+                statusFetchTrace: window.__matchStatusFetchTrace || [],
                 pageErrors: diagnostics.pageErrors,
                 consoleErrors: diagnostics.consoleErrors,
                 historyText: document.getElementById('matchScanRecords').innerText
