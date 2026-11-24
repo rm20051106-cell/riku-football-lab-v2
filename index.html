@@ -1725,7 +1725,10 @@ async function postMatchJobToAI(file,resultElement,existingJob=null){
  }
 }
 async function resumePendingMatchJob(){
+ window.__matchRestoreDiagnostics=window.__matchRestoreDiagnostics||{calls:0};
+ window.__matchRestoreDiagnostics.calls++;
  const resultElement=document.getElementById('matchAiResult');
+ window.__matchRestoreDiagnostics.elementFound=!!resultElement;
  if(!resultElement)return;
  resultElement.textContent='保存済みの解析ジョブを確認しています…';
  try{
