@@ -1801,6 +1801,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             delete window.__originalMatchPersist;
         }""")
         retry_button.click()
+        page.wait_for_function("""async () => state.matchAnalyses.length === 1 && (await getPendingMatchJob()) === null""", timeout=10000)
         saved = page.evaluate("""async () => ({
             count: state.matchAnalyses.length,
             record: state.matchAnalyses[0],
