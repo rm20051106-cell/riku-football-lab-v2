@@ -1786,6 +1786,8 @@ class RikuBrowserE2ETests(unittest.TestCase):
             window.persist = () => false;
         }""")
         page.locator("#matchAiResult button").last.evaluate("(button) => button.click()")
+        retry_button = page.locator("#matchAiResult button").filter(has_text="保存を再試行")
+        retry_button.wait_for(state="visible", timeout=5000)
         failed_save = page.evaluate("""async () => ({
             count: state.matchAnalyses.length,
             savedId: document.getElementById('matchAiResult').dataset.savedId || null,
@@ -1798,7 +1800,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             window.persist = window.__originalMatchPersist;
             delete window.__originalMatchPersist;
         }""")
-        page.locator("#matchAiResult button").last.evaluate("(button) => button.click()")
+        retry_button.click()
         saved = page.evaluate("""async () => ({
             count: state.matchAnalyses.length,
             record: state.matchAnalyses[0],
