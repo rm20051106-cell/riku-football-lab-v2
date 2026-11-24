@@ -1752,7 +1752,10 @@ class RikuBrowserE2ETests(unittest.TestCase):
             savedMatches: state.matchAnalyses.length,
             requestSeen: performance.getEntriesByType('resource').map(x => x.name).filter(x => x.includes('restore-match-job-mock.invalid')),
             settingsRaw: localStorage.getItem(KEY),
-            startupReady: document.readyState
+            startupReady: document.readyState,
+            restoreDiagnostics: window.__matchRestoreDiagnostics || null,
+            restoreFunctionType: typeof resumePendingMatchJob,
+            resultElementCount: document.querySelectorAll('#matchAiResult').length
         })""")
         self.assertIn("全編スキャンが完了しました", restore_diagnostics["text"],
                       {"diagnostics": restore_diagnostics, "requests": job_requests})
