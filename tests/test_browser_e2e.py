@@ -1778,6 +1778,8 @@ class RikuBrowserE2ETests(unittest.TestCase):
             }))
         })""")
         self.assertTrue(button_diagnostics["buttons"], button_diagnostics)
+        self.assertTrue(any(button["visible"] for button in button_diagnostics["buttons"]),
+                        {"buttons": button_diagnostics, "activeVideo": page.locator("#video").get_attribute("class")})
         page.evaluate("""() => {
             window.__originalMatchPersist = window.persist;
             window.persist = () => false;
