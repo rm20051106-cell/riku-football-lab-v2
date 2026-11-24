@@ -727,7 +727,7 @@ function setCandidateTag(candidateId,field,value){
 }
 async function saveMatchScanResult(){
  const previousMatchAnalyses=JSON.parse(JSON.stringify(state.matchAnalyses||[])),previousClips=JSON.parse(JSON.stringify(state.clips||[])),previousTrainings=JSON.parse(JSON.stringify(state.trainings||[])),previousAiFormAnalyses=JSON.parse(JSON.stringify(state.aiFormAnalyses||[]));
- const raw=matchAiResult.dataset.result;
+ const raw=matchAiResult.dataset.result||window.__pendingMatchScanResult||'';
  if(!raw){alert('先にAI試合スキャンを完了してください');return}
  let result;try{result=JSON.parse(raw)}catch(e){alert('解析結果を読み取れませんでした');return}
  const pendingJob=await getPendingMatchJob().catch(error=>{console.warn('保存済み解析ジョブ情報の取得に失敗',error);return null});
@@ -746,7 +746,7 @@ async function saveMatchScanResult(){
  state.matchAnalyses.unshift(savedRecord);
  if(savedRecord.sourceVideoKey){const linkedClip=(state.clips||[]).find(clip=>clip.sourceVideoKey===savedRecord.sourceVideoKey);if(linkedClip)connectMatchAnalysisToClip(savedRecord,linkedClip);(state.aiFormAnalyses||[]).filter(analysis=>analysis.sourceVideoKey===savedRecord.sourceVideoKey).forEach(analysis=>connectAiFormAnalysisToMatch(analysis,savedRecord));}
  savedRecord.candidateEvents.forEach(ev=>syncTrainingMatchEventLink(savedRecord,ev));
- if(!persist()){state.matchAnalyses=previousMatchAnalyses;state.clips=previousClips;state.trainings=previousTrainings;state.aiFormAnalyses=previousAiFormAnalyses;matchAiResult.innerHTML='<div class="note">解析結果は保持されていますが、端末への履歴保存に失敗しました。既存の試合・動画・練習記録は変更していません。空き容量を確認し、もう一度保存してください。</div><button class="secondary small" type="button" onclick="saveMatchScanResult()">保存を再試行</button>';return}matchAiResult.dataset.savedId=String(id);try{renderAll()}catch(renderError){console.error('試合解析履歴の保存後の画面更新に失敗しました',renderError)}try{await clearPendingMatchJob()}catch(error){console.warn('保存済みジョブ情報の整理に失敗',error)}alert('AI試合スキャン結果を履歴に保存しました');
+ if(!persist()){state.matchAnalyses=previousMatchAnalyses;state.clips=previousClips;state.trainings=previousTrainings;state.aiFormAnalyses=previousAiFormAnalyses;window.__pendingMatchScanResult=raw;matchAiResult.innerHTML='<div class="note">解析結果は保持されていますが、端末への履歴保存に失敗しました。既存の試合・動画・練習記録は変更していません。空き容量を確認し、もう一度保存してください。</div><button class="secondary small" type="button" onclick="saveMatchScanResult()">保存を再試行</button>';return}matchAiResult.dataset.savedId=String(id);delete window.__pendingMatchScanResult;try{renderAll()}catch(renderError){console.error('試合解析履歴の保存後の画面更新に失敗しました',renderError)}try{await clearPendingMatchJob()}catch(error){console.warn('保存済みジョブ情報の整理に失敗',error)}alert('AI試合スキャン結果を履歴に保存しました');
 }
 function formatMatchTime(seconds){
  if(seconds==null||!Number.isFinite(Number(seconds)))return '時間不明';
