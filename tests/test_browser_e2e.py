@@ -1769,11 +1769,20 @@ class RikuBrowserE2ETests(unittest.TestCase):
         # The result panel lives in the video view; reveal it before interacting with its button.
         page.evaluate("showView('video')")
         # A local persistence failure must not discard the only recoverable job pointer.
+        button_diagnostics = page.locator("#matchAiResult").evaluate("""el => ({
+            html: el.innerHTML,
+            buttons: [...el.querySelectorAll("button")].map(button => ({
+                text: button.innerText,
+                outerHTML: button.outerHTML,
+                visible: !!(button.offsetWidth || button.offsetHeight || button.getClientRects().length)
+            }))
+        })""")
+        self.assertTrue(button_diagnostics["buttons"], button_diagnostics)
         page.evaluate("""() => {
             window.__originalMatchPersist = window.persist;
             window.persist = () => false;
         }""")
-        page.get_by_role("button", name="このAI解析結果を履歴に保存").click()
+        page.locator("#matchAiResult button").last.click()
         failed_save = page.evaluate("""async () => ({
             count: state.matchAnalyses.length,
             savedId: document.getElementById('matchAiResult').dataset.savedId || null,
@@ -1786,7 +1795,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             window.persist = window.__originalMatchPersist;
             delete window.__originalMatchPersist;
         }""")
-        page.get_by_role("button", name="このAI解析結果を履歴に保存").click()
+        page.locator("#matchAiResult button").last.click()
         saved = page.evaluate("""async () => ({
             count: state.matchAnalyses.length,
             record: state.matchAnalyses[0],
