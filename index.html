@@ -920,7 +920,7 @@ function renderMatchLibrary(){
   const idArg=Number.isFinite(Number(ev.id))?String(Number(ev.id)):"'"+String(ev.id).replace(/\\/g,"\\\\").replace(/'/g,"\\'")+"'";
   const status=isManuallyReviewedMatchEvent(ev)?'陸玖確認済み':ev.reviewLabel==='別の選手'?'別の選手':'未確認';
   const localClip=(state.clips||[]).find(clip=>String(clip.id)===String(match.clipId));
-  const localVideoButton=localClip?'<button class="secondary small" onclick="playSavedClip('+JSON.stringify(String(localClip.id))+','+(Number.isFinite(Number(ev.time))?Number(ev.time):'null')+')">端末内動画を再生</button>':'<span class="tiny muted">端末内動画との連携なし</span>';
+  const localVideoButton=localClip?'<button class="secondary small" onclick="playSavedClip('+Number(localClip.id)+','+(Number.isFinite(Number(ev.time))?Number(ev.time):'null')+')">端末内動画を再生</button>':'<span class="tiny muted">端末内動画との連携なし</span>';
   const canPick=isManuallyReviewedMatchEvent(ev)&&ev.assessment==='良かった'&&ev.clipAvailable&&ev.clipUrl&&match.jobId;
   return '<article class="listitem" style="display:block;margin-top:8px"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>'+formatMatchTime(ev.time)+'｜'+esc(ev.actionType||'分類未設定')+'</b><span class="tiny">'+esc(status)+'</span></div><div class="tiny muted">'+esc(match.date)+'｜'+esc(match.title)+'</div><div class="tiny">'+esc(ev.label||ev.reason||'動きの変化候補')+'</div>'+(ev.assessment&&ev.assessment!=='未選択'?'<div class="tiny">評価：'+esc(ev.assessment)+'</div>':'')+renderWeaponTrialReview(match,ev)+renderMatchImprovementSuggestion(match,ev)+(ev.note?'<div class="tiny muted">メモ：'+esc(ev.note)+'</div>':'')+(ev.clipAvailable&&ev.clipUrl?'<video controls playsinline preload="none" style="width:100%;max-width:520px;border-radius:10px;margin-top:8px" src="'+getApiUrl()+esc(ev.clipUrl)+'"></video><div class="tiny muted">切り抜き動画はサーバー一時保存です。大切な場面は再生後にiPhoneへ保存してください。</div>':'<div class="tiny muted">この場面の切り抜き動画はありません。元の試合記録から前後の映像を確認できます。</div>')+(canPick?'<label class="tiny" style="display:flex;align-items:center;gap:7px;margin:8px 0"><input class="cross-match-highlight-choice" type="checkbox" data-job-id="'+esc(match.jobId)+'" data-clip-id="'+esc(ev.id)+'">ベストプレー集に入れる</label>':'')+'<div class="btnrow"><button class="secondary small" onclick="openMatchEventInHistory('+Number(match.id)+','+idArg+')">元の試合記録を開く</button>'+localVideoButton+(ev.clipAvailable&&ev.clipUrl?'<span class="tiny muted">切り抜き再生は試合記録内</span>':'')+'</div></article>';
  }).join(''):'<div class="empty">条件に合う場面がありません。検索語や絞り込みを変えてみてね。</div>')+'<div class="tiny muted" style="margin-top:8px">場面候補はAIが抽出した動きの変化です。プレーの内容や陸玖本人かどうかは、映像を見て確認してください。複数試合の動画は、同じサーバー上に切り抜きが残っている場合に限り連結できます。</div>';
@@ -1725,11 +1725,25 @@ async function postMatchJobToAI(file,resultElement,existingJob=null){
  }
 }
 async function resumePendingMatchJob(){
+ const resultElement=document.getElementById('matchAiResult');
+ if(!resultElement)return;
+ resultElement.textContent='保存済みの解析ジョブを確認しています…';
  try{
-  const pending=await getPendingMatchJob();
-  if(!pending?.jobId)return;
-  const resultElement=document.getElementById('matchAiResult');
-  if(!resultElement)return;
+  // IndexedDB may still be opening immediately after a mobile Safari reload.
+  // Retry only the read; never overwrite or delete the pending job pointer.
+  let pending=null,lastReadError=null;
+  for(let attempt=0;attempt<5;attempt++){
+   try{pending=await getPendingMatchJob();lastReadError=null}catch(error){lastReadError=error}
+   if(pending?.jobId)break;
+   if(attempt<4)await new Promise(resolve=>setTimeout(resolve,250));
+  }
+  if(!pending?.jobId){
+   resultElement.textContent=lastReadError
+    ?'保存済み解析ジョブの読み込みに失敗しました。再読み込みしても元データは削除されていません。'
+    :'再開できる保存済み解析ジョブはありません。';
+   if(lastReadError)console.warn('保存済み解析ジョブの読み込みに失敗',lastReadError);
+   return;
+  }
   const alreadySaved=(state.matchAnalyses||[]).find(record=>String(record.jobId||'')===String(pending.jobId));
   if(alreadySaved){
    try{await clearPendingMatchJob()}catch(error){console.warn('保存済みジョブ情報の整理に失敗',error)}
@@ -1742,7 +1756,10 @@ async function resumePendingMatchJob(){
   if(configured&&configured!==savedBase){resultElement.textContent='保存済みジョブの接続先が現在の設定と異なります。以前の接続先 '+savedBase+' に接続できるよう設定を戻してください。';return}
   resultElement.textContent='前回の解析ジョブを確認しています…';
   await postMatchJobToAI(null,resultElement,{...pending,apiBaseUrl:savedBase});
- }catch(error){console.warn('保存済み解析ジョブの再開に失敗',error)}
+ }catch(error){
+  resultElement.textContent='保存済み解析ジョブの再開に失敗しました。ジョブ情報は削除していません。';
+  console.warn('保存済み解析ジョブの再開に失敗',error);
+ }
 }
 async function createRikuHighlight(){
  const raw=matchAiResult.dataset.result;if(!raw){alert('先に試合動画を解析してください');return}
