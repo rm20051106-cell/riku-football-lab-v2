@@ -1782,7 +1782,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             window.__originalMatchPersist = window.persist;
             window.persist = () => false;
         }""")
-        page.locator("#matchAiResult button").last.click()
+        page.locator("#matchAiResult button").last.evaluate("(button) => button.click()")
         failed_save = page.evaluate("""async () => ({
             count: state.matchAnalyses.length,
             savedId: document.getElementById('matchAiResult').dataset.savedId || null,
