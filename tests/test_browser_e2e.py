@@ -1766,6 +1766,8 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertIn("全編スキャンが完了しました", restore_diagnostics["text"],
                       {"diagnostics": restore_diagnostics, "requests": job_requests})
         self.assertIn("このAI解析結果を履歴に保存", page.locator("#matchAiResult").inner_text())
+        # The result panel lives in the video view; reveal it before interacting with its button.
+        page.evaluate("showView('video')")
         # A local persistence failure must not discard the only recoverable job pointer.
         page.evaluate("""() => {
             window.__originalMatchPersist = window.persist;
