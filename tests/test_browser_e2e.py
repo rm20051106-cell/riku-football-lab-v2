@@ -1799,6 +1799,32 @@ class RikuBrowserE2ETests(unittest.TestCase):
         page.evaluate("""() => {
             window.persist = window.__originalMatchPersist;
             delete window.__originalMatchPersist;
+            window.__matchSaveTrace = [];
+            const originalPersist = window.persist;
+            window.persist = function() {
+                const before = (state.matchAnalyses || []).map(row => row.id);
+                const result = originalPersist.apply(this, arguments);
+                window.__matchSaveTrace.push({
+                    op: 'persist', before, after: (state.matchAnalyses || []).map(row => row.id),
+                    stored: (() => { try { return (JSON.parse(localStorage.getItem(KEY) || '{}').matchAnalyses || []).map(row => row.id); } catch (e) { return 'parse-error'; } })(),
+                    result
+                });
+                return result;
+            };
+            const originalClear = window.clearPendingMatchJob;
+            window.clearPendingMatchJob = async function() {
+                window.__matchSaveTrace.push({op:'clear-start', ids:(state.matchAnalyses||[]).map(row=>row.id)});
+                const result = await originalClear.apply(this, arguments);
+                window.__matchSaveTrace.push({op:'clear-end', ids:(state.matchAnalyses||[]).map(row=>row.id)});
+                return result;
+            };
+            const originalLoad = window.load;
+            window.load = function() {
+                window.__matchSaveTrace.push({op:'load-before', ids:(state.matchAnalyses||[]).map(row=>row.id)});
+                const result = originalLoad.apply(this, arguments);
+                window.__matchSaveTrace.push({op:'load-after', ids:(state.matchAnalyses||[]).map(row=>row.id)});
+                return result;
+            };
         }""")
         retry_button.click()
         page.wait_for_function("""async () => state.matchAnalyses.length === 1 && (await getPendingMatchJob()) === null""", timeout=10000)
@@ -1813,6 +1839,9 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 pending: await getPendingMatchJob(),
                 savedId: document.getElementById('matchAiResult').dataset.savedId || null,
                 restoreDiagnostics: window.__matchRestoreDiagnostics || null,
+                saveTrace: window.__matchSaveTrace || [],
+                pageErrors: pageErrors,
+                consoleErrors: consoleErrors,
                 historyText: document.getElementById('matchScanRecords').innerText
             };
         }""")
