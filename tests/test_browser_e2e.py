@@ -2942,7 +2942,8 @@ class RikuBrowserE2ETests(unittest.TestCase):
             self.assertEqual(resumed["fingerprint"], source["fingerprint"], resumed)
             self.assertIsNone(resumed["pending"], resumed)
             self.assertEqual(server["created"], 1, server)
-            self.assertEqual(server["status"], 1, server)
+            # Three failed chunk-1 attempts each reconcile server state; reload adds one resume lookup.
+            self.assertEqual(server["status"], 4, server)
             self.assertEqual(server["puts"], [0, 1, 1, 1, 1, 2], server)
             self.assertEqual(server["completed"], 1, server)
             saved = page.evaluate("""async () => {
