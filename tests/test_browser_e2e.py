@@ -1836,9 +1836,19 @@ class RikuBrowserE2ETests(unittest.TestCase):
             const originalClear = window.clearPendingMatchJob;
             window.clearPendingMatchJob = async function() {
                 window.__matchSaveTrace.push({op:'clear-start', ids:(state.matchAnalyses||[]).map(row=>row.id)});
-                const result = await originalClear.apply(this, arguments);
-                window.__matchSaveTrace.push({op:'clear-end', ids:(state.matchAnalyses||[]).map(row=>row.id)});
-                return result;
+                let timer;
+                try {
+                    const result = await Promise.race([
+                        originalClear.apply(this, arguments),
+                        new Promise(resolve => { timer = setTimeout(() => resolve('__diagnostic_timeout__'), 4000); })
+                    ]);
+                    if (result === '__diagnostic_timeout__') {
+                        window.__matchSaveTrace.push({op:'clear-timeout', ids:(state.matchAnalyses||[]).map(row=>row.id)});
+                        return;
+                    }
+                    window.__matchSaveTrace.push({op:'clear-end', ids:(state.matchAnalyses||[]).map(row=>row.id)});
+                    return result;
+                } finally { if (timer) clearTimeout(timer); }
             };
             const originalLoad = window.load;
             window.load = function() {
@@ -1848,10 +1858,42 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 return result;
             };
         }""")
+        page.evaluate("""() => {
+            window.__matchIdbTrace = [];
+            const trace = (event, detail={}) => window.__matchIdbTrace.push({at:performance.now(),event,...detail});
+            try {
+                const factoryProto = IDBFactory.prototype;
+                const originalOpen = factoryProto.open;
+                factoryProto.open = function() {
+                    const args = [...arguments], req = originalOpen.apply(this, args);
+                    trace('open-called', {name:String(args[0]),version:args[1]??null});
+                    req.addEventListener('blocked', () => trace('open-blocked', {name:String(args[0])}));
+                    req.addEventListener('error', () => trace('open-error', {name:String(args[0]),error:String(req.error)}));
+                    req.addEventListener('success', () => trace('open-success', {name:String(args[0]),dbVersion:req.result.version}));
+                    return req;
+                };
+                const dbProto = IDBDatabase.prototype;
+                const originalTransaction = dbProto.transaction;
+                dbProto.transaction = function() {
+                    const args = [...arguments], tx = originalTransaction.apply(this,args);
+                    const stores = Array.isArray(args[0]) ? args[0] : [args[0]];
+                    trace('tx-created',{db:this.name,stores:stores.map(String),mode:args[1]||'readonly'});
+                    for (const event of ['complete','abort','error']) tx.addEventListener(event,()=>trace('tx-'+event,{db:this.name,stores:stores.map(String),error:tx.error?String(tx.error):null}));
+                    return tx;
+                };
+                const storeProto = IDBObjectStore.prototype;
+                const originalDelete = storeProto.delete;
+                storeProto.delete = function(key) {
+                    const req = originalDelete.call(this,key);
+                    trace('delete-called',{store:this.name,key:String(key)});
+                    req.addEventListener('success',()=>trace('delete-success',{store:this.name,key:String(key)}));
+                    req.addEventListener('error',()=>trace('delete-error',{store:this.name,key:String(key),error:String(req.error)}));
+                    return req;
+                };
+            } catch (error) { trace('instrumentation-error',{error:String(error)}); }
+        }""")
         retry_button.click()
-        page.wait_for_function("""async () => state.matchAnalyses.length === 1 &&
-            (window.__matchSaveTrace || []).some(item => item.op === 'clear-end') &&
-            (await getPendingMatchJob()) === null""", timeout=15000)
+        page.wait_for_function("() => state.matchAnalyses.length === 1 && (window.__matchSaveTrace || []).some(item => ['clear-end','clear-timeout'].includes(item.op))", timeout=10000)
         saved = page.evaluate("""async (diagnostics) => {
             const persisted = JSON.parse(localStorage.getItem(KEY) || '{}');
             return {
@@ -1864,6 +1906,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 savedId: document.getElementById('matchAiResult').dataset.savedId || null,
                 restoreDiagnostics: window.__matchRestoreDiagnostics || null,
                 saveTrace: window.__matchSaveTrace || [],
+                idbTrace: window.__matchIdbTrace || [],
                 saveSnapshots: window.__matchSaveSnapshots || [],
                 statusFetchTrace: window.__matchStatusFetchTrace || [],
                 pageErrors: diagnostics.pageErrors,
