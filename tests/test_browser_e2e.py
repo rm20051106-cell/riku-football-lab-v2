@@ -2855,7 +2855,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 return {size:file.size, sourceKey:getVideoSourceKey(file),
                         fingerprint:await getVideoContentFingerprint(file)};
             }""")
-            server = {"size": source.size, "chunkSize": 6 * 1024 * 1024,
+            server = {"size": source["size"], "chunkSize": 6 * 1024 * 1024,
                       "nextChunk": 0, "receivedBytes": 0, "puts": [], "abortSecond": True,
                       "created": 0, "completed": 0, "status": 0}
             def mock_api(route):
