@@ -2867,11 +2867,12 @@ class RikuBrowserE2ETests(unittest.TestCase):
                         byte => byte.toString(16).padStart(2, '0')).join('');
                 const sha256 = async buffer =>
                     hex(await crypto.subtle.digest('SHA-256', buffer));
+                const copyViewBytes = view => new Uint8Array(view.buffer, view.byteOffset, view.byteLength).slice().buffer;
                 const keyValue = key => {
                     if (key instanceof Date) return {type:'date', value:key.toISOString()};
                     if (key instanceof ArrayBuffer) return {type:'binary', value:hex(key)};
                     if (ArrayBuffer.isView(key)) {
-                        const bytes = key.buffer.slice(key.byteOffset, key.byteOffset + key.byteLength);
+                        const bytes = copyViewBytes(key);
                         return {type:'binary', value:hex(bytes)};
                     }
                     if (Array.isArray(key)) return {type:'array', value:key.map(keyValue)};
@@ -2888,7 +2889,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                         type:'ArrayBuffer', size:value.byteLength, sha256:await sha256(value)
                     };
                     if (ArrayBuffer.isView(value)) {
-                        const bytes = value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
+                        const bytes = copyViewBytes(value);
                         return {type:value.constructor.name, byteLength:value.byteLength, sha256:await sha256(bytes)};
                     }
                     if (value instanceof Date) return {type:'Date', value:value.toISOString()};
