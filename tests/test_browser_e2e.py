@@ -1914,6 +1914,12 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 historyText: document.getElementById('matchScanRecords').innerText
             };
         }""", {"pageErrors": page_errors, "consoleErrors": console_errors})
+        print("MATCH_SAVE_DIAGNOSTICS=" + json.dumps({
+            "saveTrace": saved["saveTrace"],
+            "idbTrace": saved["idbTrace"],
+            "pending": saved["pending"],
+            "persistedCount": saved["persistedCount"],
+        }, ensure_ascii=False, default=str), flush=True)
         self.assertEqual(saved["count"], 1, saved)
         self.assertEqual(saved["savedId"], str(saved["record"]["id"]), saved)
         self.assertEqual(saved["record"]["jobId"], "restore-job-123", saved)
