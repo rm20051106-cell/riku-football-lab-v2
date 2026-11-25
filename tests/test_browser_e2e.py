@@ -2856,7 +2856,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                         fingerprint:await getVideoContentFingerprint(file)};
             }""")
             server = {"size": source["size"], "chunkSize": 6 * 1024 * 1024,
-                      "nextChunk": 0, "receivedBytes": 0, "puts": [], "abortSecond": True,
+                      "nextChunk": 0, "receivedBytes": 0, "puts": [], "abortSecondAttempts": 3,
                       "created": 0, "completed": 0, "status": 0}
             def mock_api(route):
                 request = route.request
@@ -2885,8 +2885,8 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 elif path.startswith("/analyze/match/uploads/interrupted-upload/") and request.method == "PUT":
                     index = int(path.rsplit("/",1)[-1])
                     server["puts"].append(index)
-                    if index == 1 and server["abortSecond"]:
-                        server["abortSecond"] = False
+                    if index == 1 and server["abortSecondAttempts"] > 0:
+                        server["abortSecondAttempts"] -= 1
                         route.abort("failed")
                         return
                     server["nextChunk"] = index + 1
@@ -2919,7 +2919,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             self.assertEqual(first["pending"]["nextChunk"], 1, first)
             self.assertEqual(first["sourceKey"], source["sourceKey"], first)
             self.assertEqual(first["fingerprint"], source["fingerprint"], first)
-            self.assertEqual(server["puts"], [0, 1], server)
+            self.assertEqual(server["puts"], [0, 1, 1, 1], server)
 
             page.reload(wait_until="load")
             page.wait_for_function("typeof uploadMatchVideoInChunks === 'function'")
@@ -2943,7 +2943,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             self.assertIsNone(resumed["pending"], resumed)
             self.assertEqual(server["created"], 1, server)
             self.assertEqual(server["status"], 1, server)
-            self.assertEqual(server["puts"], [0, 1, 1, 2], server)
+            self.assertEqual(server["puts"], [0, 1, 1, 1, 1, 2], server)
             self.assertEqual(server["completed"], 1, server)
             saved = page.evaluate("""async () => {
                 const video = await getClipVideo('__pending_match_video__');
