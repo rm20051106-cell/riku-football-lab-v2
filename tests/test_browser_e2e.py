@@ -2728,5 +2728,232 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual(result["aiMatch"], "partial-match-later", result)
         self.assertEqual(result["aiReverse"], ["partial-ai"], result)
 
+
+    def test_webkit_20_minute_match_upload_frontend_completion_flow(self):
+        browser = self.playwright.webkit.launch(headless=True)
+        context = browser.new_context(viewport={"width": 390, "height": 844}, service_workers="block")
+        page = context.new_page()
+        page.on("dialog", lambda dialog: dialog.accept())
+        try:
+            page.goto(self.base_url, wait_until="load")
+            page.wait_for_function("typeof saveClip === 'function'")
+            page.locator('.nav button[data-view="video"]').click()
+            page.evaluate("""() => {
+                state.settings.apiBaseUrl = 'https://riku-webkit-20min-mock.invalid';
+                persist();
+            }""")
+            counters = {"created": 0, "chunks": [], "completed": 0, "status": 0}
+            def mock_api(route):
+                request = route.request
+                if not request.url.startswith("https://riku-webkit-20min-mock.invalid/"):
+                    route.continue_()
+                    return
+                path = request.url.split("riku-webkit-20min-mock.invalid", 1)[-1]
+                headers = {
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+                    "Access-Control-Allow-Headers": "Content-Type, X-Requested-With",
+                    "Access-Control-Max-Age": "86400",
+                }
+                if request.method == "OPTIONS":
+                    route.fulfill(status=204, headers=headers)
+                elif path == "/health":
+                    route.fulfill(status=200, headers=headers, content_type="application/json",
+                                  body=json.dumps({"ok": True}))
+                elif path == "/analyze/match/uploads" and request.method == "POST":
+                    counters["created"] += 1
+                    counters["size"] = request.post_data_json["size_bytes"]
+                    counters["chunk_size"] = 6 * 1024 * 1024
+                    route.fulfill(status=201, headers=headers, content_type="application/json",
+                                  body=json.dumps({"ok": True, "upload_id": "webkit-20min-upload",
+                                                   "chunk_size": counters["chunk_size"],
+                                                   "total_chunks": (counters["size"] + counters["chunk_size"] - 1) // counters["chunk_size"]}))
+                elif path.startswith("/analyze/match/uploads/webkit-20min-upload/") and request.method == "PUT":
+                    index = int(path.rsplit("/", 1)[-1])
+                    counters["chunks"].append(index)
+                    received_bytes = min(counters["size"], (index + 1) * counters["chunk_size"])
+                    route.fulfill(status=200, headers=headers, content_type="application/json",
+                                  body=json.dumps({"ok": True, "chunk_index": index,
+                                                   "received_bytes": received_bytes,
+                                                   "total_bytes": counters["size"]}))
+                elif path == "/analyze/match/uploads/webkit-20min-upload/complete" and request.method == "POST":
+                    counters["completed"] += 1
+                    route.fulfill(status=202, headers=headers, content_type="application/json",
+                                  body=json.dumps({"ok": True, "job_id": "webkit-20min-job", "status": "queued"}))
+                elif path == "/analyze/jobs/webkit-20min-job":
+                    counters["status"] += 1
+                    route.fulfill(status=200, headers=headers, content_type="application/json",
+                                  body=json.dumps({"status": "completed", "progress": 100, "stage": "完了",
+                                                   "result": {"job_id": "webkit-20min-job", "summary": {
+                                                       "duration_seconds": 1200, "sampled_pose_frames": 0,
+                                                       "feedback": [], "candidate_events": [],
+                                                       "person_detection_summary": {},
+                                                       "person_track_summary": {},
+                                                       "jersey_ocr_summary": {},
+                                                   }}}))
+                else:
+                    route.fulfill(status=404, headers=headers, content_type="application/json",
+                                  body=json.dumps({"detail": "unexpected mock request: " + path}))
+            page.route("**/*", mock_api)
+            page.locator("#videoFile").set_input_files({
+                "name": "webkit-synthetic-20min.mp4",
+                "mimeType": "video/mp4",
+                "buffer": b"V" * (13 * 1024 * 1024 + 19),
+            })
+            page.wait_for_function(
+                "() => document.getElementById('videoFile').files.length === 1",
+                timeout=5000,
+            )
+            page.evaluate("""() => {
+                Object.defineProperty(document.getElementById('matchVideo'), 'duration',
+                                      {configurable: true, value: 1200});
+            }""")
+            page.get_by_role("button", name="AIサーバーで動画解析").click()
+            try:
+                page.wait_for_function(
+                    "() => document.getElementById('matchAiResult').textContent.includes('全編スキャンが完了しました')",
+                    timeout=30000,
+                )
+            except Exception as error:
+                diagnostic = page.evaluate("""() => ({
+                    result: document.getElementById('matchAiResult').textContent,
+                    videoMeta: document.getElementById('videoMeta').textContent,
+                    apiBaseUrl: state.settings.apiBaseUrl
+                })""")
+                raise AssertionError({"diagnostic": diagnostic, "counters": counters, "cause": str(error)})
+            self.assertTrue(page.locator("#video").evaluate("(el) => el.classList.contains('active')"))
+            self.assertEqual(counters["created"], 1)
+            self.assertEqual(counters["completed"], 1)
+            self.assertEqual(counters["status"], 1)
+            self.assertEqual(counters["chunks"], [0, 1, 2])
+            self.assertIn("20", page.locator("#matchAiResult").inner_text())
+
+        finally:
+            context.close()
+            browser.close()
+
+    def test_webkit_interrupted_match_upload_resumes_after_reload(self):
+        browser = self.playwright.webkit.launch(headless=True)
+        context = browser.new_context(viewport={"width": 390, "height": 844}, service_workers="block")
+        page = context.new_page()
+        try:
+            page.goto(self.base_url, wait_until="load")
+            page.wait_for_function("typeof uploadMatchVideoInChunks === 'function'")
+            page.locator('.nav button[data-view="video"]').click()
+            page.evaluate("""() => {
+                state.settings.apiBaseUrl = 'https://riku-interrupt-mock.invalid';
+                persist();
+            }""")
+            page.locator("#videoFile").set_input_files({
+                "name": "same-source-interrupted.mp4", "mimeType": "video/mp4",
+                "buffer": b"\xcd" * (6 * 1024 * 1024 * 2 + 37),
+            })
+            page.wait_for_function("() => document.getElementById('videoFile').files.length === 1")
+            source = page.evaluate("""async () => {
+                const file = document.getElementById('videoFile').files[0];
+                await storeClipVideo('__pending_match_video__', file);
+                return {size:file.size, sourceKey:getVideoSourceKey(file),
+                        fingerprint:await getVideoContentFingerprint(file)};
+            }""")
+            server = {"size": source.size, "chunkSize": 6 * 1024 * 1024,
+                      "nextChunk": 0, "receivedBytes": 0, "puts": [], "abortSecond": True,
+                      "created": 0, "completed": 0, "status": 0}
+            def mock_api(route):
+                request = route.request
+                if not request.url.startswith("https://riku-interrupt-mock.invalid/"):
+                    route.continue_()
+                    return
+                path = request.url.split("riku-interrupt-mock.invalid", 1)[-1]
+                headers = {"Access-Control-Allow-Origin":"*",
+                           "Access-Control-Allow-Methods":"GET, POST, PUT, DELETE, OPTIONS",
+                           "Access-Control-Allow-Headers":"*"}
+                if request.method == "OPTIONS":
+                    route.fulfill(status=204, headers=headers)
+                elif path == "/analyze/match/uploads" and request.method == "POST":
+                    server["created"] += 1
+                    route.fulfill(status=201, headers=headers, content_type="application/json",
+                                  body=json.dumps({"ok":True,"upload_id":"interrupted-upload",
+                                                   "chunk_size":server["chunkSize"],"total_chunks":3}))
+                elif path == "/analyze/match/uploads/interrupted-upload" and request.method == "GET":
+                    server["status"] += 1
+                    route.fulfill(status=200, headers=headers, content_type="application/json",
+                                  body=json.dumps({"ok":True,"upload_id":"interrupted-upload",
+                                                   "next_chunk":server["nextChunk"],
+                                                   "chunk_size":server["chunkSize"],"total_chunks":3,
+                                                   "received_bytes":server["receivedBytes"],
+                                                   "total_bytes":server["size"],"complete":False}))
+                elif path.startswith("/analyze/match/uploads/interrupted-upload/") and request.method == "PUT":
+                    index = int(path.rsplit("/",1)[-1])
+                    server["puts"].append(index)
+                    if index == 1 and server["abortSecond"]:
+                        server["abortSecond"] = False
+                        route.abort("failed")
+                        return
+                    server["nextChunk"] = index + 1
+                    server["receivedBytes"] = min(server["size"], server["nextChunk"] * server["chunkSize"])
+                    route.fulfill(status=200, headers=headers, content_type="application/json",
+                                  body=json.dumps({"ok":True,"chunk_index":index,
+                                                   "received_bytes":server["receivedBytes"],
+                                                   "total_bytes":server["size"]}))
+                elif path == "/analyze/match/uploads/interrupted-upload/complete" and request.method == "POST":
+                    server["completed"] += 1
+                    route.fulfill(status=202, headers=headers, content_type="application/json",
+                                  body=json.dumps({"ok":True,"job_id":"interrupted-job","status":"queued"}))
+                else:
+                    route.fulfill(status=404, headers=headers, content_type="application/json",
+                                  body=json.dumps({"detail":"unexpected request: "+path}))
+            page.route("**/*", mock_api)
+            first = page.evaluate("""async () => {
+                const stored = await getClipVideo('__pending_match_video__');
+                const file = new File([stored.blob], stored.name,
+                    {type:stored.type, lastModified:stored.lastModified});
+                let error = '';
+                try { await uploadMatchVideoInChunks(file, '10,74', document.getElementById('matchAiResult')); }
+                catch (e) { error = String(e); }
+                const pending = await getPendingMatchUpload();
+                return {error, pending, sourceKey:getVideoSourceKey(file),
+                        fingerprint:await getVideoContentFingerprint(file)};
+            }""")
+            self.assertTrue(first["error"], first)
+            self.assertIsNotNone(first["pending"], first)
+            self.assertEqual(first["pending"]["nextChunk"], 1, first)
+            self.assertEqual(first["sourceKey"], source["sourceKey"], first)
+            self.assertEqual(first["fingerprint"], source["fingerprint"], first)
+            self.assertEqual(server["puts"], [0, 1], server)
+
+            page.reload(wait_until="load")
+            page.wait_for_function("typeof uploadMatchVideoInChunks === 'function'")
+            resumed = page.evaluate("""async () => {
+                const stored = await getClipVideo('__pending_match_video__');
+                if (!stored || !(stored.blob instanceof Blob))
+                    throw new Error('same source video missing after reload');
+                const file = new File([stored.blob], stored.name,
+                    {type:stored.type, lastModified:stored.lastModified});
+                const result = await uploadMatchVideoInChunks(
+                    file, '10,74', document.getElementById('matchAiResult'));
+                return {jobId:result.job_id, size:file.size,
+                        pending:await getPendingMatchUpload(),
+                        sourceKey:getVideoSourceKey(file),
+                        fingerprint:await getVideoContentFingerprint(file)};
+            }""")
+            self.assertEqual(resumed["jobId"], "interrupted-job", resumed)
+            self.assertEqual(resumed["size"], source["size"], resumed)
+            self.assertEqual(resumed["sourceKey"], source["sourceKey"], resumed)
+            self.assertEqual(resumed["fingerprint"], source["fingerprint"], resumed)
+            self.assertIsNone(resumed["pending"], resumed)
+            self.assertEqual(server["created"], 1, server)
+            self.assertEqual(server["status"], 1, server)
+            self.assertEqual(server["puts"], [0, 1, 1, 2], server)
+            self.assertEqual(server["completed"], 1, server)
+            saved = page.evaluate("""async () => {
+                const video = await getClipVideo('__pending_match_video__');
+                return {size:video?.blob?.size || 0, name:video?.name || ''};
+            }""")
+            self.assertEqual(saved["size"], source["size"], saved)
+            self.assertEqual(saved["name"], "same-source-interrupted.mp4", saved)
+        finally:
+            context.close()
+            browser.close()
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
