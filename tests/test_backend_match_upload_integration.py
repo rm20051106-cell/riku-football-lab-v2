@@ -184,8 +184,15 @@ class MatchUploadBackendIntegrationTest(unittest.TestCase):
             self.assertEqual(os.path.getsize(state["path"]), total_size)
             with open(state["path"], "rb") as received:
                 self.assertEqual(received.read(16), bytes([1]) * 16)
-                received.seek(total_size - 16)
-                self.assertEqual(received.read(16), bytes([init["total_chunks"]]) * 16)
+                # A short final chunk may be smaller than 16 bytes (the 15-minute
+                # fixture deliberately ends with an 11-byte tail). Verify the
+                # actual final chunk rather than reading bytes from the prior one.
+                tail_check_size = min(16, final_chunk_size)
+                received.seek(total_size - tail_check_size)
+                self.assertEqual(
+                    received.read(tail_check_size),
+                    bytes([init["total_chunks"]]) * tail_check_size,
+                )
 
             tasks = BackgroundTasks()
             completed = await main.complete_match_upload(upload_id, tasks)
