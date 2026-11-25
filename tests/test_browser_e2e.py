@@ -2855,6 +2855,151 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 return {size:file.size, sourceKey:getVideoSourceKey(file),
                         fingerprint:await getVideoContentFingerprint(file)};
             }""")
+            snapshot_script = r"""
+            async () => {
+                const KEY = 'rikuFootballLab_v3';
+                const EXCLUDED_VIDEO_KEYS = new Set([
+                    '__pending_match_upload__',
+                    '__pending_match_job__'
+                ]);
+                const hex = buffer =>
+                    Array.from(new Uint8Array(buffer),
+                        byte => byte.toString(16).padStart(2, '0')).join('');
+                const sha256 = async buffer =>
+                    hex(await crypto.subtle.digest('SHA-256', buffer));
+                const keyValue = key => {
+                    if (key instanceof Date) return {type:'date', value:key.toISOString()};
+                    if (key instanceof ArrayBuffer) return {type:'binary', value:hex(key)};
+                    if (ArrayBuffer.isView(key)) {
+                        const bytes = key.buffer.slice(key.byteOffset, key.byteOffset + key.byteLength);
+                        return {type:'binary', value:hex(bytes)};
+                    }
+                    if (Array.isArray(key)) return {type:'array', value:key.map(keyValue)};
+                    return {type:typeof key, value:String(key)};
+                };
+                const encode = async (value, seen = new WeakSet()) => {
+                    if (value === null) return null;
+                    if (value === undefined) return {type:'undefined'};
+                    if (value instanceof Blob) return {
+                        type:'Blob', mime:value.type, size:value.size,
+                        sha256:await sha256(await value.arrayBuffer())
+                    };
+                    if (value instanceof ArrayBuffer) return {
+                        type:'ArrayBuffer', size:value.byteLength, sha256:await sha256(value)
+                    };
+                    if (ArrayBuffer.isView(value)) {
+                        const bytes = value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
+                        return {type:value.constructor.name, byteLength:value.byteLength, sha256:await sha256(bytes)};
+                    }
+                    if (value instanceof Date) return {type:'Date', value:value.toISOString()};
+                    if (typeof value !== 'object') return value;
+                    if (seen.has(value)) throw new Error('Unexpected cyclic value in snapshot');
+                    seen.add(value);
+                    try {
+                        if (Array.isArray(value)) {
+                            const result = [];
+                            for (const item of value) result.push(await encode(item, seen));
+                            return result;
+                        }
+                        const result = {};
+                        for (const key of Object.keys(value).sort()) result[key] = await encode(value[key], seen);
+                        return result;
+                    } finally {
+                        seen.delete(value);
+                    }
+                };
+                const digestObject = async value => {
+                    const encoded = await encode(value);
+                    return sha256(new TextEncoder().encode(JSON.stringify(encoded)));
+                };
+                const requestResult = request => new Promise((resolve, reject) => {
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error || new Error('IndexedDB request failed'));
+                });
+
+                const db = await openVideoDB();
+                let idbData;
+                try {
+                    const tx = db.transaction(['videos', 'videoChunks'], 'readonly');
+                    const txDone = new Promise((resolve, reject) => {
+                        tx.oncomplete = resolve;
+                        tx.onerror = () => reject(tx.error || new Error('IndexedDB transaction error'));
+                        tx.onabort = () => reject(tx.error || new Error('IndexedDB transaction aborted'));
+                    });
+                    const videosStore = tx.objectStore('videos');
+                    const chunksStore = tx.objectStore('videoChunks');
+                    const videoValuesRequest = videosStore.getAll();
+                    const videoKeysRequest = videosStore.getAllKeys();
+                    const chunkValuesRequest = chunksStore.getAll();
+                    const chunkKeysRequest = chunksStore.getAllKeys();
+                    const [videoValues, videoKeys, chunkValues, chunkKeys] = await Promise.all([
+                        requestResult(videoValuesRequest),
+                        requestResult(videoKeysRequest),
+                        requestResult(chunkValuesRequest),
+                        requestResult(chunkKeysRequest)
+                    ]);
+                    await txDone;
+                    if (videoValues.length !== videoKeys.length || chunkValues.length !== chunkKeys.length) {
+                        throw new Error('IndexedDB key/value count mismatch');
+                    }
+                    idbData = {
+                        videoRows: videoKeys.map((key, index) => ({key:keyValue(key), rawKey:key, value:videoValues[index]})),
+                        chunkRows: chunkKeys.map((key, index) => ({key:keyValue(key), value:chunkValues[index]}))
+                    };
+                } finally {
+                    db.close();
+                }
+
+                const sortRows = rows => rows.sort((a,b) => {
+                    const left = JSON.stringify(a.key), right = JSON.stringify(b.key);
+                    return left < right ? -1 : left > right ? 1 : 0;
+                });
+                const stableVideos = sortRows(idbData.videoRows
+                    .filter(row => !EXCLUDED_VIDEO_KEYS.has(String(row.rawKey)))
+                    .map(({key,value}) => ({key,value})));
+                const stableChunks = sortRows(idbData.chunkRows);
+                const pendingMap = new Map(idbData.videoRows.map(row => [String(row.rawKey), row.value]));
+                const pendingUpload = pendingMap.get('__pending_match_upload__') ?? null;
+                const pendingJob = pendingMap.get('__pending_match_job__') ?? null;
+
+                const rawStorage = localStorage.getItem(KEY);
+                let savedState = null;
+                if (rawStorage !== null) {
+                    try { savedState = JSON.parse(rawStorage); }
+                    catch (error) { throw new Error('Saved localStorage JSON is invalid: ' + String(error)); }
+                }
+                const arrayNames = ['matchAnalyses', 'forms', 'aiFormAnalyses'];
+                const liveArrays = {}, savedArrays = {};
+                for (const name of arrayNames) {
+                    const liveValue = state?.[name] ?? [];
+                    const savedValue = savedState?.[name] ?? [];
+                    if (!Array.isArray(liveValue) || !Array.isArray(savedValue)) {
+                        throw new Error('Expected array state: ' + name);
+                    }
+                    liveArrays[name] = liveValue;
+                    savedArrays[name] = savedValue;
+                }
+                return {
+                    localStorageKey:KEY,
+                    localStoragePresent:rawStorage !== null,
+                    localStorageSha256:rawStorage === null ? null :
+                        await sha256(new TextEncoder().encode(rawStorage)),
+                    stateArraysSha256:await digestObject(liveArrays),
+                    savedArraysSha256:await digestObject(savedArrays),
+                    videosCount:stableVideos.length,
+                    videosSha256:await digestObject(stableVideos),
+                    videoChunksCount:stableChunks.length,
+                    videoChunksSha256:await digestObject(stableChunks),
+                    pendingUpload:pendingUpload === null ? null : await encode(pendingUpload),
+                    pendingJob:pendingJob === null ? null : await encode(pendingJob)
+                };
+            }
+            """
+
+            protected_before = page.evaluate(snapshot_script)
+            self.assertIsNone(protected_before["pendingUpload"])
+            self.assertIsNone(protected_before["pendingJob"])
+
             server = {"size": source["size"], "chunkSize": 6 * 1024 * 1024,
                       "nextChunk": 0, "receivedBytes": 0, "puts": [], "abortSecondAttempts": 3,
                       "created": 0, "completed": 0, "status": 0}
@@ -2952,6 +3097,22 @@ class RikuBrowserE2ETests(unittest.TestCase):
             }""")
             self.assertEqual(saved["size"], source["size"], saved)
             self.assertEqual(saved["name"], "same-source-interrupted.mp4", saved)
+            protected_after = page.evaluate(snapshot_script)
+            self.assertEqual(protected_after["videosCount"], protected_before["videosCount"], protected_after)
+            self.assertEqual(protected_after["videosSha256"], protected_before["videosSha256"], protected_after)
+            self.assertEqual(protected_after["videoChunksCount"], protected_before["videoChunksCount"], protected_after)
+            self.assertEqual(protected_after["videoChunksSha256"], protected_before["videoChunksSha256"], protected_after)
+            self.assertEqual(protected_after["localStorageKey"], protected_before["localStorageKey"])
+            self.assertEqual(protected_after["localStoragePresent"], protected_before["localStoragePresent"])
+            self.assertEqual(protected_after["localStorageSha256"], protected_before["localStorageSha256"], protected_after)
+            self.assertEqual(protected_after["stateArraysSha256"], protected_before["stateArraysSha256"], protected_after)
+            self.assertEqual(protected_after["savedArraysSha256"], protected_before["savedArraysSha256"], protected_after)
+            self.assertIsNone(protected_after["pendingUpload"])
+            self.assertIsNotNone(protected_after["pendingJob"])
+            self.assertEqual(protected_after["pendingJob"]["jobId"], "interrupted-job")
+            self.assertEqual(protected_after["pendingJob"]["sourceKey"], source["sourceKey"])
+            self.assertEqual(protected_after["pendingJob"]["filename"], "same-source-interrupted.mp4")
+            self.assertEqual(protected_after["pendingJob"]["sizeBytes"], source["size"])
         finally:
             context.close()
             browser.close()
