@@ -1,9 +1,10 @@
-const CACHE_NAME = "riku-football-lab-shell-v5";
+const CACHE_NAME = "riku-football-lab-shell-v6";
 const APP_SHELL = new URL("./index.html", self.registration.scope).href;
 const STATIC_ASSETS = [
   APP_SHELL,
   new URL("./manifest.webmanifest", self.registration.scope).href,
   new URL("./app-icon.svg", self.registration.scope).href,
+  new URL("./riku-global-mutation-lock.js", self.registration.scope).href,
   new URL("./stage47-video-recovery.js", self.registration.scope).href,
   new URL("./stage48-video-restore.js", self.registration.scope).href
 ];
