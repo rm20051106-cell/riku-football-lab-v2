@@ -734,13 +734,18 @@
           const serialized = String(value);
           const sum = checksum(serialized);
           if (ctx) { ctx.persistAttempted = true; ctx.persisted = false; ctx.persistFailure = false; ctx.afterChecksum = sum; ctx.afterLength = serialized.length; }
-          if (ctx) originalSetItem.call(this, JOURNAL_HINT_KEY, JSON.stringify({ operationId: ctx.operationId, checksum: sum, length: serialized.length, state: "writing", at: Date.now() }));
-          const result = originalSetItem.call(this, name, serialized);
-          if (ctx) {
-            ctx.persisted = true;
-            originalSetItem.call(this, JOURNAL_HINT_KEY, JSON.stringify({ operationId: ctx.operationId, checksum: sum, length: serialized.length, state: "persisted", at: Date.now() }));
+          try {
+            if (ctx) originalSetItem.call(this, JOURNAL_HINT_KEY, JSON.stringify({ operationId: ctx.operationId, checksum: sum, length: serialized.length, state: "writing", at: Date.now() }));
+            const result = originalSetItem.call(this, name, serialized);
+            if (ctx) {
+              ctx.persisted = true;
+              originalSetItem.call(this, JOURNAL_HINT_KEY, JSON.stringify({ operationId: ctx.operationId, checksum: sum, length: serialized.length, state: "persisted", at: Date.now() }));
+            }
+            return result;
+          } catch (error) {
+            if (ctx) ctx.persistFailure = true;
+            throw error;
           }
-          return result;
         }
         if (ctx) ctx.auxStorageMutation = true;
       }
@@ -757,11 +762,16 @@
           ctx.persistFailure = false;
           ctx.afterChecksum = checksum(null);
           ctx.afterLength = null;
-          originalSetItem.call(this, JOURNAL_HINT_KEY, JSON.stringify({ operationId: ctx.operationId, checksum: ctx.afterChecksum, length: null, state: "writing", removed: true, at: Date.now() }));
-          const result = originalRemoveItem.call(this, name);
-          ctx.persisted = true;
-          originalSetItem.call(this, JOURNAL_HINT_KEY, JSON.stringify({ operationId: ctx.operationId, checksum: ctx.afterChecksum, length: null, state: "persisted", removed: true, at: Date.now() }));
-          return result;
+          try {
+            originalSetItem.call(this, JOURNAL_HINT_KEY, JSON.stringify({ operationId: ctx.operationId, checksum: ctx.afterChecksum, length: null, state: "writing", removed: true, at: Date.now() }));
+            const result = originalRemoveItem.call(this, name);
+            ctx.persisted = true;
+            originalSetItem.call(this, JOURNAL_HINT_KEY, JSON.stringify({ operationId: ctx.operationId, checksum: ctx.afterChecksum, length: null, state: "persisted", removed: true, at: Date.now() }));
+            return result;
+          } catch (error) {
+            ctx.persistFailure = true;
+            throw error;
+          }
         }
         if (ctx) ctx.auxStorageMutation = true;
       }
