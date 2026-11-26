@@ -102,6 +102,13 @@ class RikuBrowserE2ETests(unittest.TestCase):
         }""")
         self.assertTrue(registration["active"])
         self.assertTrue(registration["scope"].endswith("/"))
+        service_worker_source = page.evaluate("""async () => {
+            const response = await fetch('./sw.js');
+            if (!response.ok) throw new Error('Service worker source unavailable');
+            return response.text();
+        }""")
+        self.assertIn("riku-global-mutation-lock.js", service_worker_source)
+        self.assertIn("riku-football-lab-shell-v6", service_worker_source)
 
         page.reload(wait_until="load")
         page.wait_for_function("!!navigator.serviceWorker.controller", timeout=10000)
