@@ -32,9 +32,9 @@
     return hash.digest();
   }
   function readJob(){try{return JSON.parse(localStorage.getItem(JOB_KEY)||"null")}catch(_){return null}}
-  function saveJob(job){localStorage.setItem(JOB_KEY,JSON.stringify(job));}
+  function saveJob(job){if(!window.__rikuMutationContext)throw new Error('復元チェックポイントの保存にはglobal-mutationロックが必要です');localStorage.setItem(JOB_KEY,JSON.stringify(job));}
   function history(){try{return JSON.parse(localStorage.getItem(HISTORY_KEY)||"[]")}catch(_){return []}}
-  function addHistory(row){const rows=history();rows.unshift(row);localStorage.setItem(HISTORY_KEY,JSON.stringify(rows.slice(0,40)));}
+  function addHistory(row){const write=()=>{const rows=history();rows.unshift(row);localStorage.setItem(HISTORY_KEY,JSON.stringify(rows.slice(0,40)));};if(window.__rikuMutationContext){write();return;}return window.withGlobalMutationLock('stage48-history',write);}
   function panel(){
     let el=document.getElementById("stage48RestorePanel");if(el)return el;
     const anchor=document.getElementById("videoRestorePreview")||document.getElementById("videoImportProgress");
@@ -194,14 +194,15 @@
     }finally{active=false;}
     return true;
   }
+  const runWithMutationLock=(files,retryOnly)=>window.withGlobalMutationLock('stage48-video-restore',()=>run(files,retryOnly));
   window.hashStage48Blob=async blob=>{paused=false;return hashBlob(blob);};
   window.pauseStage48Restore=()=>{paused=true;};
-  window.runStage48VideoRestore=files=>run(files,false);
-  window.retryStage48FailedVideos=files=>run(files,true);
+  window.runStage48VideoRestore=files=>runWithMutationLock(files,false);
+  window.retryStage48FailedVideos=files=>runWithMutationLock(files,true);
   if(typeof window.retryFailedVideoImport==="function"){
     window.retryFailedVideoImport=async function(){
       const retry=[...lastVideoImportFiles];
-      if(retry.length) await run(retry,true);
+      if(retry.length) await runWithMutationLock(retry,true);
     };
   }
   window.addEventListener("change",event=>{
@@ -215,9 +216,9 @@
   window.addEventListener("beforeunload",()=>{const job=readJob();if(active&&job){try{saveJob(job)}catch(e){}}});
   // Backup export audit: record JSON backup generation without altering its payload.
   const originalExportData=window.exportData;
-  if(typeof originalExportData==="function")window.exportData=async function(){const before=history().length;await originalExportData();if(history().length===before){addHistory({at:new Date().toISOString(),action:"記録JSONバックアップ",success:1,failed:0,bytes:0});renderHistory();}};
+  if(typeof originalExportData==="function")window.exportData=async function(){const before=history().length;await originalExportData();if(history().length===before){await window.withGlobalMutationLock('stage48-export-history',()=>addHistory({at:new Date().toISOString(),action:"記録JSONバックアップ",success:1,failed:0,bytes:0}));renderHistory();}};
   const originalPrepareVideoExport=window.prepareVideoExport;
-  if(typeof originalPrepareVideoExport==="function")window.prepareVideoExport=async function(){await originalPrepareVideoExport();try{const stats=await readVideoStorageUsage();addHistory({at:new Date().toISOString(),action:"動画バックアップ一覧作成",success:stats.count,failed:stats.invalid,bytes:stats.bytes});renderHistory();}catch(error){console.warn("Stage 48 backup history",error);}};
+  if(typeof originalPrepareVideoExport==="function")window.prepareVideoExport=async function(){await originalPrepareVideoExport();try{const stats=await readVideoStorageUsage();await window.withGlobalMutationLock('stage48-video-export-history',()=>addHistory({at:new Date().toISOString(),action:"動画バックアップ一覧作成",success:stats.count,failed:stats.invalid,bytes:stats.bytes}));renderHistory();}catch(error){console.warn("Stage 48 backup history",error);}};
   document.addEventListener("visibilitychange",()=>{if(document.hidden&&active){paused=true;status("Safariがバックグラウンドになりました。安全な区切りで一時停止します。前面に戻ったら動画を選び直して再開してください。");}});
   window.__stage48Intercept=true;
   panel();
