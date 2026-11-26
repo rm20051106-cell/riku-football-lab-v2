@@ -194,7 +194,7 @@
     }finally{active=false;}
     return true;
   }
-  const runWithMutationLock=(files,retryOnly)=>window.withGlobalMutationLock('stage48-video-restore',()=>run(files,retryOnly));
+  const runWithMutationLock=(files,retryOnly)=>window.withGlobalMutationLock('stage48-video-restore',()=>run(files,retryOnly)).catch(error=>{active=false;status("復元を安全停止しました。既存動画は削除していません：" + (error?.message||String(error)));const job=readJob();if(job)report(job,"安全停止レポート");return false;});
   window.hashStage48Blob=async blob=>{paused=false;return hashBlob(blob);};
   window.pauseStage48Restore=()=>{paused=true;};
   window.runStage48VideoRestore=files=>runWithMutationLock(files,false);
