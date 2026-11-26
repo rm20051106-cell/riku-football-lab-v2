@@ -206,6 +206,20 @@
     if (!ctx) throw new Error("動画変更の所有権を確認できません");
     await updateJournal(ctx, { state: stage });
   }
+  async function markVideoOnlyCommit() {
+    const ctx = window.__rikuMutationContext;
+    if (!ctx || !["storeClipVideo", "restoreClipVideoRecord"].includes(ctx.operation)) return false;
+    const value = appValue();
+    const sum = checksum(value);
+    const length = value == null ? null : value.length;
+    localStorage.setItem(JOURNAL_HINT_KEY, JSON.stringify({
+      operationId: ctx.operationId, checksum: sum, length,
+      state: "video-only-committed", at: Date.now()
+    }));
+    ctx.afterChecksum = sum;
+    ctx.afterLength = length;
+    return true;
+  }
   async function cancelVideoChange(newPrefix) {
     const ctx = window.__rikuMutationContext;
     if (!ctx) throw new Error("動画変更の所有権を確認できません");
@@ -593,6 +607,7 @@
   window.__rikuRecordVideoChange = recordVideoChange;
   window.__rikuMarkVideoStage = markVideoStage;
   window.__rikuCancelVideoChange = cancelVideoChange;
+  window.__rikuMarkVideoOnlyCommit = markVideoOnlyCommit;
   window.__rikuMutationChecksum = checksum;
   window.__rikuMutationRecoveryReady = () => recoveryReady;
 
@@ -688,7 +703,7 @@
   }
 
   const mutationTargets = [
-    "updateTrainingStep","saveTraining","addMenu","removeMenu","saveMeasure","deleteItem","syncMonthlySkillSnapshot",
+    "updateTrainingStep","saveTraining","addMenu","removeMenu","saveMeasure","deleteItem",
     "scanAndRepairRecordIntegrity","saveClip","setCandidateReview","setCandidateTrackReview","setCandidateTag",
     "saveMatchScanResult","linkMatchEventToTraining","applyMatchImprovementPlan","createCrossMatchHighlight",
     "saveMatchEventEdits","updateMatchPositioning","deleteMatchScan","saveForm","savePlayerProfile","saveSettings",
