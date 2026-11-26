@@ -504,7 +504,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 req.onerror = () => reject(req.error);
             }); } finally { d.close(); }
         }""")
-        self.assertEqual(len(result["keys"]), 2, result)
+        self.assertEqual(len(result["keys"]), 3, result)
         self.assertTrue(any(key.startswith(result["activePrefix"]) for key in result["keys"]), result)
         self.assertTrue(any("abandoned-generation" in key for key in result["keys"]), result)
         self.assertTrue(any("still-writing" in key for key in result["keys"]), result)
