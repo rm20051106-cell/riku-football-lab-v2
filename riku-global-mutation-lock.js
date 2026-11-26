@@ -350,14 +350,17 @@
             try { tx.abort(); } catch (_) {}
             return;
           }
-          for (const prefix of candidates) {
-            if (protectedPrefixes.has(prefix)) continue;
-            const referencedElsewhere = rows.some(other =>
-              other.restoreId !== journal.restoreId &&
-              (other.videoChanges || []).some(change => change.oldPrefix === prefix || change.newPrefix === prefix)
-            );
-            if (!referencedElsewhere) chunks.delete(IDBKeyRange.bound(prefix, prefix + "\uffff"));
-          }
+          ctx.chunkDeleteAuthorized = true;
+          try {
+            for (const prefix of candidates) {
+              if (protectedPrefixes.has(prefix)) continue;
+              const referencedElsewhere = rows.some(other =>
+                other.restoreId !== journal.restoreId &&
+                (other.videoChanges || []).some(change => change.oldPrefix === prefix || change.newPrefix === prefix)
+              );
+              if (!referencedElsewhere) chunks.delete(IDBKeyRange.bound(prefix, prefix + "\uffff"));
+            }
+          } finally { ctx.chunkDeleteAuthorized = false; }
           journals.delete(journal.restoreId);
         };
         allJournals.onerror = () => { try { tx.abort(); } catch (_) {} };
@@ -420,16 +423,19 @@
                   if (change.oldPrefix) candidates.add(String(change.oldPrefix));
                   if (change.newPrefix) candidates.add(String(change.newPrefix));
                 }
-                for (const prefix of candidates) {
-                  if (prefix === activePrefix) continue;
-                  const referencedByOtherJournal = journalRows.some(other =>
-                    other.restoreId !== journal.restoreId &&
-                    (other.videoChanges || []).some(item => item.oldPrefix === prefix || item.newPrefix === prefix)
-                  );
-                  if (!referencedByOtherJournal) {
-                    chunks.delete(IDBKeyRange.bound(prefix, prefix + "\uffff"));
+                ctx.chunkDeleteAuthorized = true;
+                try {
+                  for (const prefix of candidates) {
+                    if (prefix === activePrefix) continue;
+                    const referencedByOtherJournal = journalRows.some(other =>
+                      other.restoreId !== journal.restoreId &&
+                      (other.videoChanges || []).some(item => item.oldPrefix === prefix || item.newPrefix === prefix)
+                    );
+                    if (!referencedByOtherJournal) {
+                      chunks.delete(IDBKeyRange.bound(prefix, prefix + "\uffff"));
+                    }
                   }
-                }
+                } finally { ctx.chunkDeleteAuthorized = false; }
                 remaining--;
                 if (remaining === 0) journals.delete(journal.restoreId);
               };
@@ -766,6 +772,12 @@
     if (!IDBObjectStore.prototype.delete.__rikuPendingJobGuarded) {
       const originalDelete = IDBObjectStore.prototype.delete;
       const guardedDelete = function (key) {
+        if (this.name === "videoChunks") {
+          const ctx = window.__rikuMutationContext;
+          if (!ctx || !ctx.chunkDeleteAuthorized) {
+            throw new Error("動画チャンク削除は復旧ジャーナルで許可された処理に限定されています");
+          }
+        }
         if (this.name === "videos" && key instanceof IDBKeyRange) {
           throw new Error("動画メタデータの範囲削除は禁止されています");
         }
