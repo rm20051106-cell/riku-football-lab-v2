@@ -158,7 +158,9 @@ let state={aiFormAnalyses:[],matchAnalyses:[],playerProfile:{kit:'赤いシャ�
 function load(){try{let s=JSON.parse(localStorage.getItem(KEY));if(s&&s.settings)state={...state,...s,playerProfile:{...state.playerProfile,...(s.playerProfile||{})},settings:{...state.settings,...s.settings},menus:s.menus||defaultMenus};}catch(e){}}
 function persist(){
  const notice=document.getElementById('recordSaveNotice');
+ if(window.__rikuMutationContext)window.__rikuMutationContext.persistFailure=false;
  if(!window.__rikuMutationContext||window.__rikuMutationSafeMode){
+  if(window.__rikuMutationContext)window.__rikuMutationContext.persistFailure=true;
   const message='安全な保存ロックを取得できないため、今回の変更は保存していません。別タブの処理完了後に再試行してください。';
   if(notice){notice.textContent=message;notice.classList.remove('hidden');}
   console.error(message);
@@ -169,6 +171,7 @@ function persist(){
   localStorage.setItem(KEY,serialized);
   if(notice){notice.classList.add('hidden');notice.textContent=''}
  }catch(error){
+  if(window.__rikuMutationContext)window.__rikuMutationContext.persistFailure=true;
   console.error('記録データの保存に失敗しました',error);
   if(notice){
    notice.textContent='記録データを端末に保存できませんでした。今回の変更は画面上には残っていますが、再読み込みすると失われる可能性があります。すぐに「設定」→「記録データを書き出す」でバックアップしてください。原因：'+(error?.name||'保存エラー');
