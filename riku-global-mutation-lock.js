@@ -709,7 +709,9 @@
           }
         };
         get.onerror = () => { try { tx.abort(); } catch (_) {} };
-        ctx.idbWrites = (ctx.idbWrites || 0) + 1;
+        ctx.idbWriteAttempts = (ctx.idbWriteAttempts || 0) + 1;
+        tx.addEventListener("complete", () => { ctx.idbWrites = (ctx.idbWrites || 0) + 1; }, { once: true });
+        tx.addEventListener("abort", () => { ctx.idbWriteFailures = (ctx.idbWriteFailures || 0) + 1; }, { once: true });
         return tx;
       };
       guardedTransaction.__rikuFenced = true;
