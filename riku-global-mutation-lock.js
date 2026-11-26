@@ -83,7 +83,7 @@
       status.textContent = message;
     }
   }
-  function internalTransaction(db, stores, mode, ctx) {
+  function internalTransaction(db, stores, mode, ctx, allowExpired) {
     const names = Array.from(new Set([].concat(stores, "restoreLocks")));
     window.__rikuLockInternal = true;
     let tx;
@@ -93,7 +93,8 @@
       const request = tx.objectStore("restoreLocks").get(LOCK_KEY);
       request.onsuccess = function () {
         const row = request.result;
-        if (!row || row.ownerId !== ctx.ownerId || Number(row.fenceToken) !== Number(ctx.fenceToken)) {
+        if (!row || row.ownerId !== ctx.ownerId || Number(row.fenceToken) !== Number(ctx.fenceToken) ||
+            (!allowExpired && Number(row.leaseUntil) <= Date.now())) {
           try { tx.abort(); } catch (_) {}
         }
       };
@@ -423,7 +424,7 @@
     const db = await openDB();
     try {
       await new Promise((resolve, reject) => {
-        const tx = internalTransaction(db, ["restoreLocks"], "readwrite", ctx);
+        const tx = internalTransaction(db, ["restoreLocks"], "readwrite", ctx, true);
         const store = tx.objectStore("restoreLocks");
         const get = store.get(LOCK_KEY);
         get.onsuccess = () => {
@@ -442,7 +443,7 @@
     const db = await openDB();
     try {
       await new Promise((resolve, reject) => {
-        const tx = internalTransaction(db, ["restoreLocks"], "readwrite", ctx);
+        const tx = internalTransaction(db, ["restoreLocks"], "readwrite", ctx, true);
         const store = tx.objectStore("restoreLocks");
         const get = store.get(LOCK_KEY);
         get.onsuccess = () => {
@@ -685,7 +686,8 @@
         const get = tx.objectStore("restoreLocks").get(LOCK_KEY);
         get.onsuccess = () => {
           const row = get.result;
-          if (!row || row.ownerId !== ctx.ownerId || Number(row.fenceToken) !== Number(ctx.fenceToken)) {
+          if (!row || row.ownerId !== ctx.ownerId || Number(row.fenceToken) !== Number(ctx.fenceToken) ||
+              Number(row.leaseUntil) <= Date.now()) {
             try { tx.abort(); } catch (_) {}
           }
         };
