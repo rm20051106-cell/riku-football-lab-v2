@@ -550,6 +550,12 @@
         const fence = await acquireFence(ownerId, operationId);
         const ctx = { ownerId, operationId, restoreId: makeId("journal"), fenceToken: fence.fenceToken, operation: "startup-recovery", idbWrites: 0 };
         window.__rikuMutationContext = ctx;
+        heartbeat = setInterval(() => {
+          heartbeatFence(ctx).catch(error => {
+            window.__rikuMutationSafeMode = true;
+            setNotice("復旧処理のロックを確認できません。保存・削除を停止しました");
+          });
+        }, HEARTBEAT_MS);
         try {
           const db = await openDB();
           let journals;
@@ -590,6 +596,7 @@
             window.__rikuMutationSafeMode = true;
           }
         } finally {
+          if (heartbeat) { clearInterval(heartbeat); heartbeat = null; }
           window.__rikuMutationContext = null;
           await releaseFence(ctx);
         }
@@ -686,7 +693,7 @@
         const get = tx.objectStore("restoreLocks").get(LOCK_KEY);
         get.onsuccess = () => {
           const row = get.result;
-          if (!row || row.ownerId !== ctx.ownerId || Number(row.fenceToken) !== Number(ctx.fenceToken) ||
+          if (window.__rikuMutationSafeMode || !row || row.ownerId !== ctx.ownerId || Number(row.fenceToken) !== Number(ctx.fenceToken) ||
               Number(row.leaseUntil) <= Date.now()) {
             try { tx.abort(); } catch (_) {}
           }
