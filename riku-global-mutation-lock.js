@@ -630,7 +630,9 @@
       const operationId = makeId("op");
       const restoreId = makeId("restore");
       const fence = await acquireFence(ownerId, operationId);
-      const ctx = { ownerId, operationId, restoreId, fenceToken: fence.fenceToken, operation: String(operation || "mutation"), idbWrites: 0, persistAttempted: false, persisted: false, auxStorageMutation: false };
+      const ctx = { ownerId, operationId, restoreId, fenceToken: fence.fenceToken, operation: String(operation || "mutation"), idbWrites: 0, persistAttempted: false, persisted: false, persistFailure: false, auxStorageMutation: false };
+      try { ctx.stateSnapshot = typeof state === "undefined" ? null : JSON.stringify(state); }
+      catch (snapshotError) { await releaseFence(ctx); throw new Error("保存前の状態を安全に退避できません：" + (snapshotError?.message || String(snapshotError))); }
       window.__rikuMutationContext = ctx;
       try {
         await startJournal(ctx);
@@ -641,8 +643,16 @@
           });
         }, HEARTBEAT_MS);
         output = await task(ctx);
+        if (ctx.persistFailure && !ctx.persisted && ctx.stateSnapshot) {
+          state = JSON.parse(ctx.stateSnapshot);
+          if (typeof renderAll === "function") renderAll();
+          setNotice("保存に失敗したため、画面上の変更も保存前に戻しました。既存データは維持しています。");
+        }
         await finalizeOperation(ctx);
       } catch (error) {
+        if (ctx.persistFailure && !ctx.persisted && ctx.stateSnapshot) {
+          try { state = JSON.parse(ctx.stateSnapshot); if (typeof renderAll === "function") renderAll(); } catch (_) {}
+        }
         let recovered = false;
         try {
           await finalizeOperation(ctx);
@@ -723,7 +733,7 @@
         if (name === APP_KEY) {
           const serialized = String(value);
           const sum = checksum(serialized);
-          if (ctx) { ctx.persistAttempted = true; ctx.persisted = false; ctx.afterChecksum = sum; ctx.afterLength = serialized.length; }
+          if (ctx) { ctx.persistAttempted = true; ctx.persisted = false; ctx.persistFailure = false; ctx.afterChecksum = sum; ctx.afterLength = serialized.length; }
           if (ctx) originalSetItem.call(this, JOURNAL_HINT_KEY, JSON.stringify({ operationId: ctx.operationId, checksum: sum, length: serialized.length, state: "writing", at: Date.now() }));
           const result = originalSetItem.call(this, name, serialized);
           if (ctx) {
@@ -744,6 +754,7 @@
         if (name === APP_KEY && ctx) {
           ctx.persistAttempted = true;
           ctx.persisted = false;
+          ctx.persistFailure = false;
           ctx.afterChecksum = checksum(null);
           ctx.afterLength = null;
           originalSetItem.call(this, JOURNAL_HINT_KEY, JSON.stringify({ operationId: ctx.operationId, checksum: ctx.afterChecksum, length: null, state: "writing", removed: true, at: Date.now() }));
