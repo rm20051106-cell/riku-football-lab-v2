@@ -276,17 +276,12 @@
           if (change.oldRecord?.chunkPrefix) protectedPrefixes.add(String(change.oldRecord.chunkPrefix));
         }
         const candidates = new Set(changes.map(change => change.newPrefix).filter(Boolean).map(String));
-        const allVideos = videos.getAll();
-        allVideos.onsuccess = () => {
-          const activePrefixes = new Set((allVideos.result || []).map(row => row?.chunkPrefix).filter(Boolean).map(String));
-          for (const prefix of candidates) {
-            if (!protectedPrefixes.has(prefix) && !activePrefixes.has(prefix)) {
-              chunks.delete(IDBKeyRange.bound(prefix, prefix + "\uffff"));
-            }
+        for (const prefix of candidates) {
+          if (!protectedPrefixes.has(prefix)) {
+            chunks.delete(IDBKeyRange.bound(prefix, prefix + "\uffff"));
           }
-          journals.delete(journal.restoreId);
-        };
-        allVideos.onerror = () => { try { tx.abort(); } catch (_) {} };
+        }
+        journals.delete(journal.restoreId);
         tx.oncomplete = resolve;
         tx.onerror = () => reject(tx.error || new Error("復旧前の動画状態へ戻せません"));
         tx.onabort = () => reject(tx.error || new Error("動画ロールバックが中断されました"));
@@ -301,63 +296,62 @@
         const videos = tx.objectStore("videos");
         const chunks = tx.objectStore("videoChunks");
         const journals = tx.objectStore("restoreJournal");
-        const allVideos = videos.getAll();
         const allJournals = journals.getAll();
-        let videosReady = false, journalsReady = false, finished = false;
-        let videoRows = [], journalRows = [];
-        const process = () => {
-          if (!videosReady || !journalsReady || finished) return;
-          finished = true;
+        allJournals.onsuccess = () => {
+          const journalRows = allJournals.result || [];
           const changes = journal.videoChanges || [];
-          const finalByKey = new Map();
-          for (const change of changes) finalByKey.set(String(change.key), change);
-          const byKey = new Map((videoRows || []).map(row => [String(row.__key), row]));
-          for (const [key, finalChange] of finalByKey) {
-            const current = byKey.get(key) || null;
-            if (finalChange.kind === "delete" && current) {
-              try { tx.abort(); } catch (_) {}
-              return;
-            }
-            if (finalChange.newPrefix && current?.chunkPrefix !== finalChange.newPrefix) {
-              try { tx.abort(); } catch (_) {}
-              return;
-            }
-            if (finalChange.kind === "restore" && !finalChange.newPrefix && !current) {
-              try { tx.abort(); } catch (_) {}
-              return;
-            }
-          }
-          const activePrefixes = new Set(videoRows.map(row => row?.chunkPrefix).filter(Boolean).map(String));
-          const candidates = new Set();
+          const byKey = new Map();
           for (const change of changes) {
-            if (change.oldPrefix) candidates.add(String(change.oldPrefix));
-            if (change.newPrefix) candidates.add(String(change.newPrefix));
+            const key = String(change.key);
+            if (!byKey.has(key)) byKey.set(key, []);
+            byKey.get(key).push(change);
           }
-          for (const prefix of candidates) {
-            if (activePrefixes.has(prefix)) continue;
-            const referencedByOtherJournal = journalRows.some(other =>
-              other.restoreId !== journal.restoreId &&
-              !["committed", "rolled-back"].includes(other.state) &&
-              (other.videoChanges || []).some(item => item.oldPrefix === prefix || item.newPrefix === prefix)
-            );
-            if (!referencedByOtherJournal) {
-              chunks.delete(IDBKeyRange.bound(prefix, prefix + "\uffff"));
-            }
+          const entries = [...byKey.entries()];
+          if (!entries.length) {
+            journals.delete(journal.restoreId);
+            return;
           }
-          journals.delete(journal.restoreId);
+          let remaining = entries.length;
+          for (const [key, keyChanges] of entries) {
+            const finalChange = keyChanges[keyChanges.length - 1];
+            const currentReq = videos.get(key);
+            currentReq.onsuccess = () => {
+              const current = currentReq.result || null;
+              if (finalChange.kind === "delete" && current) {
+                try { tx.abort(); } catch (_) {}
+                return;
+              }
+              if (finalChange.newPrefix && current?.chunkPrefix !== finalChange.newPrefix) {
+                try { tx.abort(); } catch (_) {}
+                return;
+              }
+              if (finalChange.kind === "restore" && !finalChange.newPrefix && !current) {
+                try { tx.abort(); } catch (_) {}
+                return;
+              }
+              const activePrefix = current?.chunkPrefix ? String(current.chunkPrefix) : "";
+              const candidates = new Set();
+              for (const change of keyChanges) {
+                if (change.oldPrefix) candidates.add(String(change.oldPrefix));
+                if (change.newPrefix) candidates.add(String(change.newPrefix));
+              }
+              for (const prefix of candidates) {
+                if (prefix === activePrefix) continue;
+                const referencedByOtherJournal = journalRows.some(other =>
+                  other.restoreId !== journal.restoreId &&
+                  !["committed", "rolled-back"].includes(other.state) &&
+                  (other.videoChanges || []).some(item => item.oldPrefix === prefix || item.newPrefix === prefix)
+                );
+                if (!referencedByOtherJournal) {
+                  chunks.delete(IDBKeyRange.bound(prefix, prefix + "\uffff"));
+                }
+              }
+              remaining--;
+              if (remaining === 0) journals.delete(journal.restoreId);
+            };
+            currentReq.onerror = () => { try { tx.abort(); } catch (_) {} };
+          }
         };
-        allVideos.onsuccess = () => {
-          const getKeys = videos.getAllKeys();
-          getKeys.onsuccess = () => {
-            const values = allVideos.result || [];
-            videoRows = values.map((row, index) => ({ ...row, __key: String(getKeys.result[index]) }));
-            videosReady = true;
-            process();
-          };
-          getKeys.onerror = () => { try { tx.abort(); } catch (_) {} };
-        };
-        allVideos.onerror = () => { try { tx.abort(); } catch (_) {} };
-        allJournals.onsuccess = () => { journalRows = allJournals.result || []; journalsReady = true; process(); };
         allJournals.onerror = () => { try { tx.abort(); } catch (_) {} };
         tx.oncomplete = resolve;
         tx.onerror = () => reject(tx.error || new Error("確定済み動画の後片付けに失敗しました"));
