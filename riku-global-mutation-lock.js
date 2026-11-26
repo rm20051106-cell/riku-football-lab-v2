@@ -58,7 +58,8 @@
       videoChanges: (row.videoChanges || []).map(change => ({
         key: String(change.key), kind: change.kind || null,
         oldPrefix: change.oldPrefix || null, newPrefix: change.newPrefix || null,
-        oldRecord: videoRecordSummary(change.oldRecord)
+        oldRecord: videoRecordSummary(change.oldRecord),
+        newRecord: videoRecordSummary(change.newRecord)
       }))
     };
     return checksum(JSON.stringify(canonical));
@@ -386,7 +387,8 @@
                 try { tx.abort(); } catch (_) {}
                 return;
               }
-              if (finalChange.kind === "restore" && !finalChange.newPrefix && !current) {
+              if (finalChange.kind === "restore" && !finalChange.newPrefix &&
+                  (!current || (finalChange.newRecord && JSON.stringify(videoRecordSummary(current)) !== JSON.stringify(videoRecordSummary(finalChange.newRecord))))) {
                 try { tx.abort(); } catch (_) {}
                 return;
               }
