@@ -2913,7 +2913,7 @@ function getPlayerSkillProfile(asOfDate=null){
  return {rows,strengths,weaknesses,priority};
 }
 function syncMonthlySkillSnapshot(){
- if(!window.__rikuMutationContext)return;
+ if(!window.__rikuMutationContext||window.__rikuMutationContext.persistFailure)return;
  const now=today(),currentMonth=now.slice(0,7),months=new Set();
  (state.matchAnalyses||[]).forEach(m=>{if(/^\d{4}-\d{2}-\d{2}$/.test(m.date||'')&&m.date.slice(0,7)<=currentMonth)months.add(m.date.slice(0,7));});
  (state.trainings||[]).forEach(t=>{if(/^\d{4}-\d{2}-\d{2}$/.test(t.date||'')&&t.date.slice(0,7)<=currentMonth)months.add(t.date.slice(0,7));});
