@@ -268,7 +268,7 @@
     const value = appValue();
     const sum = checksum(value);
     const length = value == null ? null : value.length;
-    localStorage.setItem(JOURNAL_HINT_KEY, JSON.stringify({
+    originalSetItem.call(localStorage, JOURNAL_HINT_KEY, JSON.stringify({
       operationId: ctx.operationId, checksum: sum, length,
       state: "video-only-committed", at: Date.now()
     }));
