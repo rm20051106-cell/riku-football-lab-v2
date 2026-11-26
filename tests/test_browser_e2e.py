@@ -3176,34 +3176,40 @@ class RikuBrowserE2ETests(unittest.TestCase):
 
     def test_stage57_global_mutation_lock_serializes_two_tabs(self):
         page = self.page
-        page.wait_for_function("window.__rikuMutationRecoveryReady && window.__rikuMutationRecoveryReady()")
-        page.evaluate("""() => {
-            window.__stage57LockEntered = false;
-            window.__startStage57Hold = () => {
-                window.__stage57HoldPromise = window.withGlobalMutationLock('stage57-hold', async () => {
-                    window.__stage57LockEntered = true;
-                    await new Promise(resolve => { window.__releaseStage57Hold = resolve; });
-                });
-            };
-            window.__startStage57Hold();
-        }""")
-        page.wait_for_function("window.__stage57LockEntered === true")
         second = page.context.new_page()
         try:
             second.goto(self.base_url, wait_until="load")
+            page.wait_for_function("window.__rikuMutationRecoveryReady && window.__rikuMutationRecoveryReady()")
+            second.wait_for_function("window.__rikuMutationRecoveryReady && window.__rikuMutationRecoveryReady()")
+            page.evaluate("""() => {
+                window.__stage57LockEntered = false;
+                window.__startStage57Hold = () => {
+                    window.__stage57HoldPromise = window.withGlobalMutationLock('stage57-hold', async () => {
+                        window.__stage57LockEntered = true;
+                        await new Promise(resolve => { window.__releaseStage57Hold = resolve; });
+                    });
+                };
+                window.__startStage57Hold();
+            }""")
+            page.wait_for_function("window.__stage57LockEntered === true")
             second.evaluate("""() => {
                 window.__stage57SecondFinished = false;
                 window.__stage57SecondPromise = window.withGlobalMutationLock('stage57-second', async () => {
                     window.__stage57SecondFinished = true;
                 }).catch(error => { window.__stage57SecondError = String(error); });
             }""")
-            second.wait_for_timeout(250)
+            second.wait_for_function("!!window.__stage57SecondError")
             self.assertFalse(second.evaluate("window.__stage57SecondFinished"))
+            self.assertIn("別のタブで保存処理中", second.evaluate("window.__stage57SecondError"))
             page.evaluate("window.__releaseStage57Hold()")
-            second.wait_for_function(
-                "window.__stage57SecondFinished === true",
-                timeout=15000,
-            )
+            second.evaluate("""() => {
+                window.__stage57SecondError = null;
+                window.__stage57SecondFinished = false;
+                window.__stage57SecondPromise = window.withGlobalMutationLock('stage57-second-retry', async () => {
+                    window.__stage57SecondFinished = true;
+                }).catch(error => { window.__stage57SecondError = String(error); });
+            }""")
+            second.wait_for_function("window.__stage57SecondFinished === true", timeout=15000)
             self.assertIsNone(second.evaluate("window.__stage57SecondError || null"))
         finally:
             try:
