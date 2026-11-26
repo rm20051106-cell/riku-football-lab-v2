@@ -403,7 +403,6 @@
                   if (prefix === activePrefix) continue;
                   const referencedByOtherJournal = journalRows.some(other =>
                     other.restoreId !== journal.restoreId &&
-                    !["committed", "rolled-back"].includes(other.state) &&
                     (other.videoChanges || []).some(item => item.oldPrefix === prefix || item.newPrefix === prefix)
                   );
                   if (!referencedByOtherJournal) {
