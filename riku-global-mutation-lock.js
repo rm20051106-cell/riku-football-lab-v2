@@ -405,14 +405,14 @@
                     (other.videoChanges || []).some(item => item.oldPrefix === prefix || item.newPrefix === prefix)
                   );
                   if (!referencedByOtherJournal) {
-                    chunks.delete(IDBKeyRange.bound(prefix, prefix + "\\uffff"));
+                    chunks.delete(IDBKeyRange.bound(prefix, prefix + "\uffff"));
                   }
                 }
                 remaining--;
                 if (remaining === 0) journals.delete(journal.restoreId);
               };
               if (finalChange.newPrefix) {
-                const range = IDBKeyRange.bound(finalChange.newPrefix, finalChange.newPrefix + "\\uffff");
+                const range = IDBKeyRange.bound(finalChange.newPrefix, finalChange.newPrefix + "\uffff");
                 const cursorReq = chunks.openCursor(range);
                 let count = 0, bytes = 0, expectedIndex = 0;
                 cursorReq.onsuccess = () => {
