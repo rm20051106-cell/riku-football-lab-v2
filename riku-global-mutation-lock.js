@@ -106,20 +106,23 @@
       });
     } finally { db.close(); }
   }
-  async function updateJournal(ctx, patch) {
+  async function updateJournal(ctx, patch, journalId) {
+    const targetId = journalId || patch.restoreId || ctx.restoreId;
+    const changes = { ...patch };
+    delete changes.restoreId;
     const db = await openDB();
     try {
       await new Promise((resolve, reject) => {
         const tx = internalTransaction(db, ["restoreJournal"], "readwrite", ctx);
         const store = tx.objectStore("restoreJournal");
-        const get = store.get(ctx.restoreId);
+        const get = store.get(targetId);
         get.onsuccess = () => {
           const row = get.result;
           if (!row || row.ownerId !== ctx.ownerId || Number(row.fenceToken) !== Number(ctx.fenceToken)) {
             try { tx.abort(); } catch (_) {}
             return;
           }
-          Object.assign(row, patch, { updatedAt: new Date().toISOString() });
+          Object.assign(row, changes, { updatedAt: new Date().toISOString() });
           store.put(row);
         };
         get.onerror = () => { try { tx.abort(); } catch (_) {} };
@@ -243,10 +246,19 @@
         const chunks = tx.objectStore("videoChunks");
         const journals = tx.objectStore("restoreJournal");
         const all = journals.getAll();
-        const pending = [];
         all.onsuccess = () => {
           const rows = all.result || [];
-          for (const change of journal.videoChanges || []) {
+          const changes = journal.videoChanges || [];
+          if (!changes.length) {
+            journals.delete(journal.restoreId);
+            return;
+          }
+          let remaining = changes.length;
+          const finishOne = () => {
+            remaining--;
+            if (remaining === 0) journals.delete(journal.restoreId);
+          };
+          for (const change of changes) {
             const currentReq = videos.get(String(change.key));
             currentReq.onsuccess = () => {
               const current = currentReq.result || null;
@@ -259,20 +271,20 @@
                 return;
               }
               const oldPrefix = change.oldPrefix;
-              if (!oldPrefix || oldPrefix === change.newPrefix) return;
-              const activeElsewhere = rows.some(other => other.restoreId !== journal.restoreId &&
-                !["committed", "rolled-back"].includes(other.state) &&
-                (other.videoChanges || []).some(item => item.oldPrefix === oldPrefix || item.newPrefix === oldPrefix));
-              if (!activeElsewhere && current?.chunkPrefix !== oldPrefix) {
-                chunks.delete(IDBKeyRange.bound(oldPrefix, oldPrefix + "\uffff"));
+              if (oldPrefix && oldPrefix !== change.newPrefix) {
+                const activeElsewhere = rows.some(other =>
+                  other.restoreId !== journal.restoreId &&
+                  !["committed", "rolled-back"].includes(other.state) &&
+                  (other.videoChanges || []).some(item => item.oldPrefix === oldPrefix || item.newPrefix === oldPrefix)
+                );
+                if (!activeElsewhere && current?.chunkPrefix !== oldPrefix) {
+                  chunks.delete(IDBKeyRange.bound(oldPrefix, oldPrefix + "\uffff"));
+                }
               }
+              finishOne();
             };
-            pending.push(currentReq);
+            currentReq.onerror = () => { try { tx.abort(); } catch (_) {} };
           }
-          Promise.all(pending.map(req => new Promise(resolveReq => {
-            if (req.readyState === "done") resolveReq();
-            else req.onsuccess = () => resolveReq();
-          }))).then(() => journals.delete(journal.restoreId));
         };
         all.onerror = () => { try { tx.abort(); } catch (_) {} };
         tx.oncomplete = resolve;
@@ -328,18 +340,28 @@
       journal = (await readJournals(db)).find(row => row.restoreId === ctx.restoreId);
     } finally { db.close(); }
     if (!journal) return;
-    const current = appValue();
-    const currentChecksum = checksum(current);
+    const currentChecksum = checksum(appValue());
+    const hasVideoChanges = Array.isArray(journal.videoChanges) && journal.videoChanges.length > 0;
+
     if (ctx.persistAttempted && !ctx.persisted && currentChecksum === ctx.beforeChecksum) {
       await restoreJournalBefore(ctx, journal);
       return;
     }
-    if (ctx.persisted || ctx.idbWrites > 0 || ctx.auxStorageMutation) {
-      if (ctx.persisted && currentChecksum !== ctx.afterChecksum) {
-        await updateJournal(ctx, { state: "recovery-required", reason: "localStorage readback checksum mismatch" });
-        window.__rikuMutationSafeMode = true;
-        throw new Error("保存後の記録照合に失敗しました。動画・履歴を削除せず安全停止しました");
+    if (hasVideoChanges && !ctx.persisted && ctx.operation !== "storeClipVideo" && ctx.operation !== "restoreClipVideoRecord") {
+      if (currentChecksum === ctx.beforeChecksum) {
+        await restoreJournalBefore(ctx, journal);
+        return;
       }
+      await updateJournal(ctx, { state: "recovery-required", reason: "video changed without a confirmed app-state persist" });
+      window.__rikuMutationSafeMode = true;
+      throw new Error("動画と記録の保存状態が一致しません。既存動画を削除せず安全停止しました");
+    }
+    if (ctx.persisted && currentChecksum !== ctx.afterChecksum) {
+      await updateJournal(ctx, { state: "recovery-required", reason: "localStorage readback checksum mismatch" });
+      window.__rikuMutationSafeMode = true;
+      throw new Error("保存後の記録照合に失敗しました。動画・履歴を削除せず安全停止しました");
+    }
+    if (ctx.persisted || ctx.idbWrites > 0 || ctx.auxStorageMutation) {
       await updateJournal(ctx, {
         state: "persisted",
         afterStateChecksum: ctx.persisted ? ctx.afterChecksum : null,
@@ -381,8 +403,7 @@
           const db = await openDB();
           let journals;
           try { journals = await readJournals(db); } finally { db.close(); }
-          const current = appValue();
-          const currentChecksum = checksum(current);
+          const currentChecksum = checksum(appValue());
           let hint = null;
           try { hint = JSON.parse(localStorage.getItem(JOURNAL_HINT_KEY) || "null"); } catch (_) {}
           for (const journal of journals) {
@@ -395,11 +416,20 @@
               hint.checksum === currentChecksum &&
               (!journal.afterStateChecksum || journal.afterStateChecksum === currentChecksum);
             if (afterMatches) {
-              await updateJournal(ctx, { restoreId: journal.restoreId, state: "recovery-required", reason: "post-persist state found; video verification required" });
-              window.__rikuMutationSafeMode = true;
+              await updateJournal(ctx, {
+                state: "persisted",
+                afterStateChecksum: currentChecksum,
+                afterStateLength: hint.length == null ? null : Number(hint.length)
+              }, journal.restoreId);
+              const recovered = { ...journal, state: "committed" };
+              await updateJournal(ctx, { state: "committed" }, journal.restoreId);
+              await finishCommittedJournal(ctx, recovered);
               continue;
             }
-            await updateJournal(ctx, { restoreId: journal.restoreId, state: "recovery-required", reason: "localStorage matches neither before nor after snapshot" });
+            await updateJournal(ctx, {
+              state: "recovery-required",
+              reason: "localStorage matches neither before nor confirmed after snapshot"
+            }, journal.restoreId);
             window.__rikuMutationSafeMode = true;
           }
         } finally {
@@ -420,7 +450,6 @@
     }).finally(() => { recoveryPromise = null; });
     return recoveryPromise;
   }
-
   window.withGlobalMutationLock = async function (operation, task) {
     if (typeof task !== "function") throw new TypeError("mutation task is required");
     if (window.__rikuMutationContext) return task(window.__rikuMutationContext);
