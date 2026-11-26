@@ -495,7 +495,7 @@ def read_jersey_number(frame, landmarks, target_numbers, diagnostics=None):
         found = []
         targets = {str(x).strip() for x in target_numbers if str(x).strip()}
         for raw, confidence in zip(data.get("text", []), data.get("conf", [])):
-            digits = re.findall(r"(?<!\\d)\\d{1,2}(?!\\d)", str(raw))
+            digits = re.findall(r"(?<!\d)\d{1,2}(?!\\d)", str(raw))
             try:
                 conf = float(confidence)
             except (TypeError, ValueError):
