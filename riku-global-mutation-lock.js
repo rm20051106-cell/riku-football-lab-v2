@@ -206,6 +206,32 @@
     if (!ctx) throw new Error("動画変更の所有権を確認できません");
     await updateJournal(ctx, { state: stage });
   }
+  async function cancelVideoChange(newPrefix) {
+    const ctx = window.__rikuMutationContext;
+    if (!ctx) throw new Error("動画変更の所有権を確認できません");
+    const db = await openDB();
+    try {
+      await new Promise((resolve, reject) => {
+        const tx = internalTransaction(db, ["restoreJournal"], "readwrite", ctx);
+        const store = tx.objectStore("restoreJournal");
+        const get = store.get(ctx.restoreId);
+        get.onsuccess = () => {
+          const row = get.result;
+          if (!row || row.ownerId !== ctx.ownerId || Number(row.fenceToken) !== Number(ctx.fenceToken)) {
+            try { tx.abort(); } catch (_) {}
+            return;
+          }
+          row.videoChanges = (row.videoChanges || []).filter(change => change.newPrefix !== newPrefix);
+          row.updatedAt = new Date().toISOString();
+          store.put(row);
+        };
+        get.onerror = () => { try { tx.abort(); } catch (_) {} };
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error || new Error("未確定動画の復旧情報を整理できません"));
+        tx.onabort = () => reject(tx.error || new Error("未確定動画の復旧情報整理が中断されました"));
+      });
+    } finally { db.close(); }
+  }
   async function readJournals(db) {
     return new Promise((resolve, reject) => {
       const tx = db.transaction("restoreJournal", "readonly");
@@ -372,9 +398,19 @@
       journal = (await readJournals(db)).find(row => row.restoreId === ctx.restoreId);
     } finally { db.close(); }
     if (!journal) return;
-    const currentChecksum = checksum(appValue());
+    const current = appValue();
+    const currentChecksum = checksum(current);
     const hasVideoChanges = Array.isArray(journal.videoChanges) && journal.videoChanges.length > 0;
 
+    if (ctx.forceRollback && currentChecksum === ctx.beforeChecksum) {
+      await restoreJournalBefore(ctx, journal);
+      return;
+    }
+    if (ctx.forceRollback && currentChecksum !== ctx.beforeChecksum) {
+      await updateJournal(ctx, { state: "recovery-required", reason: "video rollback required after app-state change" });
+      window.__rikuMutationSafeMode = true;
+      throw new Error("動画の切替を安全に取り消せません。既存データを保持して安全停止しました");
+    }
     if (ctx.persistAttempted && !ctx.persisted && currentChecksum === ctx.beforeChecksum) {
       await restoreJournalBefore(ctx, journal);
       return;
@@ -531,8 +567,16 @@
         output = await task(ctx);
         await finalizeOperation(ctx);
       } catch (error) {
-        try { await updateJournal(ctx, { state: "recovery-required", reason: String(error?.message || error).slice(0, 300) }); } catch (_) {}
-        window.__rikuMutationSafeMode = true;
+        let recovered = false;
+        try {
+          await finalizeOperation(ctx);
+          recovered = true;
+        } catch (recoveryError) {
+          try { await updateJournal(ctx, { state: "recovery-required", reason: String(recoveryError?.message || recoveryError).slice(0, 300) }); } catch (_) {}
+          window.__rikuMutationSafeMode = true;
+          setNotice("処理失敗後の復旧を確認できません。既存動画・分析履歴・pending jobを削除せず安全停止しました");
+        }
+        if (!recovered) window.__rikuMutationSafeMode = true;
         throw error;
       } finally {
         if (heartbeat) { clearInterval(heartbeat); heartbeat = null; }
@@ -548,6 +592,7 @@
 
   window.__rikuRecordVideoChange = recordVideoChange;
   window.__rikuMarkVideoStage = markVideoStage;
+  window.__rikuCancelVideoChange = cancelVideoChange;
   window.__rikuMutationChecksum = checksum;
   window.__rikuMutationRecoveryReady = () => recoveryReady;
 
