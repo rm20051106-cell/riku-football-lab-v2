@@ -578,6 +578,7 @@
     if (recoveryReady) return true;
     if (recoveryPromise) return recoveryPromise;
     recoveryPromise = (async () => {
+      setNotice("別タブの保存処理・前回の復旧状態を確認しています。完了するまで保存・削除を停止します。");
       if (!navigator.locks || typeof navigator.locks.request !== "function") {
         window.__rikuMutationSafeMode = true;
         throw new Error("このSafariでは安全な複数タブ排他制御を利用できません。保存・削除を停止しました");
@@ -645,6 +646,11 @@
         throw new Error("復旧ジャーナルが未解決です");
       }
       recoveryReady = true;
+      const notice = document.getElementById("recordSaveNotice");
+      if (notice && notice.textContent.startsWith("別タブの保存処理・前回の復旧状態を確認しています")) {
+        notice.classList.add("hidden");
+        notice.textContent = "";
+      }
       return true;
     })().catch(error => {
       window.__rikuMutationSafeMode = true;
