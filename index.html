@@ -158,7 +158,7 @@ let state={aiFormAnalyses:[],matchAnalyses:[],playerProfile:{kit:'赤いシャ�
 function load(){try{let s=JSON.parse(localStorage.getItem(KEY));if(s&&s.settings)state={...state,...s,playerProfile:{...state.playerProfile,...(s.playerProfile||{})},settings:{...state.settings,...s.settings},menus:s.menus||defaultMenus};}catch(e){}}
 function persist(){
  const notice=document.getElementById('recordSaveNotice');
- if(!window.__rikuMutationContext){
+ if(!window.__rikuMutationContext||window.__rikuMutationSafeMode){
   const message='安全な保存ロックを取得できないため、今回の変更は保存していません。別タブの処理完了後に再試行してください。';
   if(notice){notice.textContent=message;notice.classList.remove('hidden');}
   console.error(message);
