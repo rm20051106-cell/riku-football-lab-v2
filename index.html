@@ -320,13 +320,17 @@ async function storeClipVideo(id,file){
  const generation=Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
  const chunkPrefix=key+'|'+generation+'|',db=await openVideoDB();
  let metadataCommitted=false;
- const deleteChunks=async prefix=>new Promise((resolve,reject)=>{
-  const tx=db.transaction('videoChunks','readwrite');
-  tx.objectStore('videoChunks').delete(IDBKeyRange.bound(prefix,prefix+'\uffff'));
-  tx.oncomplete=resolve;
-  tx.onerror=()=>reject(tx.error||new Error('動画チャンクの後片付けに失敗しました'));
-  tx.onabort=()=>reject(tx.error||new Error('動画チャンクの後片付けが中断されました'));
- });
+ const deleteChunks=async prefix=>{
+  const ctx=window.__rikuMutationContext;if(!ctx)throw new Error('動画チャンク削除ロックを確認できません');
+  ctx.chunkDeleteAuthorized=true;
+  try{await new Promise((resolve,reject)=>{
+   const tx=db.transaction('videoChunks','readwrite');
+   tx.objectStore('videoChunks').delete(IDBKeyRange.bound(prefix,prefix+'\uffff'));
+   tx.oncomplete=resolve;
+   tx.onerror=()=>reject(tx.error||new Error('動画チャンクの後片付けに失敗しました'));
+   tx.onabort=()=>reject(tx.error||new Error('動画チャンクの後片付けが中断されました'));
+  })}finally{ctx.chunkDeleteAuthorized=false}
+ };
  try{
   const previous=await new Promise((resolve,reject)=>{
    const tx=db.transaction('videos','readonly'),req=tx.objectStore('videos').get(key);
