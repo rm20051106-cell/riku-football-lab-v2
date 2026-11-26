@@ -129,7 +129,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertTrue(page.locator("#video").evaluate("(el) => el.classList.contains('active')"))
         self.assertEqual(page.locator("#videoMeta").get_attribute("aria-live"), "polite")
         self.assertEqual(page.locator('label[for="videoTitle"]').count(), 1)
-        titles = page.evaluate("""() => {
+        titles = page.evaluate("""async () => {
             state.matchAnalyses = [{
                 id: 8801, date: today(), title: 'E2E手動確認試合',
                 candidateEvents: [{
@@ -144,7 +144,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 date: today(), source: 'manual-reviewed-match-growth',
                 growthFocus: '判断力'
             };
-            persist();
+            await window.withGlobalMutationLock('test-fixture',()=>persist());
             const timeline = getMatchGrowthTimelineData().find(x => x.key === '判断力');
             return {
                 rows: timeline.rows.length,
@@ -211,11 +211,16 @@ class RikuBrowserE2ETests(unittest.TestCase):
             video_download.value.save_as(str(path))
             exported_paths.append(path)
 
-        page.evaluate("(id) => removeClipVideo(id)", clip_id)
-        page.evaluate("(id) => removeClipVideo('form-' + id)", form_id)
+        page.evaluate("""async ({clipId, formId}) => window.withGlobalMutationLock('test-remove-videos', async () => {
+            state.clips = [];
+            state.forms = [];
+            persist();
+            await removeClipVideo(clipId);
+            await removeClipVideo('form-' + formId);
+        })""", {"clipId": clip_id, "formId": form_id})
         page.locator("#importFile").set_input_files(str(backup_path))
         page.wait_for_function("state.clips.length === 1 && state.forms.length === 1")
-        page.evaluate("""() => {
+        page.evaluate("""async () => {
             window.__lastVideoImportAlert = '';
             window.alert = message => { window.__lastVideoImportAlert = String(message); };
             window.confirm = () => true;
@@ -267,7 +272,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
     def test_match_upload_continues_when_indexeddb_quota_blocks_video_and_resume_saves(self):
         page = self.page
         page.locator('.nav button[data-view="video"]').click()
-        page.evaluate("""() => {
+        page.evaluate("""async () => {
             Object.defineProperty(navigator, 'storage', {
                 configurable: true,
                 value: { estimate: async () => ({ usage: 95, quota: 100 }) }
@@ -334,7 +339,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         page.locator('.nav button[data-view="video"]').click()
         page.locator("#videoTitle").fill("容量不足テスト")
         page.locator("#videoFile").set_input_files(str(self.video_path))
-        page.evaluate("""() => {
+        page.evaluate("""async () => {
             window.storeClipVideo = async () => {
                 throw new DOMException('simulated IndexedDB quota', 'QuotaExceededError');
             };
@@ -348,7 +353,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         page = self.page
         page.locator('.nav button[data-view="video"]').click()
         page.locator("#videoTitle").fill("記録保存失敗テスト")
-        failed = page.evaluate("""() => {
+        failed = page.evaluate("""async () => {
             const original = Storage.prototype.setItem;
             Object.defineProperty(Storage.prototype, 'setItem', {
                 configurable: true,
@@ -360,7 +365,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     return original.call(this, key, value);
                 }
             });
-            return persist();
+            return await window.withGlobalMutationLock('test-fixture',()=>persist());
         }""")
         self.assertFalse(failed)
         self.assertFalse(page.locator("#recordSaveNotice").evaluate("(el) => el.classList.contains('hidden')"))
@@ -371,9 +376,9 @@ class RikuBrowserE2ETests(unittest.TestCase):
 
     def test_corrupt_json_backup_is_rejected_without_replacing_current_data(self):
         page = self.page
-        page.evaluate("""() => {
+        page.evaluate("""async () => {
             state.settings.name = '保護する現在データ';
-            persist();
+            await window.withGlobalMutationLock('test-fixture',()=>persist());
         }""")
         payload_state = page.evaluate("JSON.parse(JSON.stringify(state))")
         payload_state["settings"]["name"] = "破損したバックアップ"
@@ -397,9 +402,9 @@ class RikuBrowserE2ETests(unittest.TestCase):
 
     def test_video_restore_corruption_is_detected_and_rolled_back(self):
         page = self.page
-        page.evaluate("""() => {
+        page.evaluate("""async () => {
             state.clips = [{id: 'restore-check-1', title: '復元照合', hasVideo: false}];
-            persist();
+            await window.withGlobalMutationLock('test-fixture',()=>persist());
             const original = window.storeClipVideo.bind(window);
             window.storeClipVideo = async (key, file) => original(
                 key, new Blob([new Uint8Array([1, 2, 3])], {type: file.type})
@@ -561,7 +566,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             const blob = new Blob([new Uint8Array([1, 2, 3, 4])], {type: 'video/mp4'});
             await storeClipVideo('delete-rollback-1', blob);
             state.clips = [{id: 'delete-rollback-1', title: '削除保護', hasVideo: true}];
-            persist();
+            await window.withGlobalMutationLock('test-fixture',()=>persist());
             const originalSetItem = Storage.prototype.setItem;
             Storage.prototype.setItem = function(key, value) {
                 if (key === 'rikuFootballLab_v3') throw new DOMException('simulated quota', 'QuotaExceededError');
@@ -582,12 +587,12 @@ class RikuBrowserE2ETests(unittest.TestCase):
 
     def test_video_import_rejects_file_that_does_not_match_record_identity(self):
         page = self.page
-        page.evaluate("""() => {
+        page.evaluate("""async () => {
             state.clips = [{
                 id: 'import-identity-1', title: '元動画照合',
                 hasVideo: false, sourceVideoKey: 'original.mp4|4|123|video/mp4'
             }];
-            persist();
+            await window.withGlobalMutationLock('test-fixture',()=>persist());
         }""")
         wrong_video = self.temp_path / "riku-video__import-identity-1__original.mp4"
         wrong_video.write_bytes(b"wrong-size")
@@ -645,12 +650,12 @@ class RikuBrowserE2ETests(unittest.TestCase):
 
     def test_video_batch_restore_keeps_success_and_retries_only_failed_file(self):
         page = self.page
-        page.evaluate("""() => {
+        page.evaluate("""async () => {
             state.clips = [{
                 id: 'batch-good', title: '正常動画', hasVideo: false,
                 sourceVideoKey: ''
             }];
-            persist();
+            await window.withGlobalMutationLock('test-fixture',()=>persist());
         }""")
         good_video = self.temp_path / "riku-video__batch-good__good.webm"
         missing_record_video = self.temp_path / "riku-video__missing-record__lost.webm"
@@ -827,9 +832,9 @@ class RikuBrowserE2ETests(unittest.TestCase):
 
     def test_invalid_json_restore_preserves_current_state_and_storage(self):
         page = self.page
-        page.evaluate("""() => {
+        page.evaluate("""async () => {
             state.clips = [{id: 'keep-existing', title: '保持する記録', hasVideo: false}];
-            persist();
+            await window.withGlobalMutationLock('test-fixture',()=>persist());
         }""")
         before = page.evaluate("""() => ({
             state: JSON.stringify(state),
@@ -849,9 +854,9 @@ class RikuBrowserE2ETests(unittest.TestCase):
 
     def test_json_restore_storage_failure_keeps_memory_and_reports_storage_uncertainty(self):
         page = self.page
-        page.evaluate("""() => {
+        page.evaluate("""async () => {
             state.clips = [{id: 'storage-keep', title: '保存保護', hasVideo: false}];
-            persist();
+            await window.withGlobalMutationLock('test-fixture',()=>persist());
             window.__originalStorageSetItem = Storage.prototype.setItem;
             Storage.prototype.setItem = function(key, value) {
                 if (key === KEY) throw new DOMException('quota simulated', 'QuotaExceededError');
@@ -868,7 +873,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         page.on("dialog", lambda dialog: (messages.append(dialog.message), dialog.accept()))
         page.locator("#importFile").set_input_files(str(backup_path))
         page.wait_for_function("document.getElementById('importFile').value === ''", timeout=10000)
-        after = page.evaluate("""() => {
+        after = page.evaluate("""async () => {
             Storage.prototype.setItem = window.__originalStorageSetItem;
             return {state: JSON.stringify(state), stored: localStorage.getItem(KEY)};
         }""")
@@ -885,7 +890,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             state.matchAnalyses = [{id: 'match-keep', sourceVideoKey: key, clipId: 'clip-delete', videoStorageKey: 'clip-delete', aiFormAnalysisIds: ['ai-keep']}];
             state.aiFormAnalyses = [{id: 'ai-keep', sourceVideoKey: key, formId: 'form-keep', matchId: 'match-keep', matchClipId: 'clip-delete'}];
             await storeClipVideo('clip-delete', new Blob([new Uint8Array([1,2,3,4])], {type: 'video/mp4'}));
-            persist();
+            await window.withGlobalMutationLock('test-fixture',()=>persist());
         }""")
         page.once("dialog", lambda dialog: dialog.accept())
         page.evaluate("deleteItem('clips', 'clip-delete')")
@@ -910,13 +915,13 @@ class RikuBrowserE2ETests(unittest.TestCase):
 
     def test_delete_match_detaches_ai_links_but_preserves_form_and_training_context(self):
         page = self.page
-        page.evaluate("""() => {
+        page.evaluate("""async () => {
             state.matchAnalyses = [{id: 'match-delete', title: '削除対象', aiFormAnalysisIds: ['ai-keep']}];
             state.clips = [{id: 'clip-keep', matchAnalysisIds: ['match-delete']}];
             state.aiFormAnalyses = [{id: 'ai-keep', matchId: 'match-delete', matchTitle: '削除対象', matchDate: '2026-11-01', matchClipId: 'clip-keep'}];
             state.forms = [{id: 'form-keep', aiAnalysisIds: ['ai-keep']}];
             state.trainings = [{id: 'training-keep', linkedMatchEvents: [{matchId: 'match-delete', eventId: 'event-1'}], sourceMatch: {matchId: 'match-delete', eventId: 'event-2'}}];
-            persist();
+            await window.withGlobalMutationLock('test-fixture',()=>persist());
         }""")
         page.once("dialog", lambda dialog: dialog.accept())
         page.evaluate("deleteMatchScan('match-delete')")
@@ -942,11 +947,11 @@ class RikuBrowserE2ETests(unittest.TestCase):
 
     def test_ai_analysis_delete_rolls_back_all_links_when_persistence_fails(self):
         page = self.page
-        page.evaluate("""() => {
+        page.evaluate("""async () => {
             state.aiFormAnalyses = [{id: 'ai-delete-rollback'}];
             state.forms = [{id: 'form-rollback', aiAnalysisIds: ['ai-delete-rollback']}];
             state.matchAnalyses = [{id: 'match-rollback', aiFormAnalysisIds: ['ai-delete-rollback']}];
-            persist();
+            await window.withGlobalMutationLock('test-fixture',()=>persist());
             const originalSetItem = Storage.prototype.setItem;
             Storage.prototype.setItem = function(key, value) {
                 if (key === 'rikuFootballLab_v3') throw new DOMException('simulated quota', 'QuotaExceededError');
@@ -969,11 +974,11 @@ class RikuBrowserE2ETests(unittest.TestCase):
 
     def test_delete_ai_form_analysis_removes_reverse_links_and_keeps_source_records(self):
         page = self.page
-        page.evaluate("""() => {
+        page.evaluate("""async () => {
             state.aiFormAnalyses = [{id: 'ai-delete'}];
             state.forms = [{id: 'form-keep', aiAnalysisIds: ['ai-delete', 'ai-other']}];
             state.matchAnalyses = [{id: 'match-keep', aiFormAnalysisIds: ['ai-delete', 'ai-other']}];
-            persist();
+            await window.withGlobalMutationLock('test-fixture',()=>persist());
         }""")
         page.once("dialog", lambda dialog: dialog.accept())
         page.evaluate("deleteAiFormAnalysis('ai-delete')")
@@ -992,7 +997,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
 
 
     def test_restored_analysis_links_require_unique_identity_and_are_idempotent(self):
-        result = self.page.evaluate("""() => {
+        result = self.page.evaluate("""async () => {
             const key = 'same-source.mp4|5|123|video/mp4';
             const restored = {
                 clips: [
@@ -1072,7 +1077,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
 
 
     def test_training_reflection_ignores_stale_unconfirmed_and_unlinked_match_evidence(self):
-        result = self.page.evaluate("""() => {
+        result = self.page.evaluate("""async () => {
             const training = {
                 id: 7001, date: '2026-11-01', focus: 'ドリブル',
                 steps: ['step'], stepsDone: [],
@@ -1108,7 +1113,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
 
 
     def test_duplicate_or_invalid_training_check_indexes_do_not_inflate_weekly_progress(self):
-        result = self.page.evaluate("""() => {
+        result = self.page.evaluate("""async () => {
             const training = {
                 id: 7101, date: '2026-11-02', focus: 'ドリブル',
                 steps: ['one', 'two'],
@@ -1148,7 +1153,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
 
 
     def test_match_event_link_save_failure_restores_previous_links(self):
-        result = self.page.evaluate("""() => {
+        result = self.page.evaluate("""async () => {
             state.trainings = [{
                 id: 7201, date: '2026-11-01', menu: '親子ドリブル',
                 focus: 'ドリブル', steps: ['step'], stepsDone: [],
@@ -1242,7 +1247,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         page.evaluate("renderMatchLibrary()")
         self.assertIn("端末内動画を再生", page.locator("#matchLibrary").inner_text())
         playback_events = []
-        page.evaluate("""() => {
+        page.evaluate("""async () => {
             const v = document.getElementById('matchVideo');
             window.__savedPlaybackEvents = [];
             ['loadstart','loadedmetadata','loadeddata','canplay','canplaythrough','error','abort','stalled','suspend'].forEach(name =>
@@ -1272,7 +1277,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
 
 
     def test_positioning_summary_and_weekly_plan_use_only_confirmed_manual_reviews(self):
-        result = self.page.evaluate("""() => {
+        result = self.page.evaluate("""async () => {
             state.trainings = [];
             state.settings = {...(state.settings || {}), nextMatchGoal: null};
             state.matchAnalyses = [
@@ -1302,7 +1307,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             const profile = getMatchPositioningAnalysis();
             const row = profile.rows.find(x => x.key === 'scanBeforeReceive');
             const plan = getWeeklyCoachPlan()[0];
-            const saved = persist();
+            const saved = await window.withGlobalMutationLock('test-fixture',()=>persist());
             return {
                 assessed: row.assessed,
                 good: row.good,
@@ -1323,7 +1328,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
 
 
     def test_positioning_review_save_failure_restores_original_value(self):
-        result = self.page.evaluate("""() => {
+        result = self.page.evaluate("""async () => {
             state.matchAnalyses = [{
                 id: 9401, date: today(), title: '評価保存失敗',
                 candidateEvents: [{
@@ -1356,7 +1361,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
 
 
     def test_deleting_match_history_cleans_links_but_preserves_training_snapshot(self):
-        result = self.page.evaluate("""() => {
+        result = self.page.evaluate("""async () => {
             window.confirm = () => true;
             window.alert = () => {};
             state.matchAnalyses = [
@@ -1396,7 +1401,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
 
 
     def test_match_history_delete_failure_rolls_back_match_and_training_links(self):
-        result = self.page.evaluate("""() => {
+        result = self.page.evaluate("""async () => {
             window.confirm = () => true;
             window.__deleteMatchAlert = '';
             window.alert = message => { window.__deleteMatchAlert = String(message); };
@@ -1567,9 +1572,9 @@ class RikuBrowserE2ETests(unittest.TestCase):
         page = self.page
         self.accept_dialogs()
         page.locator('.nav button[data-view="video"]').click()
-        page.evaluate("""() => {
+        page.evaluate("""async () => {
             state.settings.apiBaseUrl = 'https://riku-upload-mock.invalid';
-            persist();
+            await window.withGlobalMutationLock('test-fixture',()=>persist());
             window.__matchStatusFetchTrace = [];
             const originalFetch = window.fetch.bind(window);
             window.fetch = function(input, init) {
@@ -1748,7 +1753,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         metadata = page.evaluate("""async (apiBase) => {
             state.matchAnalyses = [];
             state.settings.apiBaseUrl = apiBase;
-            persist();
+            await window.withGlobalMutationLock('test-fixture',()=>persist());
             const source = new File([new Uint8Array([1, 2, 3, 4])], 'twenty-minute-match.mp4', {
                 type: 'video/mp4', lastModified: 1700000000123
             });
@@ -1793,7 +1798,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertTrue(button_diagnostics["buttons"][-1]["visible"],
                         {"buttons": button_diagnostics, "activeVideo": page.locator("#video").get_attribute("class")})
         self.assertTrue(page.locator("#matchAiResult button").last.is_visible(), button_diagnostics)
-        page.evaluate("""() => {
+        page.evaluate("""async () => {
             window.__originalMatchPersist = window.persist;
             window.persist = () => false;
         }""")
@@ -1808,7 +1813,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual(failed_save["count"], 0, failed_save)
         self.assertIsNone(failed_save["savedId"], failed_save)
         self.assertEqual(failed_save["pending"]["jobId"], "restore-job-123", failed_save)
-        page.evaluate("""() => {
+        page.evaluate("""async () => {
             window.persist = window.__originalMatchPersist;
             delete window.__originalMatchPersist;
             window.__matchSaveTrace = [];
@@ -1858,7 +1863,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 return result;
             };
         }""")
-        page.evaluate("""() => {
+        page.evaluate("""async () => {
             window.__matchIdbTrace = [];
             const trace = (event, detail={}) => window.__matchIdbTrace.push({at:performance.now(),event,...detail});
             try {
@@ -1939,7 +1944,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             page.goto(self.base_url, wait_until="load")
             page.wait_for_function("typeof uploadMatchVideoInChunks === 'function'")
             page.locator('.nav button[data-view="video"]').click()
-            page.evaluate("""() => { state.settings.apiBaseUrl = 'https://riku-resume-mock.invalid'; persist(); }""")
+            page.evaluate("""async () => { state.settings.apiBaseUrl = 'https://riku-resume-mock.invalid'; await window.withGlobalMutationLock('test-fixture',()=>persist()); }""")
             page.locator("#videoFile").set_input_files({
                 "name": "resume-after-reload.mp4", "mimeType": "video/mp4",
                 "buffer": b"\xab" * (6 * 1024 * 1024 + 23),
@@ -2022,9 +2027,9 @@ class RikuBrowserE2ETests(unittest.TestCase):
             page.goto(self.base_url, wait_until="load")
             page.wait_for_function("typeof saveClip === 'function'")
             page.locator('.nav button[data-view="video"]').click()
-            page.evaluate("""() => {
+            page.evaluate("""async () => {
                 state.settings.apiBaseUrl = 'https://riku-webkit-mock.invalid';
-                persist();
+                await window.withGlobalMutationLock('test-fixture',()=>persist());
             }""")
             counters = {"created": 0, "chunks": 0, "completed": 0, "status": 0}
             def mock_api(route):
@@ -2090,7 +2095,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 "() => document.getElementById('videoFile').files.length === 1",
                 timeout=5000,
             )
-            page.evaluate("""() => {
+            page.evaluate("""async () => {
                 Object.defineProperty(document.getElementById('matchVideo'), 'duration',
                                       {configurable: true, value: 900});
             }""")
@@ -2123,11 +2128,11 @@ class RikuBrowserE2ETests(unittest.TestCase):
     def test_match_scan_history_restores_performance_and_candidate_clip_metadata(self):
         page = self.page
         page.route("**/__playback_fixture__.webm", lambda route: route.fulfill(status=200, content_type="video/webm", body=self.video_path.read_bytes()))
-        page.evaluate("""() => { state.settings.apiBaseUrl = window.location.origin; persist(); }""")
+        page.evaluate("""async () => { state.settings.apiBaseUrl = window.location.origin; await window.withGlobalMutationLock('test-fixture',()=>persist()); }""")
         page.locator('.nav button[data-view="video"]').click()
         page.locator("#videoTitle").fill("実動画履歴復元メタデータ")
         page.locator("#videoFile").set_input_files(str(self.video_path))
-        page.evaluate("""() => {
+        page.evaluate("""async () => {
             window.alert = () => {};
             const result = {
                 requested_jersey_numbers: "10,74",
@@ -2146,7 +2151,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             document.getElementById("matchAiResult").dataset.result = JSON.stringify(result);
             return saveMatchScanResult();
         }""")
-        saved = page.evaluate("""() => {
+        saved = page.evaluate("""async () => {
             const m = state.matchAnalyses[0];
             return {
                 samplingRate: m.samplingRate,
@@ -2171,7 +2176,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         page.reload()
         page.evaluate("renderAll()")
         page.locator('.nav button[data-view="video"]').click()
-        restored = page.evaluate("""() => {
+        restored = page.evaluate("""async () => {
             const m = state.matchAnalyses[0];
             return {metrics: m.performanceMetrics, scan: m.scanTiming, candidates: m.candidateEvents.map(ev => ({id: ev.id, clipUrl: ev.clipUrl, clipAvailable: ev.clipAvailable}))};
         }""")
@@ -2200,7 +2205,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
 
     def test_record_link_integrity_rebuilds_only_deterministic_reverse_links(self):
         page = self.page
-        result = page.evaluate("""() => {
+        result = page.evaluate("""async () => {
             const data = {
                 clips: [{id:'clip-a', matchAnalysisIds:['missing-match','match-bad']}],
                 forms: [{id:'form-a', aiAnalysisIds:['ai-a','missing-ai']}],
@@ -2290,7 +2295,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertTrue(result["chunkExists"])
 
     def test_duplicate_record_ids_and_ambiguous_targets_are_never_auto_repaired(self):
-        result = self.page.evaluate("""() => {
+        result = self.page.evaluate("""async () => {
             const data = {
                 clips: [{id:'dup-clip', matchAnalysisIds:['keep-me']}, {id:'dup-clip', matchAnalysisIds:['keep-me-too']}],
                 forms: [],
@@ -2306,7 +2311,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual(result["data"]["clips"][1]["matchAnalysisIds"], ["keep-me-too"])
 
     def test_restore_link_reconciliation_does_not_guess_between_duplicate_or_multiple_candidates(self):
-        result = self.page.evaluate("""() => {
+        result = self.page.evaluate("""async () => {
             const restored = {
                 clips: [{id:'clip-a', sourceVideoKey:'same-source', matchAnalysisIds:[]}, {id:'clip-b', sourceVideoKey:'same-source', matchAnalysisIds:[]}],
                 forms: [],
@@ -2376,7 +2381,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual(result["formReverse"], ["repeat-ai"])
 
     def test_live_source_key_linking_stops_when_multiple_records_match(self):
-        result = self.page.evaluate("""() => {
+        result = self.page.evaluate("""async () => {
             const key = 'shared.mp4|4|123|video/mp4';
             state.clips = [
                 {id:'clip-one', sourceVideoKey:key, matchAnalysisIds:[]},
@@ -2412,7 +2417,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertFalse(result["wrongType"]["ok"], result)
 
     def test_backup_snapshot_is_stable_when_live_state_changes_after_capture(self):
-        result = self.page.evaluate("""() => {
+        result = self.page.evaluate("""async () => {
             const current = {clips:[{id:'before'}], matchAnalyses:[]};
             const snapshot = createBackupStateSnapshot(current);
             current.clips.push({id:'after'});
@@ -2423,9 +2428,9 @@ class RikuBrowserE2ETests(unittest.TestCase):
 
     def test_reimporting_same_video_backup_twice_skips_without_duplicate_storage(self):
         page = self.page
-        page.evaluate("""() => {
+        page.evaluate("""async () => {
             state.clips = [{id:'repeat-video', title:'同一動画', hasVideo:false}];
-            state.forms = []; persist();
+            state.forms = []; await window.withGlobalMutationLock('test-fixture',()=>persist());
         }""")
         video = self.temp_path / "riku-video__repeat-video__repeat.webm"
         video.write_bytes(self.video_path.read_bytes())
@@ -2451,7 +2456,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual(result["count"], 1, result)
 
     def test_backup_diagnostics_report_duplicate_video_keys_and_dangling_links_read_only(self):
-        result = self.page.evaluate("""() => {
+        result = self.page.evaluate("""async () => {
             const data = {
                 clips: [
                     {id:'clip-a', sourceVideoKey:'same.mp4|4|1|video/mp4', matchAnalysisIds:['missing-match']},
@@ -2665,12 +2670,12 @@ class RikuBrowserE2ETests(unittest.TestCase):
         import json
         page = self.page
         self.accept_dialogs()
-        page.evaluate("""() => {
+        page.evaluate("""async () => {
             state.clips=[{id:'partial-existing',title:'先にある記録',hasVideo:false,matchAnalysisIds:[]}];
             state.forms=[];
             state.matchAnalyses=[{id:'partial-match-existing',clipId:'partial-existing',aiFormAnalysisIds:[]}];
             state.aiFormAnalyses=[];
-            persist();
+            await window.withGlobalMutationLock('test-fixture',()=>persist());
         }""")
         good = self.temp_path / "riku-video__partial-existing__good.webm"
         pending = self.temp_path / "riku-video__partial-later__later.webm"
@@ -2738,9 +2743,9 @@ class RikuBrowserE2ETests(unittest.TestCase):
             page.goto(self.base_url, wait_until="load")
             page.wait_for_function("typeof saveClip === 'function'")
             page.locator('.nav button[data-view="video"]').click()
-            page.evaluate("""() => {
+            page.evaluate("""async () => {
                 state.settings.apiBaseUrl = 'https://riku-webkit-20min-mock.invalid';
-                persist();
+                await window.withGlobalMutationLock('test-fixture',()=>persist());
             }""")
             counters = {"created": 0, "chunks": [], "completed": 0, "status": 0}
             def mock_api(route):
@@ -2804,7 +2809,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 "() => document.getElementById('videoFile').files.length === 1",
                 timeout=5000,
             )
-            page.evaluate("""() => {
+            page.evaluate("""async () => {
                 Object.defineProperty(document.getElementById('matchVideo'), 'duration',
                                       {configurable: true, value: 1200});
             }""")
@@ -2840,9 +2845,9 @@ class RikuBrowserE2ETests(unittest.TestCase):
             page.goto(self.base_url, wait_until="load")
             page.wait_for_function("typeof uploadMatchVideoInChunks === 'function'")
             page.locator('.nav button[data-view="video"]').click()
-            page.evaluate("""() => {
+            page.evaluate("""async () => {
                 state.settings.apiBaseUrl = 'https://riku-interrupt-mock.invalid';
-                persist();
+                await window.withGlobalMutationLock('test-fixture',()=>persist());
             }""")
             page.locator("#videoFile").set_input_files({
                 "name": "same-source-interrupted.mp4", "mimeType": "video/mp4",
