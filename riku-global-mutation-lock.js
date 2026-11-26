@@ -605,6 +605,14 @@
           try { hint = JSON.parse(localStorage.getItem(JOURNAL_HINT_KEY) || "null"); } catch (_) {}
           for (const journal of journals) {
             if (journal.state === "committed") {
+              if (journal.afterStateChecksum && currentChecksum !== journal.afterStateChecksum) {
+                await updateJournal(ctx, {
+                  state: "recovery-required",
+                  reason: "committed journal app-state checksum mismatch"
+                }, journal.restoreId);
+                window.__rikuMutationSafeMode = true;
+                throw new Error("確定済みジャーナルと記録データが一致しません。旧動画を削除せず安全停止しました");
+              }
               await finishCommittedJournal(ctx, journal);
               continue;
             }
