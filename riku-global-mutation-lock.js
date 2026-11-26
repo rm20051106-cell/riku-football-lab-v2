@@ -228,12 +228,14 @@
           if (change.oldRecord) videos.put(change.oldRecord, String(change.key));
           else videos.delete(String(change.key));
         }
+        const firstByKey = new Map();
+        for (const change of changes) if (!firstByKey.has(String(change.key))) firstByKey.set(String(change.key), change);
         const protectedPrefixes = new Set();
-        for (const change of changes) {
-          if (change.oldPrefix) protectedPrefixes.add(change.oldPrefix);
+        for (const change of firstByKey.values()) {
+          if (change.oldPrefix) protectedPrefixes.add(String(change.oldPrefix));
           if (change.oldRecord?.chunkPrefix) protectedPrefixes.add(String(change.oldRecord.chunkPrefix));
         }
-        const candidates = new Set(changes.map(change => change.newPrefix).filter(Boolean));
+        const candidates = new Set(changes.map(change => change.newPrefix).filter(Boolean).map(String));
         const allVideos = videos.getAll();
         allVideos.onsuccess = () => {
           const activePrefixes = new Set((allVideos.result || []).map(row => row?.chunkPrefix).filter(Boolean).map(String));
@@ -391,11 +393,25 @@
       window.__rikuMutationSafeMode = true;
       throw new Error("保存後の記録照合に失敗しました。動画・履歴を削除せず安全停止しました");
     }
+    if (!ctx.persisted && hasVideoChanges && (ctx.operation === "storeClipVideo" || ctx.operation === "restoreClipVideoRecord")) {
+      ctx.afterChecksum = currentChecksum;
+      ctx.afterLength = current == null ? null : current.length;
+      try {
+        localStorage.setItem("rikuMutationJournalHint_v1", JSON.stringify({
+          operationId: ctx.operationId, checksum: currentChecksum, length: ctx.afterLength,
+          state: "video-only-committed", at: Date.now()
+        }));
+      } catch (error) {
+        await updateJournal(ctx, { state: "recovery-required", reason: "video-only commit marker could not be persisted" });
+        window.__rikuMutationSafeMode = true;
+        throw error;
+      }
+    }
     if (ctx.persisted || ctx.idbWrites > 0 || ctx.auxStorageMutation) {
       await updateJournal(ctx, {
         state: "persisted",
-        afterStateChecksum: ctx.persisted ? ctx.afterChecksum : null,
-        afterStateLength: ctx.persisted ? ctx.afterLength : null
+        afterStateChecksum: (ctx.persisted || (hasVideoChanges && (ctx.operation === "storeClipVideo" || ctx.operation === "restoreClipVideoRecord"))) ? ctx.afterChecksum : null,
+        afterStateLength: (ctx.persisted || (hasVideoChanges && (ctx.operation === "storeClipVideo" || ctx.operation === "restoreClipVideoRecord"))) ? ctx.afterLength : null
       });
       const latestDB = await openDB();
       let latest;
@@ -442,12 +458,10 @@
               continue;
             }
             if (journal.state === "rolled-back") continue;
-            if (currentChecksum === journal.beforeStateChecksum) {
-              await restoreJournalBefore(ctx, journal);
-              continue;
-            }
             const afterMatches = hint && hint.operationId === journal.operationId &&
               hint.checksum === currentChecksum &&
+              (hint.state === "persisted" || hint.state === "video-only-committed" ||
+                (hint.state === "writing" && currentChecksum !== journal.beforeStateChecksum)) &&
               (!journal.afterStateChecksum || journal.afterStateChecksum === currentChecksum);
             if (afterMatches) {
               await updateJournal(ctx, {
@@ -458,6 +472,10 @@
               const recovered = { ...journal, state: "committed" };
               await updateJournal(ctx, { state: "committed" }, journal.restoreId);
               await finishCommittedJournal(ctx, recovered);
+              continue;
+            }
+            if (currentChecksum === journal.beforeStateChecksum) {
+              await restoreJournalBefore(ctx, journal);
               continue;
             }
             await updateJournal(ctx, {
