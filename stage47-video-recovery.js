@@ -321,5 +321,9 @@
     if (!lastVideoImportFiles?.length) return;
     await window.runStage47VideoRestore([...lastVideoImportFiles]);
   };
-  window.runStage47VideoRestore = files => window.withGlobalMutationLock("stage47-video-restore", () => restoreVideoBatch(files));
+  window.runStage47VideoRestore = files => window.withGlobalMutationLock("stage47-video-restore", () => restoreVideoBatch(files)).catch(error => {
+    const host = previewHost();
+    host.textContent = "復元を安全停止しました。既存動画は削除していません。\n" + (error?.message || String(error));
+    return { ok: false, reason: "mutation-lock", error: error?.message || String(error) };
+  });
 })();
