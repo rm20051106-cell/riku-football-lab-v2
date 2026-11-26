@@ -390,25 +390,62 @@
                 try { tx.abort(); } catch (_) {}
                 return;
               }
-              const activePrefix = current?.chunkPrefix ? String(current.chunkPrefix) : "";
-              const candidates = new Set();
-              for (const change of keyChanges) {
-                if (change.oldPrefix) candidates.add(String(change.oldPrefix));
-                if (change.newPrefix) candidates.add(String(change.newPrefix));
-              }
-              for (const prefix of candidates) {
-                if (prefix === activePrefix) continue;
-                const referencedByOtherJournal = journalRows.some(other =>
-                  other.restoreId !== journal.restoreId &&
-                  !["committed", "rolled-back"].includes(other.state) &&
-                  (other.videoChanges || []).some(item => item.oldPrefix === prefix || item.newPrefix === prefix)
-                );
-                if (!referencedByOtherJournal) {
-                  chunks.delete(IDBKeyRange.bound(prefix, prefix + "\uffff"));
+              const verifyAndClean = () => {
+                const activePrefix = current?.chunkPrefix ? String(current.chunkPrefix) : "";
+                const candidates = new Set();
+                for (const change of keyChanges) {
+                  if (change.oldPrefix) candidates.add(String(change.oldPrefix));
+                  if (change.newPrefix) candidates.add(String(change.newPrefix));
                 }
+                for (const prefix of candidates) {
+                  if (prefix === activePrefix) continue;
+                  const referencedByOtherJournal = journalRows.some(other =>
+                    other.restoreId !== journal.restoreId &&
+                    !["committed", "rolled-back"].includes(other.state) &&
+                    (other.videoChanges || []).some(item => item.oldPrefix === prefix || item.newPrefix === prefix)
+                  );
+                  if (!referencedByOtherJournal) {
+                    chunks.delete(IDBKeyRange.bound(prefix, prefix + "\\uffff"));
+                  }
+                }
+                remaining--;
+                if (remaining === 0) journals.delete(journal.restoreId);
+              };
+              if (finalChange.newPrefix) {
+                const range = IDBKeyRange.bound(finalChange.newPrefix, finalChange.newPrefix + "\\uffff");
+                const cursorReq = chunks.openCursor(range);
+                let count = 0, bytes = 0, expectedIndex = 0;
+                cursorReq.onsuccess = () => {
+                  const cursor = cursorReq.result;
+                  if (!cursor) {
+                    if (count !== Number(current.chunkCount) || bytes !== Number(current.size)) {
+                      try { tx.abort(); } catch (_) {}
+                      return;
+                    }
+                    verifyAndClean();
+                    return;
+                  }
+                  const expectedKey = finalChange.newPrefix + String(expectedIndex).padStart(8, "0");
+                  if (String(cursor.primaryKey) !== expectedKey) {
+                    try { tx.abort(); } catch (_) {}
+                    return;
+                  }
+                  const value = cursor.value;
+                  const byteLength = value instanceof ArrayBuffer ? value.byteLength :
+                    (ArrayBuffer.isView(value) ? value.byteLength : Number(value?.size || 0));
+                  if (!Number.isFinite(byteLength) || byteLength <= 0) {
+                    try { tx.abort(); } catch (_) {}
+                    return;
+                  }
+                  count++;
+                  bytes += byteLength;
+                  expectedIndex++;
+                  cursor.continue();
+                };
+                cursorReq.onerror = () => { try { tx.abort(); } catch (_) {} };
+              } else {
+                verifyAndClean();
               }
-              remaining--;
-              if (remaining === 0) journals.delete(journal.restoreId);
             };
             currentReq.onerror = () => { try { tx.abort(); } catch (_) {} };
           }
