@@ -155,7 +155,8 @@
         const get = store.get(targetId);
         get.onsuccess = () => {
           const row = get.result;
-          if (!row || row.ownerId !== ctx.ownerId || Number(row.fenceToken) !== Number(ctx.fenceToken)) {
+          if (!row || row.ownerId !== ctx.ownerId || Number(row.fenceToken) !== Number(ctx.fenceToken) ||
+              row.journalChecksum !== journalDigest(row)) {
             try { tx.abort(); } catch (_) {}
             return;
           }
@@ -197,7 +198,13 @@
         const store = tx.objectStore("restoreJournal");
         const getAll = store.getAll();
         getAll.onsuccess = () => {
-          const unresolved = (getAll.result || []).filter(item => !["committed", "rolled-back"].includes(item.state));
+          const existingRows = getAll.result || [];
+          if (existingRows.some(item => item.journalChecksum !== journalDigest(item))) {
+            try { tx.abort(); } catch (_) {}
+            reject(new Error("既存の復旧ジャーナルが破損しています。データ変更を停止しました"));
+            return;
+          }
+          const unresolved = existingRows.filter(item => !["committed", "rolled-back"].includes(item.state));
           if (unresolved.length) {
             try { tx.abort(); } catch (_) {}
             reject(new Error("未解決の復旧ジャーナルがあります。既存データ保護のため変更を停止しました"));
@@ -223,7 +230,8 @@
         const get = store.get(ctx.restoreId);
         get.onsuccess = () => {
           const row = get.result;
-          if (!row || row.ownerId !== ctx.ownerId || Number(row.fenceToken) !== Number(ctx.fenceToken)) {
+          if (!row || row.ownerId !== ctx.ownerId || Number(row.fenceToken) !== Number(ctx.fenceToken) ||
+              row.journalChecksum !== journalDigest(row)) {
             try { tx.abort(); } catch (_) {}
             return;
           }
@@ -347,6 +355,10 @@
         const allJournals = journals.getAll();
         allJournals.onsuccess = () => {
           const journalRows = allJournals.result || [];
+          if (journalRows.some(row => row.journalChecksum !== journalDigest(row))) {
+            try { tx.abort(); } catch (_) {}
+            return;
+          }
           const changes = journal.videoChanges || [];
           const byKey = new Map();
           for (const change of changes) {
