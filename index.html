@@ -160,7 +160,7 @@ function persist(){
  const notice=document.getElementById('recordSaveNotice');
  if(window.__rikuMutationContext)window.__rikuMutationContext.persistFailure=false;
  if(!window.__rikuMutationContext||window.__rikuMutationSafeMode){
-  if(window.__rikuMutationContext)window.__rikuMutationContext.persistFailure=true;
+  if(window.__rikuMutationContext){window.__rikuMutationContext.persistFailure=true;window.__rikuMutationContext.persisted=false;}
   const message='安全な保存ロックを取得できないため、今回の変更は保存していません。別タブの処理完了後に再試行してください。';
   if(notice){notice.textContent=message;notice.classList.remove('hidden');}
   console.error(message);
