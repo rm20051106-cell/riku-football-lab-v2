@@ -758,6 +758,9 @@
     if (!IDBObjectStore.prototype.delete.__rikuPendingJobGuarded) {
       const originalDelete = IDBObjectStore.prototype.delete;
       const guardedDelete = function (key) {
+        if (this.name === "videos" && key instanceof IDBKeyRange) {
+          throw new Error("動画メタデータの範囲削除は禁止されています");
+        }
         if (this.name === "videos" && key === "__pending_match_job__") {
           const ctx = window.__rikuMutationContext;
           if (!ctx || !ctx.pendingJobClearAuthorized) {
@@ -768,6 +771,17 @@
       };
       guardedDelete.__rikuPendingJobGuarded = true;
       IDBObjectStore.prototype.delete = guardedDelete;
+    }
+    if (!IDBObjectStore.prototype.clear.__rikuVideoStoreClearGuarded) {
+      const originalClear = IDBObjectStore.prototype.clear;
+      const guardedClear = function () {
+        if (this.name === "videos" || this.name === "videoChunks") {
+          throw new Error("動画ストア全体の消去は禁止されています。個別の復旧ジャーナル処理を使用してください");
+        }
+        return originalClear.call(this);
+      };
+      guardedClear.__rikuVideoStoreClearGuarded = true;
+      IDBObjectStore.prototype.clear = guardedClear;
     }
     const originalTransaction = IDBDatabase.prototype.transaction;
     if (!originalTransaction.__rikuFenced) {
