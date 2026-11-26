@@ -331,10 +331,13 @@
         const chunks = tx.objectStore("videoChunks");
         const journals = tx.objectStore("restoreJournal");
         const changes = journal.videoChanges || [];
-        for (const change of [...changes].reverse()) {
-          if (change.oldRecord) videos.put(change.oldRecord, String(change.key));
-          else videos.delete(String(change.key));
-        }
+        ctx.videoMetadataDeleteAuthorized = true;
+        try {
+          for (const change of [...changes].reverse()) {
+            if (change.oldRecord) videos.put(change.oldRecord, String(change.key));
+            else videos.delete(String(change.key));
+          }
+        } finally { ctx.videoMetadataDeleteAuthorized = false; }
         const firstByKey = new Map();
         for (const change of changes) if (!firstByKey.has(String(change.key))) firstByKey.set(String(change.key), change);
         const protectedPrefixes = new Set();
@@ -791,6 +794,13 @@
           const ctx = window.__rikuMutationContext;
           if (!ctx || !ctx.pendingUploadClearAuthorized) {
             throw new Error("pending upload情報は専用の復旧処理以外から削除できません");
+          }
+        }
+        if (this.name === "videos" &&
+            key !== "__pending_match_job__" && key !== "__pending_match_upload__") {
+          const ctx = window.__rikuMutationContext;
+          if (!ctx || !ctx.videoMetadataDeleteAuthorized) {
+            throw new Error("動画メタデータ削除は復旧ジャーナルで許可された処理に限定されています");
           }
         }
         return originalDelete.call(this, key);
