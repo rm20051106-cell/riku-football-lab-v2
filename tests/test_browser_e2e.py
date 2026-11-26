@@ -3123,5 +3123,75 @@ class RikuBrowserE2ETests(unittest.TestCase):
             context.close()
             browser.close()
 
+    def test_stage57_database_v3_and_persist_fail_closed_without_lock(self):
+        page = self.page
+        result = page.evaluate("""async () => {
+            const before = localStorage.getItem('rikuFootballLab_v3');
+            state.settings.name = 'Stage57 lock guard';
+            const unguarded = persist();
+            const afterUnguarded = localStorage.getItem('rikuFootballLab_v3');
+            const db = await openVideoDB();
+            const schema = {version: db.version, stores: [...db.objectStoreNames]};
+            db.close();
+            const guarded = await window.withGlobalMutationLock('stage57-test-persist', () => persist());
+            const afterGuarded = localStorage.getItem('rikuFootballLab_v3');
+            const journalDb = await openVideoDB();
+            const journalCount = await new Promise((resolve, reject) => {
+                const tx = journalDb.transaction('restoreJournal', 'readonly');
+                const req = tx.objectStore('restoreJournal').count();
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+            });
+            journalDb.close();
+            return {before, unguarded, afterUnguarded, schema, guarded,
+                    afterGuarded, journalCount};
+        }""")
+        self.assertFalse(result["unguarded"], result)
+        self.assertEqual(result["afterUnguarded"], result["before"], result)
+        self.assertEqual(result["schema"]["version"], 3, result)
+        self.assertIn("restoreJournal", result["schema"]["stores"], result)
+        self.assertIn("restoreLocks", result["schema"]["stores"], result)
+        self.assertTrue(result["guarded"], result)
+        self.assertEqual(json.loads(result["afterGuarded"])["settings"]["name"], "Stage57 lock guard")
+        self.assertEqual(result["journalCount"], 0, result)
+
+    def test_stage57_global_mutation_lock_serializes_two_tabs(self):
+        page = self.page
+        page.wait_for_function("window.__rikuMutationRecoveryReady && window.__rikuMutationRecoveryReady()")
+        page.evaluate("""() => {
+            window.__stage57LockEntered = false;
+            window.__startStage57Hold = () => {
+                window.__stage57HoldPromise = window.withGlobalMutationLock('stage57-hold', async () => {
+                    window.__stage57LockEntered = true;
+                    await new Promise(resolve => { window.__releaseStage57Hold = resolve; });
+                });
+            };
+            window.__startStage57Hold();
+        }""")
+        page.wait_for_function("window.__stage57LockEntered === true")
+        second = page.context.new_page()
+        try:
+            second.goto(self.base_url, wait_until="load")
+            second.evaluate("""() => {
+                window.__stage57SecondFinished = false;
+                window.__stage57SecondPromise = window.withGlobalMutationLock('stage57-second', async () => {
+                    window.__stage57SecondFinished = true;
+                }).catch(error => { window.__stage57SecondError = String(error); });
+            }""")
+            second.wait_for_timeout(250)
+            self.assertFalse(second.evaluate("window.__stage57SecondFinished"))
+            page.evaluate("window.__releaseStage57Hold()")
+            second.wait_for_function(
+                "window.__stage57SecondFinished === true",
+                timeout=15000,
+            )
+            self.assertIsNone(second.evaluate("window.__stage57SecondError || null"))
+        finally:
+            try:
+                page.evaluate("window.__releaseStage57Hold && window.__releaseStage57Hold()")
+            except Exception:
+                pass
+            second.close()
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
