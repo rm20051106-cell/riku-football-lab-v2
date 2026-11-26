@@ -332,12 +332,16 @@
         const journals = tx.objectStore("restoreJournal");
         const changes = journal.videoChanges || [];
         ctx.videoMetadataDeleteAuthorized = true;
+        ctx.videoMetadataWriteAuthorized = true;
         try {
           for (const change of [...changes].reverse()) {
             if (change.oldRecord) videos.put(change.oldRecord, String(change.key));
             else videos.delete(String(change.key));
           }
-        } finally { ctx.videoMetadataDeleteAuthorized = false; }
+        } finally {
+          ctx.videoMetadataDeleteAuthorized = false;
+          ctx.videoMetadataWriteAuthorized = false;
+        }
         const firstByKey = new Map();
         for (const change of changes) if (!firstByKey.has(String(change.key))) firstByKey.set(String(change.key), change);
         const protectedPrefixes = new Set();
@@ -772,6 +776,30 @@
 
   // Every app write transaction on this database is fenced in the same IDB transaction.
   try {
+    if (!IDBObjectStore.prototype.put.__rikuMutationPutGuarded) {
+      const originalPut = IDBObjectStore.prototype.put;
+      const guardedPut = function (value, key) {
+        const ctx = window.__rikuMutationContext;
+        if (this.name === "videoChunks" && (!ctx || !ctx.chunkWriteAuthorized)) {
+          throw new Error("動画チャンク書き込みは保存ジャーナルで許可された処理に限定されています");
+        }
+        if (this.name === "videos") {
+          if (key === "__pending_match_job__" && (!ctx || !ctx.pendingJobWriteAuthorized)) {
+            throw new Error("pending match jobは専用の保存処理以外から更新できません");
+          }
+          if (key === "__pending_match_upload__" && (!ctx || !ctx.pendingUploadWriteAuthorized)) {
+            throw new Error("pending upload情報は専用の保存処理以外から更新できません");
+          }
+          if (key !== "__pending_match_job__" && key !== "__pending_match_upload__" &&
+              (!ctx || !ctx.videoMetadataWriteAuthorized)) {
+            throw new Error("動画メタデータ書き込みには復旧ジャーナルが必要です");
+          }
+        }
+        return originalPut.apply(this, arguments);
+      };
+      guardedPut.__rikuMutationPutGuarded = true;
+      IDBObjectStore.prototype.put = guardedPut;
+    }
     if (!IDBObjectStore.prototype.delete.__rikuPendingJobGuarded) {
       const originalDelete = IDBObjectStore.prototype.delete;
       const guardedDelete = function (key) {
