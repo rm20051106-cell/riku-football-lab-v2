@@ -842,7 +842,7 @@
     "updatePreMatchPosition","savePreMatchPlan","updatePreMatchReview","updatePostMatchDate",
     "updatePostMatchRecovery","updateRecoveryTrendMode","applyMatchGrowthGoal","markAiFormPhase",
     "saveKickManualReview","deleteAiFormAnalysis","deleteMeasure","storeClipVideo","removeClipVideo",
-    "restoreClipVideoRecord","cleanupOrphanedVideoChunks","savePendingMatchJob","clearPendingMatchJob",
+    "restoreClipVideoRecord","cleanupOrphanedVideoChunks","savePendingMatchUpload","savePendingMatchJob","clearPendingMatchJob",
     "clearPendingMatchUpload"
   ];
   function wrapMutationTarget(name) {
