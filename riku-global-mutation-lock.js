@@ -726,8 +726,10 @@
     const wrapped = function () {
       const self = this, args = arguments;
       if (window.__rikuMutationContext) return original.apply(self, args);
+      const isAsync = original.constructor && original.constructor.name === "AsyncFunction";
       return window.withGlobalMutationLock(name, () => original.apply(self, args)).catch(error => {
         setNotice((error?.message || String(error)) + "。既存データは削除していません。");
+        if (isAsync) throw error;
         return false;
       });
     };
