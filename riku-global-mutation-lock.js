@@ -767,6 +767,12 @@
             throw new Error("pending match jobは保存済み解析履歴の確認なしに削除できません");
           }
         }
+        if (this.name === "videos" && key === "__pending_match_upload__") {
+          const ctx = window.__rikuMutationContext;
+          if (!ctx || !ctx.pendingUploadClearAuthorized) {
+            throw new Error("pending upload情報は専用の復旧処理以外から削除できません");
+          }
+        }
         return originalDelete.call(this, key);
       };
       guardedDelete.__rikuPendingJobGuarded = true;
