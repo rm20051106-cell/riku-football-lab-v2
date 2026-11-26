@@ -470,13 +470,13 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual(result["oldVideoFirstByte"], 1, result)
         self.assertEqual(result["rollbackChunks"], 1, result)
 
-    def test_video_replacement_cleans_orphaned_generation_chunks(self):
+    def test_video_replacement_preserves_unjournaled_generation_chunks(self):
         page = self.page
         result = page.evaluate("""async () => {
             await storeClipVideo('gc-check', new Blob([new Uint8Array([1, 2, 3])], {type: 'video/mp4'}));
             const db = await openVideoDB();
             try {
-                await new Promise((resolve, reject) => {
+                await window.withGlobalMutationLock('test-fixture', async () => new Promise((resolve, reject) => {
                     const tx = db.transaction('videoChunks', 'readwrite');
                     tx.objectStore('videoChunks').put(new Uint8Array([7, 7]), 'gc-check|00000000-abandoned-generation|00000000');
                     const pendingGeneration = Date.now().toString(36) + '-still-writing';
@@ -484,7 +484,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     tx.oncomplete = resolve;
                     tx.onerror = () => reject(tx.error);
                     tx.onabort = () => reject(tx.error);
-                });
+                }));
             } finally { db.close(); }
             await storeClipVideo('gc-check', new Blob([new Uint8Array([4, 5, 6, 7])], {type: 'video/mp4'}));
             const record = await (async () => {
@@ -506,7 +506,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         }""")
         self.assertEqual(len(result["keys"]), 2, result)
         self.assertTrue(any(key.startswith(result["activePrefix"]) for key in result["keys"]), result)
-        self.assertFalse(any("abandoned-generation" in key for key in result["keys"]), result)
+        self.assertTrue(any("abandoned-generation" in key for key in result["keys"]), result)
         self.assertTrue(any("still-writing" in key for key in result["keys"]), result)
 
     def test_video_storage_serialization_and_legacy_blob_compatibility(self):
@@ -529,7 +529,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             const legacyBuffer = await legacyBlob.arrayBuffer();
             const legacyDb = await openVideoDB();
             try {
-                await new Promise((resolve, reject) => {
+                await window.withGlobalMutationLock('test-fixture', async () => new Promise((resolve, reject) => {
                     const tx = legacyDb.transaction('videos', 'readwrite');
                     tx.objectStore('videos').put({
                         blobData: legacyBuffer, blobType: 'video/webm', name: 'legacy.webm', type: 'video/webm', size: 3
@@ -537,7 +537,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     tx.oncomplete = resolve;
                     tx.onerror = () => reject(tx.error);
                     tx.onabort = () => reject(tx.error);
-                });
+                }));
             } finally { legacyDb.close(); }
             const legacy = await getClipVideo('legacy-check');
             return {
@@ -623,7 +623,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     req.onsuccess = () => resolve(req.result);
                     req.onerror = () => reject(req.error);
                 });
-                await new Promise((resolve, reject) => {
+                await window.withGlobalMutationLock('test-fixture', async () => new Promise((resolve, reject) => {
                     const tx = db.transaction('videoChunks', 'readwrite');
                     tx.objectStore('videoChunks').delete(
                         record.chunkPrefix + '00000000'
@@ -631,7 +631,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     tx.oncomplete = resolve;
                     tx.onerror = () => reject(tx.error);
                     tx.onabort = () => reject(tx.error);
-                });
+                }));
             } finally { db.close(); }
             await prepareVideoExport();
             const host = document.getElementById('videoExportList');
@@ -699,7 +699,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     req.onsuccess = () => resolve(req.result);
                     req.onerror = () => reject(req.error);
                 });
-                await new Promise((resolve, reject) => {
+                await window.withGlobalMutationLock('test-fixture', async () => new Promise((resolve, reject) => {
                     const tx = db.transaction('videoChunks', 'readwrite');
                     tx.objectStore('videoChunks').delete(
                         record.chunkPrefix + '00000000'
@@ -707,7 +707,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     tx.oncomplete = resolve;
                     tx.onerror = () => reject(tx.error);
                     tx.onabort = () => reject(tx.error);
-                });
+                }));
             } finally { db.close(); }
             state.clips = [
                 {id: 'integrity-good', title: '正常動画', hasVideo: true},
@@ -2270,11 +2270,11 @@ class RikuBrowserE2ETests(unittest.TestCase):
             await storeClipVideo('video-no-record', new Blob([new Uint8Array([1,2,3])], {type:'video/mp4'}));
             const db = await openVideoDB();
             try {
-                await new Promise((resolve, reject) => {
+                await window.withGlobalMutationLock('test-fixture', async () => new Promise((resolve, reject) => {
                     const tx = db.transaction('videoChunks', 'readwrite');
                     tx.objectStore('videoChunks').put(new Uint8Array([9,9]), 'missing-owner|old-generation|00000000');
                     tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error);
-                });
+                }));
             } finally { db.close(); }
             await scanAndRepairRecordIntegrity();
             const video = await getClipVideo('video-no-record');
