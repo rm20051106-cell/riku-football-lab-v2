@@ -347,7 +347,7 @@
               other.restoreId !== journal.restoreId &&
               (other.videoChanges || []).some(change => change.oldPrefix === prefix || change.newPrefix === prefix)
             );
-            if (!referencedElsewhere) chunks.delete(IDBKeyRange.bound(prefix, prefix + "\\uffff"));
+            if (!referencedElsewhere) chunks.delete(IDBKeyRange.bound(prefix, prefix + "\uffff"));
           }
           journals.delete(journal.restoreId);
         };
