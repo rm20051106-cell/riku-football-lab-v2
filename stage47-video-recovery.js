@@ -314,12 +314,12 @@
       (retry ? window.retryStage48FailedVideos(files) : window.runStage48VideoRestore(files)).finally(() => { event.target.value = ""; });
       return;
     }
-    restoreVideoBatch(files).finally(() => { event.target.value = ""; });
+    window.runStage47VideoRestore(files).finally(() => { event.target.value = ""; });
   }, true);
 
   window.retryFailedVideoImport = async function () {
     if (!lastVideoImportFiles?.length) return;
-    await restoreVideoBatch([...lastVideoImportFiles]);
+    await window.runStage47VideoRestore([...lastVideoImportFiles]);
   };
-  window.runStage47VideoRestore = restoreVideoBatch;
+  window.runStage47VideoRestore = files => window.withGlobalMutationLock("stage47-video-restore", () => restoreVideoBatch(files));
 })();
