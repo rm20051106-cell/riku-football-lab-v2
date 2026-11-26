@@ -755,6 +755,20 @@
 
   // Every app write transaction on this database is fenced in the same IDB transaction.
   try {
+    if (!IDBObjectStore.prototype.delete.__rikuPendingJobGuarded) {
+      const originalDelete = IDBObjectStore.prototype.delete;
+      const guardedDelete = function (key) {
+        if (this.name === "videos" && key === "__pending_match_job__") {
+          const ctx = window.__rikuMutationContext;
+          if (!ctx || !ctx.pendingJobClearAuthorized) {
+            throw new Error("pending match jobは保存済み解析履歴の確認なしに削除できません");
+          }
+        }
+        return originalDelete.call(this, key);
+      };
+      guardedDelete.__rikuPendingJobGuarded = true;
+      IDBObjectStore.prototype.delete = guardedDelete;
+    }
     const originalTransaction = IDBDatabase.prototype.transaction;
     if (!originalTransaction.__rikuFenced) {
       const guardedTransaction = function (storeNames, mode, options) {
