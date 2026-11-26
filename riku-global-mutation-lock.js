@@ -600,7 +600,7 @@
         if (name === APP_KEY) {
           const serialized = String(value);
           const sum = checksum(serialized);
-          if (ctx) { ctx.persistAttempted = true; ctx.afterChecksum = sum; ctx.afterLength = serialized.length; }
+          if (ctx) { ctx.persistAttempted = true; ctx.persisted = false; ctx.afterChecksum = sum; ctx.afterLength = serialized.length; }
           if (ctx) originalSetItem.call(this, JOURNAL_HINT_KEY, JSON.stringify({ operationId: ctx.operationId, checksum: sum, length: serialized.length, state: "writing", at: Date.now() }));
           const result = originalSetItem.call(this, name, serialized);
           if (ctx) {
@@ -620,6 +620,7 @@
         if (!ctx && !window.__rikuLockInternal) throw new Error("削除にはglobal-mutationロックが必要です");
         if (name === APP_KEY && ctx) {
           ctx.persistAttempted = true;
+          ctx.persisted = false;
           ctx.afterChecksum = checksum(null);
           ctx.afterLength = null;
           originalSetItem.call(this, JOURNAL_HINT_KEY, JSON.stringify({ operationId: ctx.operationId, checksum: ctx.afterChecksum, length: null, state: "writing", removed: true, at: Date.now() }));
