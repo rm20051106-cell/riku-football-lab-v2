@@ -624,7 +624,7 @@
   }
 
   const mutationTargets = [
-    "updateTrainingStep","saveTraining","addMenu","removeMenu","saveMeasure","deleteItem",
+    "updateTrainingStep","saveTraining","addMenu","removeMenu","saveMeasure","deleteItem","syncMonthlySkillSnapshot",
     "scanAndRepairRecordIntegrity","saveClip","setCandidateReview","setCandidateTrackReview","setCandidateTag",
     "saveMatchScanResult","linkMatchEventToTraining","applyMatchImprovementPlan","createCrossMatchHighlight",
     "saveMatchEventEdits","updateMatchPositioning","deleteMatchScan","saveForm","savePlayerProfile","saveSettings",
