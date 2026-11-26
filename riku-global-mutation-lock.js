@@ -776,6 +776,17 @@
 
   // Every app write transaction on this database is fenced in the same IDB transaction.
   try {
+    if (!IDBFactory.prototype.deleteDatabase.__rikuVideoDatabaseDeleteGuarded) {
+      const originalDeleteDatabase = IDBFactory.prototype.deleteDatabase;
+      const guardedDeleteDatabase = function (name) {
+        if (String(name) === DB_NAME) {
+          throw new Error("動画データベース全体の削除は禁止されています。既存動画・履歴を保護しています");
+        }
+        return originalDeleteDatabase.call(this, name);
+      };
+      guardedDeleteDatabase.__rikuVideoDatabaseDeleteGuarded = true;
+      IDBFactory.prototype.deleteDatabase = guardedDeleteDatabase;
+    }
     if (!IDBObjectStore.prototype.put.__rikuMutationPutGuarded) {
       const originalPut = IDBObjectStore.prototype.put;
       const guardedPut = function (value, key) {
