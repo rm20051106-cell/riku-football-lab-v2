@@ -863,13 +863,24 @@
     if (!IDBCursor.prototype.update.__rikuMutationCursorGuarded) {
       const originalUpdate = IDBCursor.prototype.update;
       const guardedUpdate = function (value) {
-        const storeName = this.source?.name;
+        const source = this.source;
+        const storeName = source instanceof IDBObjectStore ? source.name : source?.objectStore?.name;
+        const key = this.primaryKey;
         const ctx = window.__rikuMutationContext;
         if (storeName === "videoChunks" && (!ctx || !ctx.chunkWriteAuthorized)) {
           throw new Error("動画チャンク更新は保存ジャーナルで許可された処理に限定されています");
         }
-        if (storeName === "videos" && (!ctx || !ctx.videoMetadataWriteAuthorized)) {
-          throw new Error("動画メタデータ更新には復旧ジャーナルが必要です");
+        if (storeName === "videos") {
+          if (key === "__pending_match_job__" && (!ctx || !ctx.pendingJobWriteAuthorized)) {
+            throw new Error("pending match jobは専用の保存処理以外から更新できません");
+          }
+          if (key === "__pending_match_upload__" && (!ctx || !ctx.pendingUploadWriteAuthorized)) {
+            throw new Error("pending upload情報は専用の保存処理以外から更新できません");
+          }
+          if (key !== "__pending_match_job__" && key !== "__pending_match_upload__" &&
+              (!ctx || !ctx.videoMetadataWriteAuthorized)) {
+            throw new Error("動画メタデータ更新には復旧ジャーナルが必要です");
+          }
         }
         return originalUpdate.call(this, value);
       };
@@ -879,13 +890,24 @@
     if (!IDBCursor.prototype.delete.__rikuMutationCursorGuarded) {
       const originalCursorDelete = IDBCursor.prototype.delete;
       const guardedCursorDelete = function () {
-        const storeName = this.source?.name;
+        const source = this.source;
+        const storeName = source instanceof IDBObjectStore ? source.name : source?.objectStore?.name;
+        const key = this.primaryKey;
         const ctx = window.__rikuMutationContext;
         if (storeName === "videoChunks" && (!ctx || !ctx.chunkDeleteAuthorized)) {
           throw new Error("動画チャンク削除は復旧ジャーナルで許可された処理に限定されています");
         }
-        if (storeName === "videos" && (!ctx || !ctx.videoMetadataDeleteAuthorized)) {
-          throw new Error("動画メタデータ削除は復旧ジャーナルで許可された処理に限定されています");
+        if (storeName === "videos") {
+          if (key === "__pending_match_job__" && (!ctx || !ctx.pendingJobClearAuthorized)) {
+            throw new Error("pending match jobは保存済み解析履歴の確認なしに削除できません");
+          }
+          if (key === "__pending_match_upload__" && (!ctx || !ctx.pendingUploadClearAuthorized)) {
+            throw new Error("pending upload情報は専用の復旧処理以外から削除できません");
+          }
+          if (key !== "__pending_match_job__" && key !== "__pending_match_upload__" &&
+              (!ctx || !ctx.videoMetadataDeleteAuthorized)) {
+            throw new Error("動画メタデータ削除は復旧ジャーナルで許可された処理に限定されています");
+          }
         }
         return originalCursorDelete.call(this);
       };
