@@ -448,21 +448,33 @@ def build_form_capture_quality(frames):
     }
 
 
-def read_jersey_number(frame, landmarks, target_numbers):
+def read_jersey_number(frame, landmarks, target_numbers, diagnostics=None):
     """Read likely shirt-number text from the detected pose torso crop.
     OCR is a candidate signal, never proof of player identity.
     """
+    def record(status):
+        if diagnostics is not None:
+            key = {
+                "success": "jersey_ocr_success_calls",
+                "no_candidate": "jersey_ocr_no_candidate_calls",
+                "exception": "jersey_ocr_exception_calls",
+            }[status]
+            diagnostics[key] = diagnostics.get(key, 0) + 1
+
     try:
         required = ("left_shoulder", "right_shoulder", "left_hip", "right_hip")
         if not all(name in landmarks for name in required):
+            record("no_candidate")
             return []
         h, w = frame.shape[:2]
         ls, rs = landmarks["left_shoulder"], landmarks["right_shoulder"]
         lh, rh = landmarks["left_hip"], landmarks["right_hip"]
         if min(ls[2], rs[2], lh[2], rh[2]) < 0.45:
+            record("no_candidate")
             return []
         shoulder_width = abs(ls[0] - rs[0]) * w
         if shoulder_width < 12:
+            record("no_candidate")
             return []
         center_x = (ls[0] + rs[0] + lh[0] + rh[0]) * w / 4
         top = int(max(0, min(ls[1], rs[1]) * h - shoulder_width * 0.12))
@@ -471,6 +483,7 @@ def read_jersey_number(frame, landmarks, target_numbers):
         left = max(0, int(center_x - half_width))
         right = min(w, int(center_x + half_width))
         if bottom - top < 12 or right - left < 12:
+            record("no_candidate")
             return []
         crop = frame[top:bottom, left:right]
         gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
@@ -482,7 +495,7 @@ def read_jersey_number(frame, landmarks, target_numbers):
         found = []
         targets = {str(x).strip() for x in target_numbers if str(x).strip()}
         for raw, confidence in zip(data.get("text", []), data.get("conf", [])):
-            digits = re.findall(r"(?<!\d)\d{1,2}(?!\d)", str(raw))
+            digits = re.findall(r"(?<!\\d)\\d{1,2}(?!\\d)", str(raw))
             try:
                 conf = float(confidence)
             except (TypeError, ValueError):
@@ -490,10 +503,11 @@ def read_jersey_number(frame, landmarks, target_numbers):
             for number in digits:
                 if number in targets and conf >= 35:
                     found.append({"number": number, "confidence": round(conf, 1)})
+        record("success" if found else "no_candidate")
         return found
     except Exception:
+        record("exception")
         return []
-
 
 def camera_angle_guidance(camera_angle: str):
     guidance = {
@@ -877,6 +891,9 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None, 
         "pose_geometry_seconds": 0.0,
         "jersey_ocr_seconds": 0.0,
         "jersey_ocr_calls": 0,
+        "jersey_ocr_success_calls": 0,
+        "jersey_ocr_no_candidate_calls": 0,
+        "jersey_ocr_exception_calls": 0,
         "pose_person_count": 0,
         "person_track_association_seconds": 0.0,
         "foot_motion_feature_seconds": 0.0,
@@ -922,7 +939,7 @@ def process_match_video(path: str, progress_callback=None, jersey_numbers=None, 
                     ocr = []
                     if should_run_match_jersey_ocr(sample_index):
                         ocr_started = time.monotonic()
-                        ocr = read_jersey_number(frame, metrics["landmarks"], targets)
+                        ocr = read_jersey_number(frame, metrics["landmarks"], targets, scan_timing)
                         scan_timing["jersey_ocr_seconds"] += time.monotonic() - ocr_started
                         scan_timing["jersey_ocr_calls"] += 1
                     scan_timing["pose_person_count"] += 1
