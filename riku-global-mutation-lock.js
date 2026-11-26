@@ -801,6 +801,7 @@
       const name = String(key);
       if (this === localStorage && protectedKeys.has(name)) {
         const ctx = window.__rikuMutationContext;
+        if (name === JOURNAL_HINT_KEY) throw new Error("復旧ジャーナルのヒントは内部処理専用です");
         if (!ctx && !window.__rikuLockInternal) throw new Error("保存にはglobal-mutationロックが必要です");
         if (name === APP_KEY) {
           const serialized = String(value);
@@ -827,6 +828,7 @@
       const name = String(key);
       if (this === localStorage && protectedKeys.has(name)) {
         const ctx = window.__rikuMutationContext;
+        if (name !== APP_KEY) throw new Error("pending job・履歴・復旧ヒントは専用処理以外から削除できません");
         if (!ctx && !window.__rikuLockInternal) throw new Error("削除にはglobal-mutationロックが必要です");
         if (name === APP_KEY && ctx) {
           ctx.persistAttempted = true;
