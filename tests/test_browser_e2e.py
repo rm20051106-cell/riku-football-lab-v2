@@ -630,15 +630,21 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     req.onsuccess = () => resolve(req.result);
                     req.onerror = () => reject(req.error);
                 });
-                await window.withGlobalMutationLock('test-fixture', async () => new Promise((resolve, reject) => {
-                    const tx = db.transaction('videoChunks', 'readwrite');
-                    tx.objectStore('videoChunks').delete(
-                        record.chunkPrefix + '00000000'
-                    );
-                    tx.oncomplete = resolve;
-                    tx.onerror = () => reject(tx.error);
-                    tx.onabort = () => reject(tx.error);
-                }));
+                await window.withGlobalMutationLock('test-fixture', async () => {
+                    const ctx = window.__rikuMutationContext;
+                    ctx.chunkDeleteAuthorized = true;
+                    try {
+                        await new Promise((resolve, reject) => {
+                            const tx = db.transaction('videoChunks', 'readwrite');
+                            tx.objectStore('videoChunks').delete(record.chunkPrefix + '00000000');
+                            tx.oncomplete = resolve;
+                            tx.onerror = () => reject(tx.error);
+                            tx.onabort = () => reject(tx.error);
+                        });
+                    } finally {
+                        ctx.chunkDeleteAuthorized = false;
+                    }
+                });
             } finally { db.close(); }
             await prepareVideoExport();
             const host = document.getElementById('videoExportList');
@@ -706,15 +712,21 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     req.onsuccess = () => resolve(req.result);
                     req.onerror = () => reject(req.error);
                 });
-                await window.withGlobalMutationLock('test-fixture', async () => new Promise((resolve, reject) => {
-                    const tx = db.transaction('videoChunks', 'readwrite');
-                    tx.objectStore('videoChunks').delete(
-                        record.chunkPrefix + '00000000'
-                    );
-                    tx.oncomplete = resolve;
-                    tx.onerror = () => reject(tx.error);
-                    tx.onabort = () => reject(tx.error);
-                }));
+                await window.withGlobalMutationLock('test-fixture', async () => {
+                    const ctx = window.__rikuMutationContext;
+                    ctx.chunkDeleteAuthorized = true;
+                    try {
+                        await new Promise((resolve, reject) => {
+                            const tx = db.transaction('videoChunks', 'readwrite');
+                            tx.objectStore('videoChunks').delete(record.chunkPrefix + '00000000');
+                            tx.oncomplete = resolve;
+                            tx.onerror = () => reject(tx.error);
+                            tx.onabort = () => reject(tx.error);
+                        });
+                    } finally {
+                        ctx.chunkDeleteAuthorized = false;
+                    }
+                });
             } finally { db.close(); }
             state.clips = [
                 {id: 'integrity-good', title: '正常動画', hasVideo: true},
