@@ -483,15 +483,21 @@ class RikuBrowserE2ETests(unittest.TestCase):
             await storeClipVideo('gc-check', new Blob([new Uint8Array([1, 2, 3])], {type: 'video/mp4'}));
             const db = await openVideoDB();
             try {
-                await window.withGlobalMutationLock('test-fixture', async () => new Promise((resolve, reject) => {
-                    const tx = db.transaction('videoChunks', 'readwrite');
-                    tx.objectStore('videoChunks').put(new Uint8Array([7, 7]), 'gc-check|00000000-abandoned-generation|00000000');
-                    const pendingGeneration = Date.now().toString(36) + '-still-writing';
-                    tx.objectStore('videoChunks').put(new Uint8Array([8, 8]), 'gc-check|' + pendingGeneration + '|00000000');
-                    tx.oncomplete = resolve;
-                    tx.onerror = () => reject(tx.error);
-                    tx.onabort = () => reject(tx.error);
-                }));
+                await window.withGlobalMutationLock('test-fixture', async () => {
+                    const ctx = window.__rikuMutationContext;
+                    ctx.chunkWriteAuthorized = true;
+                    try {
+                        await new Promise((resolve, reject) => {
+                            const tx = db.transaction('videoChunks', 'readwrite');
+                            tx.objectStore('videoChunks').put(new Uint8Array([7, 7]), 'gc-check|00000000-abandoned-generation|00000000');
+                            const pendingGeneration = Date.now().toString(36) + '-still-writing';
+                            tx.objectStore('videoChunks').put(new Uint8Array([8, 8]), 'gc-check|' + pendingGeneration + '|00000000');
+                            tx.oncomplete = resolve;
+                            tx.onerror = () => reject(tx.error);
+                            tx.onabort = () => reject(tx.error);
+                        });
+                    } finally { ctx.chunkWriteAuthorized = false; }
+                });
             } finally { db.close(); }
             await storeClipVideo('gc-check', new Blob([new Uint8Array([4, 5, 6, 7])], {type: 'video/mp4'}));
             const record = await (async () => {
@@ -536,15 +542,21 @@ class RikuBrowserE2ETests(unittest.TestCase):
             const legacyBuffer = await legacyBlob.arrayBuffer();
             const legacyDb = await openVideoDB();
             try {
-                await window.withGlobalMutationLock('test-fixture', async () => new Promise((resolve, reject) => {
-                    const tx = legacyDb.transaction('videos', 'readwrite');
-                    tx.objectStore('videos').put({
-                        blobData: legacyBuffer, blobType: 'video/webm', name: 'legacy.webm', type: 'video/webm', size: 3
-                    }, 'legacy-check');
-                    tx.oncomplete = resolve;
-                    tx.onerror = () => reject(tx.error);
-                    tx.onabort = () => reject(tx.error);
-                }));
+                await window.withGlobalMutationLock('test-fixture', async () => {
+                    const ctx = window.__rikuMutationContext;
+                    ctx.videoMetadataWriteAuthorized = true;
+                    try {
+                        await new Promise((resolve, reject) => {
+                            const tx = legacyDb.transaction('videos', 'readwrite');
+                            tx.objectStore('videos').put({
+                                blobData: legacyBuffer, blobType: 'video/webm', name: 'legacy.webm', type: 'video/webm', size: 3
+                            }, 'legacy-check');
+                            tx.oncomplete = resolve;
+                            tx.onerror = () => reject(tx.error);
+                            tx.onabort = () => reject(tx.error);
+                        });
+                    } finally { ctx.videoMetadataWriteAuthorized = false; }
+                });
             } finally { legacyDb.close(); }
             const legacy = await getClipVideo('legacy-check');
             return {
@@ -2289,11 +2301,17 @@ class RikuBrowserE2ETests(unittest.TestCase):
             await storeClipVideo('video-no-record', new Blob([new Uint8Array([1,2,3])], {type:'video/mp4'}));
             const db = await openVideoDB();
             try {
-                await window.withGlobalMutationLock('test-fixture', async () => new Promise((resolve, reject) => {
-                    const tx = db.transaction('videoChunks', 'readwrite');
-                    tx.objectStore('videoChunks').put(new Uint8Array([9,9]), 'missing-owner|old-generation|00000000');
-                    tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error);
-                }));
+                await window.withGlobalMutationLock('test-fixture', async () => {
+                    const ctx = window.__rikuMutationContext;
+                    ctx.chunkWriteAuthorized = true;
+                    try {
+                        await new Promise((resolve, reject) => {
+                            const tx = db.transaction('videoChunks', 'readwrite');
+                            tx.objectStore('videoChunks').put(new Uint8Array([9,9]), 'missing-owner|old-generation|00000000');
+                            tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error);
+                        });
+                    } finally { ctx.chunkWriteAuthorized = false; }
+                });
             } finally { db.close(); }
             await scanAndRepairRecordIntegrity();
             const video = await getClipVideo('video-no-record');
