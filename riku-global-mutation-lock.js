@@ -265,6 +265,9 @@
   async function markVideoOnlyCommit() {
     const ctx = window.__rikuMutationContext;
     if (!ctx || !["storeClipVideo", "restoreClipVideoRecord"].includes(ctx.operation)) return false;
+    if (window.__rikuMutationSafeMode || Number(ctx.leaseUntil) <= Date.now()) {
+      throw new Error("動画のみの保存確定前にロック期限を確認できなくなりました");
+    }
     const value = appValue();
     const sum = checksum(value);
     const length = value == null ? null : value.length;
@@ -560,7 +563,10 @@
       ctx.afterChecksum = currentChecksum;
       ctx.afterLength = current == null ? null : current.length;
       try {
-        localStorage.setItem("rikuMutationJournalHint_v1", JSON.stringify({
+        if (window.__rikuMutationSafeMode || Number(ctx.leaseUntil) <= Date.now()) {
+          throw new Error("動画のみの保存確定前にロック期限を確認できなくなりました");
+        }
+        originalSetItem.call(localStorage, JOURNAL_HINT_KEY, JSON.stringify({
           operationId: ctx.operationId, checksum: currentChecksum, length: ctx.afterLength,
           state: "video-only-committed", at: Date.now()
         }));
