@@ -3155,6 +3155,25 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual(json.loads(result["afterGuarded"])["settings"]["name"], "Stage57 lock guard")
         self.assertEqual(result["journalCount"], 0, result)
 
+    def test_stage57_pending_match_job_requires_persisted_analysis_before_clear(self):
+        page = self.page
+        result = page.evaluate("""async () => {
+            await savePendingMatchJob({jobId: 'stage57-pending', createdAt: Date.now()});
+            let blocked = false;
+            try { await clearPendingMatchJob(); }
+            catch (error) { blocked = /永続保存を確認できない/.test(error.message); }
+            const retained = await getPendingMatchJob();
+            state.matchAnalyses = [{id: 'stage57-analysis', jobId: 'stage57-pending'}];
+            const persisted = await window.withGlobalMutationLock('stage57-persist-analysis', () => persist());
+            await clearPendingMatchJob();
+            const afterClear = await getPendingMatchJob();
+            return {blocked, retainedJobId: retained?.jobId || null, persisted, afterClear};
+        }""")
+        self.assertTrue(result["blocked"], result)
+        self.assertEqual(result["retainedJobId"], "stage57-pending", result)
+        self.assertTrue(result["persisted"], result)
+        self.assertIsNone(result["afterClear"], result)
+
     def test_stage57_global_mutation_lock_serializes_two_tabs(self):
         page = self.page
         page.wait_for_function("window.__rikuMutationRecoveryReady && window.__rikuMutationRecoveryReady()")
