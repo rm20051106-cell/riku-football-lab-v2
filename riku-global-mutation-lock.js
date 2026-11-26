@@ -224,6 +224,12 @@
   async function recordVideoChange(change) {
     const ctx = window.__rikuMutationContext;
     if (!ctx) throw new Error("動画変更にはglobal-mutationロックが必要です");
+    const key = String(change.key);
+    for (const prefix of [change.oldPrefix, change.newPrefix].filter(Boolean)) {
+      if (!String(prefix).startsWith(key + "|") || !String(prefix).endsWith("|")) {
+        throw new Error("動画世代の保存キーが一致しないため、削除・切替を停止しました");
+      }
+    }
     const db = await openDB();
     try {
       await new Promise((resolve, reject) => {
