@@ -174,7 +174,7 @@ function persist(){
   if(window.__rikuMutationContext)window.__rikuMutationContext.persistFailure=true;
   console.error('記録データの保存に失敗しました',error);
   if(notice){
-   notice.textContent='記録データを端末に保存できませんでした。今回の変更は画面上には残っていますが、再読み込みすると失われる可能性があります。すぐに「設定」→「記録データを書き出す」でバックアップしてください。原因：'+(error?.name||'保存エラー');
+   notice.textContent='記録データを端末に保存できませんでした。今回の変更は保存前の状態へ戻します。既存データを保護しています。原因：'+(error?.name||'保存エラー');
    notice.classList.remove('hidden');
   }
   return false;
