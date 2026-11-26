@@ -489,7 +489,7 @@
             store.put({ ...row, ownerId: null, operationId: null, leaseUntil: 0, heartbeatAt: Date.now() });
           }
         };
-        tx.oncomplete = resolve;
+        tx.oncomplete = () => { ctx.leaseUntil = 0; resolve(); };
         tx.onerror = () => reject(tx.error || new Error("排他ロックを解放できません"));
         tx.onabort = () => reject(tx.error || new Error("排他ロックの解放が中断されました"));
       });
@@ -502,15 +502,17 @@
         const tx = internalTransaction(db, ["restoreLocks"], "readwrite", ctx, true);
         const store = tx.objectStore("restoreLocks");
         const get = store.get(LOCK_KEY);
+        let renewedUntil = 0;
         get.onsuccess = () => {
           const row = get.result;
           if (!row || row.ownerId !== ctx.ownerId || Number(row.fenceToken) !== Number(ctx.fenceToken)) {
             try { tx.abort(); } catch (_) {}
             return;
           }
-          store.put({ ...row, heartbeatAt: Date.now(), leaseUntil: Date.now() + LEASE_MS });
+          renewedUntil = Date.now() + LEASE_MS;
+          store.put({ ...row, heartbeatAt: Date.now(), leaseUntil: renewedUntil });
         };
-        tx.oncomplete = resolve;
+        tx.oncomplete = () => { ctx.leaseUntil = renewedUntil; resolve(); };
         tx.onerror = () => reject(tx.error || new Error("排他ロックの更新に失敗しました"));
         tx.onabort = () => reject(tx.error || new Error("排他ロックの所有権を失いました"));
       });
@@ -605,7 +607,7 @@
         const ownerId = makeId("tab");
         const operationId = makeId("recovery");
         const fence = await acquireFence(ownerId, operationId);
-        const ctx = { ownerId, operationId, restoreId: makeId("journal"), fenceToken: fence.fenceToken, operation: "startup-recovery", idbWrites: 0 };
+        const ctx = { ownerId, operationId, restoreId: makeId("journal"), fenceToken: fence.fenceToken, leaseUntil: fence.leaseUntil, operation: "startup-recovery", idbWrites: 0 };
         window.__rikuMutationContext = ctx;
         heartbeat = setInterval(() => {
           heartbeatFence(ctx).catch(error => {
@@ -700,7 +702,7 @@
       const operationId = makeId("op");
       const restoreId = makeId("restore");
       const fence = await acquireFence(ownerId, operationId);
-      const ctx = { ownerId, operationId, restoreId, fenceToken: fence.fenceToken, operation: String(operation || "mutation"), idbWrites: 0, persistAttempted: false, persisted: false, persistFailure: false, auxStorageMutation: false };
+      const ctx = { ownerId, operationId, restoreId, fenceToken: fence.fenceToken, leaseUntil: fence.leaseUntil, operation: String(operation || "mutation"), idbWrites: 0, persistAttempted: false, persisted: false, persistFailure: false, auxStorageMutation: false };
       try { ctx.stateSnapshot = typeof state === "undefined" ? null : JSON.stringify(state); }
       catch (snapshotError) { await releaseFence(ctx); throw new Error("保存前の状態を安全に退避できません：" + (snapshotError?.message || String(snapshotError))); }
       window.__rikuMutationContext = ctx;
@@ -836,7 +838,9 @@
       if (this === localStorage && protectedKeys.has(name)) {
         const ctx = window.__rikuMutationContext;
         if (name === JOURNAL_HINT_KEY) throw new Error("復旧ジャーナルのヒントは内部処理専用です");
-        if (!ctx && !window.__rikuLockInternal) throw new Error("保存にはglobal-mutationロックが必要です");
+        if (!ctx || window.__rikuMutationSafeMode || Number(ctx.leaseUntil) <= Date.now()) {
+          throw new Error("保存ロックの期限・所有権を確認できないため保存を停止しました");
+        }
         if (name === APP_KEY) {
           const serialized = String(value);
           const sum = checksum(serialized);
@@ -863,7 +867,9 @@
       if (this === localStorage && protectedKeys.has(name)) {
         const ctx = window.__rikuMutationContext;
         if (name !== APP_KEY) throw new Error("pending job・履歴・復旧ヒントは専用処理以外から削除できません");
-        if (!ctx && !window.__rikuLockInternal) throw new Error("削除にはglobal-mutationロックが必要です");
+        if (!ctx || window.__rikuMutationSafeMode || Number(ctx.leaseUntil) <= Date.now()) {
+          throw new Error("削除ロックの期限・所有権を確認できないため削除を停止しました");
+        }
         if (name === APP_KEY && ctx) {
           ctx.persistAttempted = true;
           ctx.persisted = false;
