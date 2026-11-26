@@ -334,12 +334,24 @@
           if (change.oldRecord?.chunkPrefix) protectedPrefixes.add(String(change.oldRecord.chunkPrefix));
         }
         const candidates = new Set(changes.map(change => change.newPrefix).filter(Boolean).map(String));
-        for (const prefix of candidates) {
-          if (!protectedPrefixes.has(prefix)) {
-            chunks.delete(IDBKeyRange.bound(prefix, prefix + "\uffff"));
+        const allJournals = journals.getAll();
+        allJournals.onsuccess = () => {
+          const rows = allJournals.result || [];
+          if (rows.some(row => row.journalChecksum !== journalDigest(row))) {
+            try { tx.abort(); } catch (_) {}
+            return;
           }
-        }
-        journals.delete(journal.restoreId);
+          for (const prefix of candidates) {
+            if (protectedPrefixes.has(prefix)) continue;
+            const referencedElsewhere = rows.some(other =>
+              other.restoreId !== journal.restoreId &&
+              (other.videoChanges || []).some(change => change.oldPrefix === prefix || change.newPrefix === prefix)
+            );
+            if (!referencedElsewhere) chunks.delete(IDBKeyRange.bound(prefix, prefix + "\\uffff"));
+          }
+          journals.delete(journal.restoreId);
+        };
+        allJournals.onerror = () => { try { tx.abort(); } catch (_) {} };
         tx.oncomplete = resolve;
         tx.onerror = () => reject(tx.error || new Error("復旧前の動画状態へ戻せません"));
         tx.onabort = () => reject(tx.error || new Error("動画ロールバックが中断されました"));
