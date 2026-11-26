@@ -26,6 +26,43 @@
     }
     return text.length.toString(36) + "-" + a.toString(16).padStart(8, "0") + b.toString(16).padStart(8, "0");
   }
+  function videoRecordSummary(record) {
+    if (!record) return null;
+    const blobData = record.blobData;
+    return {
+      storageFormat: record.storageFormat || null,
+      chunkPrefix: record.chunkPrefix || null,
+      chunkCount: Number(record.chunkCount) || null,
+      size: Number(record.size) || (record.blob instanceof Blob ? record.blob.size : null),
+      name: record.name || null,
+      type: record.type || null,
+      blobType: record.blobType || null,
+      lastModified: Number(record.lastModified) || 0,
+      blobSize: record.blob instanceof Blob ? record.blob.size : null,
+      blobDataBytes: blobData instanceof ArrayBuffer ? blobData.byteLength :
+        (ArrayBuffer.isView(blobData) ? blobData.byteLength : null)
+    };
+  }
+  function journalDigest(row) {
+    const canonical = {
+      restoreId: row.restoreId,
+      operationId: row.operationId,
+      ownerId: row.ownerId,
+      fenceToken: Number(row.fenceToken),
+      operation: row.operation,
+      state: row.state,
+      beforeStateChecksum: row.beforeStateChecksum,
+      beforeStateLength: row.beforeStateLength,
+      afterStateChecksum: row.afterStateChecksum,
+      afterStateLength: row.afterStateLength,
+      videoChanges: (row.videoChanges || []).map(change => ({
+        key: String(change.key), kind: change.kind || null,
+        oldPrefix: change.oldPrefix || null, newPrefix: change.newPrefix || null,
+        oldRecord: videoRecordSummary(change.oldRecord)
+      }))
+    };
+    return checksum(JSON.stringify(canonical));
+  }
   function makeId(prefix) {
     const random = globalThis.crypto && typeof crypto.randomUUID === "function"
       ? crypto.randomUUID()
@@ -123,6 +160,7 @@
             return;
           }
           Object.assign(row, changes, { updatedAt: new Date().toISOString() });
+          row.journalChecksum = journalDigest(row);
           store.put(row);
         };
         get.onerror = () => { try { tx.abort(); } catch (_) {} };
@@ -153,6 +191,7 @@
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
+      row.journalChecksum = journalDigest(row);
       await new Promise((resolve, reject) => {
         const tx = internalTransaction(db, ["restoreJournal"], "readwrite", ctx);
         const store = tx.objectStore("restoreJournal");
@@ -192,6 +231,7 @@
           row.videoChanges.push(change);
           row.state = "prepared";
           row.updatedAt = new Date().toISOString();
+          row.journalChecksum = journalDigest(row);
           store.put(row);
         };
         get.onerror = () => { try { tx.abort(); } catch (_) {} };
@@ -250,7 +290,15 @@
     return new Promise((resolve, reject) => {
       const tx = db.transaction("restoreJournal", "readonly");
       const request = tx.objectStore("restoreJournal").getAll();
-      request.onsuccess = () => resolve(request.result || []);
+      request.onsuccess = () => {
+        const rows = request.result || [];
+        if (rows.some(row => row.journalChecksum !== journalDigest(row))) {
+          reject(new Error("復旧ジャーナルのチェックサムが一致しません。既存データ保護のため安全停止しました"));
+          try { tx.abort(); } catch (_) {}
+          return;
+        }
+        resolve(rows);
+      };
       request.onerror = () => reject(request.error || new Error("復旧ジャーナルを読み取れません"));
       tx.onabort = () => reject(tx.error || new Error("復旧ジャーナルの読み取りが中断されました"));
     });
