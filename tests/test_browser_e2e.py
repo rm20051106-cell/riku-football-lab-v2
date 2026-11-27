@@ -3334,7 +3334,8 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     error, forcedReadFailure,
                     oldPrefix: old.chunkPrefix,
                     oldChunkCount: await countChunks(old.chunkPrefix),
-                    activePrefix: (await readRecord())?.chunkPrefix || null
+                    activePrefix: (await readRecord())?.chunkPrefix || null,
+                    safeMode: !!window.__rikuMutationSafeMode
                 };
             """),
             ("corrupt", """
