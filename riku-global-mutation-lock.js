@@ -778,6 +778,11 @@
           const currentChecksum = checksum(appValue());
           let hint = null;
           try { hint = JSON.parse(localStorage.getItem(JOURNAL_HINT_KEY) || "null"); } catch (_) {}
+          const blockedJournal = journals.find(journal => journal.state === "recovery-required");
+          if (blockedJournal) {
+            window.__rikuMutationSafeMode = true;
+            throw new Error("recovery-requiredの未解決ジャーナルが残っています。後続の復旧・動画削除を停止しました");
+          }
           for (const journal of journals) {
             if (journal.state === "committed") {
               if (journal.afterStateChecksum && currentChecksum !== journal.afterStateChecksum) {
@@ -793,10 +798,6 @@
               await updateJournal(ctx, { state: "committed" }, journal.restoreId);
               await finishCommittedJournal(ctx, journal);
               continue;
-            }
-            if (journal.state === "recovery-required") {
-              window.__rikuMutationSafeMode = true;
-              throw new Error("recovery-requiredの未解決ジャーナルが残っています。後続の復旧・動画削除を停止しました");
             }
             if (journal.state === "rolled-back") continue;
             const afterMatches = hint && hint.operationId === journal.operationId &&
