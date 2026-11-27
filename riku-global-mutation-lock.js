@@ -606,7 +606,9 @@
         }
         journalReq.onerror = journalsReq.onerror = lockReq.onerror = () => abort("削除直前の所有権・ジャーナルを再取得できません");
         tx.oncomplete = resolve;
-        tx.onerror = () => reject(failure || tx.error || fail("確定済み動画の後片付けに失敗しました"));
+        // Wait for onabort before rejecting: IndexedDB may emit error before
+        // abort, and the outer catch must see the retryable-abort classification.
+        tx.onerror = () => {};
         tx.onabort = () => {
           // A transaction aborted externally (without our own integrity/fence
           // guard calling abort()) is retryable on the next startup recovery.
