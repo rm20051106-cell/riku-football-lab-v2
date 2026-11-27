@@ -810,6 +810,9 @@
               reason: "localStorage matches neither before nor confirmed after snapshot"
             }, journal.restoreId);
             window.__rikuMutationSafeMode = true;
+            // Stop processing immediately: no later journal may authorize cleanup
+            // while an earlier operation has an ambiguous app-state outcome.
+            throw new Error("復旧ジャーナルがbefore/afterのどちらとも一致しません。後続の動画削除を停止しました");
           }
         } finally {
           if (heartbeat) { clearInterval(heartbeat); heartbeat = null; }
