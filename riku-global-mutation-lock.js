@@ -715,7 +715,14 @@
       finally { latestDB.close(); }
       if (latest) {
         await updateJournal(ctx, { state: "committed" });
-        await finishCommittedJournal(ctx, { ...latest, state: "committed" });
+        try {
+          await finishCommittedJournal(ctx, { ...latest, state: "committed" });
+        } catch (cleanupError) {
+          // A failed committed cleanup is fail-closed: do not retry it from the outer
+          // mutation catch, because a transient read failure must never become deletion.
+          ctx.committedCleanupFailed = true;
+          throw cleanupError;
+        }
       }
       return;
     }
@@ -859,13 +866,24 @@
           try { state = JSON.parse(ctx.stateSnapshot); if (typeof renderAll === "function") renderAll(); } catch (_) {}
         }
         let recovered = false;
-        try {
-          await finalizeOperation(ctx);
-          recovered = true;
-        } catch (recoveryError) {
-          try { await updateJournal(ctx, { state: "recovery-required", reason: String(recoveryError?.message || recoveryError).slice(0, 300) }); } catch (_) {}
+        if (ctx.committedCleanupFailed) {
+          try {
+            await updateJournal(ctx, {
+              state: "recovery-required",
+              reason: "committed cleanup verification failed; retry requires explicit recovery"
+            });
+          } catch (_) {}
           window.__rikuMutationSafeMode = true;
-          setNotice("処理失敗後の復旧を確認できません。既存動画・分析履歴・pending jobを削除せず安全停止しました");
+          setNotice("確定済み動画の削除前検証に失敗しました。旧動画を保持して安全停止しました");
+        } else {
+          try {
+            await finalizeOperation(ctx);
+            recovered = true;
+          } catch (recoveryError) {
+            try { await updateJournal(ctx, { state: "recovery-required", reason: String(recoveryError?.message || recoveryError).slice(0, 300) }); } catch (_) {}
+            window.__rikuMutationSafeMode = true;
+            setNotice("処理失敗後の復旧を確認できません。既存動画・分析履歴・pending jobを削除せず安全停止しました");
+          }
         }
         if (!recovered) window.__rikuMutationSafeMode = true;
         throw error;
