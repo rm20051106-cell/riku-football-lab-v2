@@ -3354,11 +3354,12 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 let error = null;
                 try { await save([41,42,43,44]); }
                 catch (caught) { error = String(caught?.message || caught); }
+                const legacyHashMissing = !(await readRecord()).chunkSha256;
                 return {
                     error,
                     oldPrefix: old.chunkPrefix,
                     oldChunkCount: await countChunks(old.chunkPrefix),
-                    oldHashWasRemoved: !(await readRecord()).chunkSha256
+                    oldHashWasRemoved: legacyHashMissing
                 };
             """),
             ("stale-fence", """
