@@ -3325,6 +3325,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 finally { IDBObjectStore.prototype.get = originalGet; }
                 return {
                     error, forcedReadFailure,
+                    oldPrefix: old.chunkPrefix,
                     oldChunkCount: await countChunks(old.chunkPrefix),
                     activePrefix: (await readRecord())?.chunkPrefix || null
                 };
@@ -3476,7 +3477,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     value: async (...args) => {
                         const result = await originalDigest(...args);
                         digestCount++;
-                        if (digestCount === 3 && !generationChanged) {
+                        if (digestCount === 5 && !generationChanged) {
                             generationChanged = true;
                             const ctx = window.__rikuMutationContext;
                             const db = await openVideoDB();
@@ -3542,7 +3543,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     value: async (...args) => {
                         const result = await originalDigest(...args);
                         digestCount++;
-                        if (digestCount === 3 && !checksumChanged) {
+                        if (digestCount === 5 && !checksumChanged) {
                             checksumChanged = true;
                             const db = await openVideoDB();
                             try { await new Promise((resolve, reject) => {
@@ -3611,8 +3612,8 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     value: async (...args) => {
                         const result = await originalDigest(...args);
                         digestCount++;
-                        // First digest hashes the incoming file; #2/#3 verify old then new generations.
-                        if (digestCount === 3 && !fenceChanged) {
+                        // #1 old preflight, #2 source hash, #3 staged readback, #4/#5 final old/new verification.
+                        if (digestCount === 5 && !fenceChanged) {
                             fenceChanged = true;
                             const db = await openVideoDB();
                             try { await new Promise((resolve, reject) => {
@@ -3670,13 +3671,13 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertTrue(read_failure["forcedReadFailure"], results)
         self.assertTrue(read_failure["error"], results)
         self.assertGreater(read_failure["oldChunkCount"], 0, results)
-        self.assertTrue(read_failure["safeMode"], results)
+        self.assertEqual(read_failure["activePrefix"], read_failure["oldPrefix"], results)
 
         corrupt = results["corrupt"]
         self.assertTrue(corrupt["corrupted"], results)
         self.assertIn("SHA256", corrupt["error"] or "", results)
         self.assertGreater(corrupt["oldChunkCount"], 0, results)
-        self.assertNotEqual(corrupt["activePrefix"], None, results)
+        self.assertEqual(corrupt["activePrefix"], corrupt["oldPrefix"], results)
 
         legacy = results["legacy"]
         self.assertIn("SHA256", legacy["error"] or "", results)
