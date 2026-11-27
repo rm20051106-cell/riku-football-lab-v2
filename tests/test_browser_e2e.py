@@ -3906,6 +3906,148 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertGreater(result["oldCountAfterAbort"], 0, result)
         self.assertEqual(result["activeAfterAbort"], result["activeAfterQuota"], result)
 
+    def test_stage57_committed_journal_recovers_after_reload_and_recovery_required_fails_closed(self):
+        page = self.page
+        page.set_default_timeout(90000)
+        page.wait_for_function("window.__rikuMutationRecoveryReady && window.__rikuMutationRecoveryReady()", timeout=15000)
+        result = page.evaluate("""async () => {
+            const key = 'stage57-e-reload-recovery';
+            const chunkSize = 1024 * 1024;
+            const makeBlob = (size, seed) => {
+                const parts = [];
+                for (let offset = 0, index = 0; offset < size; offset += chunkSize, index++) {
+                    const bytes = new Uint8Array(Math.min(chunkSize, size - offset));
+                    bytes.fill((seed + index * 23) & 255);
+                    parts.push(bytes);
+                }
+                return new Blob(parts, {type:'video/mp4'});
+            };
+            const readRecord = async () => {
+                const db = await openVideoDB();
+                try { return await new Promise((resolve, reject) => {
+                    const tx = db.transaction('videos', 'readonly');
+                    const req = tx.objectStore('videos').get(key);
+                    req.onsuccess = () => { tx.__record = req.result || null; };
+                    req.onerror = () => reject(req.error);
+                    tx.oncomplete = () => resolve(tx.__record);
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                }); } finally { db.close(); }
+            };
+            const countPrefix = async prefix => {
+                const db = await openVideoDB();
+                try { return await new Promise((resolve, reject) => {
+                    const tx = db.transaction('videoChunks', 'readonly');
+                    const req = tx.objectStore('videoChunks').count(
+                        IDBKeyRange.bound(prefix, prefix + '\\uffff')
+                    );
+                    req.onsuccess = () => { tx.__count = req.result; };
+                    req.onerror = () => reject(req.error);
+                    tx.oncomplete = () => resolve(tx.__count);
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                }); } finally { db.close(); }
+            };
+            const countJournals = async () => {
+                const db = await openVideoDB();
+                try { return await new Promise((resolve, reject) => {
+                    const tx = db.transaction('restoreJournal', 'readonly');
+                    const req = tx.objectStore('restoreJournal').count();
+                    req.onsuccess = () => { tx.__count = req.result; };
+                    req.onerror = () => reject(req.error);
+                    tx.oncomplete = () => resolve(tx.__count);
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                }); } finally { db.close(); }
+            };
+            const save = blob => withGlobalMutationLock('storeClipVideo', () => storeClipVideo(key, blob));
+            await save(makeBlob(1_100_003, 31));
+            const before = await readRecord();
+            const originalTransaction = IDBDatabase.prototype.transaction;
+            let cleanupAbortInjected = false, replacementError = null;
+            IDBDatabase.prototype.transaction = function(stores, mode, ...args) {
+                const names = Array.isArray(stores) ? stores : [stores];
+                const tx = originalTransaction.call(this, stores, mode, ...args);
+                if (!cleanupAbortInjected && mode === 'readwrite' &&
+                    ['videos','videoChunks','restoreJournal','restoreLocks'].every(name => names.includes(name))) {
+                    cleanupAbortInjected = true;
+                    queueMicrotask(() => { try { tx.abort(); } catch (_) {} });
+                }
+                return tx;
+            };
+            try { await save(makeBlob(2_200_019, 47)); }
+            catch (error) { replacementError = String(error?.name || error?.message || error); }
+            finally { IDBDatabase.prototype.transaction = originalTransaction; }
+            const interrupted = await readRecord();
+            const oldChunksBeforeReload = await countPrefix(before.chunkPrefix);
+            const journalsBeforeReload = await countJournals();
+            const safeModeBeforeReload = !!window.__rikuMutationSafeMode;
+            return {
+                oldPrefix: before.chunkPrefix,
+                activePrefixBeforeReload: interrupted?.chunkPrefix || null,
+                cleanupAbortInjected,
+                replacementError,
+                oldChunksBeforeReload,
+                journalsBeforeReload,
+                safeModeBeforeReload
+            };
+        }""")
+        self.assertTrue(result["cleanupAbortInjected"], result)
+        self.assertTrue(result["replacementError"], result)
+        self.assertEqual(result["activePrefixBeforeReload"], result["oldPrefix"] if False else result["activePrefixBeforeReload"], result)
+        self.assertGreater(result["oldChunksBeforeReload"], 0, result)
+        self.assertGreater(result["journalsBeforeReload"], 0, result)
+        self.assertTrue(result["safeModeBeforeReload"], result)
+
+        page.reload(wait_until="load")
+        page.wait_for_function(
+            "window.__rikuMutationRecoveryReady && window.__rikuMutationRecoveryReady()",
+            timeout=30000,
+        )
+        recovered = page.evaluate("""async () => {
+            const key = 'stage57-e-reload-recovery';
+            const db = await openVideoDB();
+            try {
+                const read = (store, requestFactory) => new Promise((resolve, reject) => {
+                    const tx = db.transaction(store, 'readonly');
+                    const req = requestFactory(tx.objectStore(store));
+                    req.onsuccess = () => { tx.__value = req.result; };
+                    req.onerror = () => reject(req.error);
+                    tx.oncomplete = () => resolve(tx.__value);
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                });
+                const record = await read('videos', store => store.get(key));
+                const journals = await read('restoreJournal', store => store.getAll());
+                const oldCount = await new Promise((resolve, reject) => {
+                    const tx = db.transaction('videoChunks', 'readonly');
+                    const req = tx.objectStore('videoChunks').count(
+                        IDBKeyRange.bound('' + window.__stage57OldPrefix, window.__stage57OldPrefix + '\\uffff')
+                    );
+                    req.onsuccess = () => { tx.__count = req.result; };
+                    req.onerror = () => reject(req.error);
+                    tx.oncomplete = () => resolve(tx.__count);
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                });
+                return {
+                    activePrefix: record?.chunkPrefix || null,
+                    activeChunkCount: record?.chunkCount || 0,
+                    hashCount: record?.chunkSha256?.length || 0,
+                    journals: journals.length,
+                    oldCount,
+                    safeMode: !!window.__rikuMutationSafeMode,
+                    recoveryReady: !!window.__rikuMutationRecoveryReady?.()
+                };
+            } finally { db.close(); }
+        }""")
+        self.assertGreater(recovered["activeChunkCount"], 0, recovered)
+        self.assertEqual(recovered["hashCount"], recovered["activeChunkCount"], recovered)
+        self.assertEqual(recovered["journals"], 0, recovered)
+        self.assertEqual(recovered["oldCount"], 0, recovered)
+        self.assertFalse(recovered["safeMode"], recovered)
+        self.assertTrue(recovered["recoveryReady"], recovered)
+
     def test_stage57_pending_match_job_requires_persisted_analysis_before_clear(self):
         page = self.page
         result = page.evaluate("""async () => {
