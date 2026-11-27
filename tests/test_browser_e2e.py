@@ -3599,6 +3599,17 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertGreater(legacy["oldChunkCount"], 0, results)
         self.assertTrue(legacy["oldHashWasRemoved"], results)
 
+        generation = results["stale-generation"]
+        self.assertTrue(generation["generationChanged"], results)
+        self.assertGreater(generation["oldChunkCount"], 0, results)
+        self.assertTrue(generation["safeMode"], results)
+
+        checksum = results["stale-checksum"]
+        self.assertTrue(checksum["checksumChanged"], results)
+        self.assertIn("checksum", (checksum["error"] or "").lower(), results)
+        self.assertGreater(checksum["oldChunkCount"], 0, results)
+        self.assertTrue(checksum["safeMode"], results)
+
         stale = results["stale-fence"]
         self.assertTrue(stale["fenceChanged"], results)
         self.assertGreater(stale["oldChunkCount"], 0, results)
