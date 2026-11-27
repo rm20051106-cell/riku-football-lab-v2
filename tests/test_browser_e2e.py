@@ -3981,6 +3981,18 @@ class RikuBrowserE2ETests(unittest.TestCase):
             const interrupted = await readRecord();
             const oldChunksBeforeReload = await countPrefix(before.chunkPrefix);
             const journalsBeforeReload = await countJournals();
+            const journalStatesBeforeReload = await new Promise((resolve, reject) => {
+                const db = null;
+                openVideoDB().then(database => {
+                    const tx = database.transaction('restoreJournal', 'readonly');
+                    const req = tx.objectStore('restoreJournal').getAll();
+                    req.onsuccess = () => { tx.__states = (req.result || []).map(row => row.state); };
+                    req.onerror = () => reject(req.error);
+                    tx.oncomplete = () => { database.close(); resolve(tx.__states); };
+                    tx.onerror = () => { database.close(); reject(tx.error); };
+                    tx.onabort = () => { database.close(); reject(tx.error); };
+                }).catch(reject);
+            });
             const safeModeBeforeReload = !!window.__rikuMutationSafeMode;
             return {
                 oldPrefix: before.chunkPrefix,
@@ -3990,6 +4002,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 replacementError,
                 oldChunksBeforeReload,
                 journalsBeforeReload,
+                journalStatesBeforeReload,
                 safeModeBeforeReload
             };
         }""")
@@ -3998,6 +4011,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertNotEqual(result["activePrefixBeforeReload"], result["oldPrefix"], result)
         self.assertGreater(result["oldChunksBeforeReload"], 0, result)
         self.assertGreater(result["journalsBeforeReload"], 0, result)
+        self.assertEqual(result["journalStatesBeforeReload"], ["committed"], result)
         self.assertTrue(result["safeModeBeforeReload"], result)
 
         page.reload(wait_until="load")
