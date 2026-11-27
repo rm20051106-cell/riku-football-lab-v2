@@ -318,7 +318,13 @@ async function storeClipVideo(id,file){
  validateStoredVideoBlob(file);
  const key=String(id),chunkBytes=1024*1024,chunkCount=Math.ceil(file.size/chunkBytes);
  const generation=Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
- const chunkPrefix=key+'|'+generation+'|',db=await openVideoDB();
+ const chunkPrefix=key+'|'+generation+'|',chunkSha256=[];
+ for(let i=0;i<chunkCount;i++){
+  const bytes=await file.slice(i*chunkBytes,Math.min(file.size,(i+1)*chunkBytes)).arrayBuffer();
+  const digest=await crypto.subtle.digest('SHA-256',bytes);
+  chunkSha256.push([...new Uint8Array(digest)].map(value=>value.toString(16).padStart(2,'0')).join(''));
+ }
+ const db=await openVideoDB();
  let metadataCommitted=false;
  const deleteChunks=async prefix=>{
   const ctx=window.__rikuMutationContext;if(!ctx)throw new Error('動画チャンク削除ロックを確認できません');
@@ -338,7 +344,7 @@ async function storeClipVideo(id,file){
    req.onerror=()=>reject(req.error||new Error('既存動画情報を読み込めません'));
    tx.onabort=()=>reject(tx.error||new Error('既存動画情報の読み込みが中断されました'));
   });
-  await window.__rikuRecordVideoChange({key,kind:'replace',oldRecord:previous||null,oldPrefix:previous?.storageFormat==='chunked-v1'?String(previous.chunkPrefix||''):null,newPrefix:chunkPrefix});
+  await window.__rikuRecordVideoChange({key,kind:'replace',oldRecord:previous||null,newRecord:{name:file.name||'video',type:file.type||'application/octet-stream',blobType:file.type||'application/octet-stream',size:file.size,lastModified:Number(file.lastModified||0),storageFormat:'chunked-v1',chunkCount,chunkPrefix,chunkSha256},oldPrefix:previous?.storageFormat==='chunked-v1'?String(previous.chunkPrefix||''):null,newPrefix:chunkPrefix});
   for(let i=0;i<chunkCount;i++){
    const bytes=await file.slice(i*chunkBytes,Math.min(file.size,(i+1)*chunkBytes)).arrayBuffer();
    const ctx=window.__rikuMutationContext;if(!ctx)throw new Error('動画チャンク保存ロックを確認できません');
@@ -360,7 +366,7 @@ async function storeClipVideo(id,file){
     name:file.name||'video',type:file.type||'application/octet-stream',
     blobType:file.type||'application/octet-stream',size:file.size,
     lastModified:Number(file.lastModified||0),storageFormat:'chunked-v1',
-    chunkCount,chunkPrefix
+    chunkCount,chunkPrefix,chunkSha256
    },key);
    tx.oncomplete=resolve;
    tx.onerror=()=>reject(tx.error||new Error('動画保存の確定に失敗しました'));
