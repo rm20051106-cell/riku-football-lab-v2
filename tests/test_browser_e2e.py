@@ -4003,7 +4003,8 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 oldChunksBeforeReload,
                 journalsBeforeReload,
                 journalStatesBeforeReload,
-                safeModeBeforeReload
+                safeModeBeforeReload,
+                cleanupDiagnostic: window.__rikuStage57CleanupDiagnostic || null
             };
         }""")
         self.assertTrue(result["cleanupAbortInjected"], result)
