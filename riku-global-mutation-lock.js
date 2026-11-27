@@ -611,6 +611,10 @@
       });
     } catch (error) {
       ctx.cleanupVerificationFailed = true;
+      // An IndexedDB transaction abort is an interrupted cleanup, not proof that
+      // the committed journal is corrupt. Keep it committed so startup recovery
+      // can safely retry the full verification on the next page load.
+      if (error && error.name === "AbortError") ctx.committedCleanupRetryable = true;
       window.__rikuMutationSafeMode = true;
       throw error;
     } finally {
@@ -893,7 +897,12 @@
           try { state = JSON.parse(ctx.stateSnapshot); if (typeof renderAll === "function") renderAll(); } catch (_) {}
         }
         let recovered = false;
-        if (ctx.committedCleanupFailed) {
+        if (ctx.committedCleanupFailed && ctx.committedCleanupRetryable) {
+          // Preserve the committed journal after a transaction abort. The next
+          // page load gets a fresh fence and retries verification before deletion.
+          window.__rikuMutationSafeMode = true;
+          setNotice("確定済み動画の後片付けが中断されました。旧動画を保持し、再読み込み後に安全確認を再試行します");
+        } else if (ctx.committedCleanupFailed) {
           try {
             await updateJournal(ctx, {
               state: "recovery-required",
