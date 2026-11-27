@@ -314,45 +314,47 @@ function nextUniqueRecordId(...collections){const used=new Set(collections.flatM
 function serializeStoredVideoRecord(record){if(!record||!(record.blob instanceof Blob))throw new Error('動画データの形式が不正です');const {blob,...metadata}=record;return blob.arrayBuffer().then(buffer=>({...metadata,blobData:buffer,blobType:blob.type||record.type||'application/octet-stream',size:blob.size}))}
 function deserializeStoredVideoRecord(record){if(!record)return record;if(record.blob instanceof Blob)return record;if(record.blobData instanceof ArrayBuffer||ArrayBuffer.isView(record.blobData)){const bytes=record.blobData instanceof ArrayBuffer?record.blobData:record.blobData.buffer.slice(record.blobData.byteOffset,record.blobData.byteOffset+record.blobData.byteLength);const {blobData,...meta}=record;return {...meta,blob:new Blob([bytes],{type:record.blobType||record.type||'application/octet-stream'})}}return record}
 async function cleanupOrphanedVideoChunks(){return {deleted:0,protected:true,reason:'Stage 57: automatic orphan deletion is disabled; only committed journal cleanup may delete generations'}}
-async function verifyChunkedVideoGeneration(record){
+async function verifyChunkedVideoGeneration(record,database){
  if(!record||record.storageFormat!=='chunked-v1')return true;
  const prefix=String(record.chunkPrefix||''),count=Number(record.chunkCount),size=Number(record.size),hashes=record.chunkSha256;
  if(!prefix||!Array.isArray(hashes)||!Number.isSafeInteger(count)||count<1||hashes.length!==count||
     !Number.isSafeInteger(size)||size<1||hashes.some(value=>!/^[0-9a-f]{64}$/i.test(String(value)))){
   throw new Error('期待SHA256がない旧動画世代は安全に切り替えできません');
  }
+ const db=database||await openVideoDB();
  let total=0;
- for(let i=0;i<count;i++){
-  const stored=await new Promise((resolve,reject)=>{
-   openVideoDB().then(db=>{
+ try{
+  for(let i=0;i<count;i++){
+   const stored=await new Promise((resolve,reject)=>{
     let value=null,tx;
     try{
      tx=db.transaction('videoChunks','readonly');
      const request=tx.objectStore('videoChunks').get(prefix+String(i).padStart(8,'0'));
      request.onsuccess=()=>{value=request.result==null?null:request.result};
      request.onerror=()=>{try{tx.abort()}catch(_){}};
-    }catch(error){db.close();reject(error);return}
-    tx.oncomplete=()=>{db.close();resolve(value)};
-    tx.onerror=()=>{db.close();reject(tx.error||new Error('動画チャンクの読み取りに失敗しました'))};
-    tx.onabort=()=>{db.close();reject(tx.error||new Error('動画チャンクの読み取りが中断されました'))};
-   }).catch(reject);
-  });
-  if(stored==null)throw new Error('検証対象の動画チャンクが不足しています');
-  let bytes;
-  if(stored instanceof Uint8Array)bytes=stored;
-  else if(stored instanceof ArrayBuffer)bytes=new Uint8Array(stored);
-  else if(ArrayBuffer.isView(stored))bytes=new Uint8Array(stored.buffer,stored.byteOffset,stored.byteLength);
-  else throw new Error('動画チャンクの保存形式が不正です');
-  const expectedLength=Math.min(1024*1024,size-i*1024*1024);
-  if(expectedLength<=0||bytes.byteLength!==expectedLength)throw new Error('動画チャンクのサイズが一致しません');
-  const digest=await crypto.subtle.digest('SHA-256',bytes);
-  const actual=[...new Uint8Array(digest)].map(value=>value.toString(16).padStart(2,'0')).join('');
-  if(actual!==String(hashes[i]).toLowerCase())throw new Error('動画チャンクのSHA256が一致しません');
-  total+=bytes.byteLength;
- }
- if(total!==size)throw new Error('動画世代の合計サイズが一致しません');
- return true;
+    }catch(error){reject(error);return}
+    tx.oncomplete=()=>resolve(value);
+    tx.onerror=()=>reject(tx.error||new Error('動画チャンクの読み取りに失敗しました'));
+    tx.onabort=()=>reject(tx.error||new Error('動画チャンクの読み取りが中断されました'));
+   });
+   if(stored==null)throw new Error('検証対象の動画チャンクが不足しています');
+   let bytes;
+   if(stored instanceof Uint8Array)bytes=stored;
+   else if(stored instanceof ArrayBuffer)bytes=new Uint8Array(stored);
+   else if(ArrayBuffer.isView(stored))bytes=new Uint8Array(stored.buffer,stored.byteOffset,stored.byteLength);
+   else throw new Error('動画チャンクの保存形式が不正です');
+   const expectedLength=Math.min(1024*1024,size-i*1024*1024);
+   if(expectedLength<=0||bytes.byteLength!==expectedLength)throw new Error('動画チャンクのサイズが一致しません');
+   const digest=await crypto.subtle.digest('SHA-256',bytes);
+   const actual=[...new Uint8Array(digest)].map(value=>value.toString(16).padStart(2,'0')).join('');
+   if(actual!==String(hashes[i]).toLowerCase())throw new Error('動画チャンクのSHA256が一致しません');
+   total+=bytes.byteLength;
+  }
+  if(total!==size)throw new Error('動画世代の合計サイズが一致しません');
+  return true;
+ }finally{if(!database)db.close()}
 }
+
 async function storeClipVideo(id,file){
  validateStoredVideoBlob(file);
  const key=String(id),chunkBytes=1024*1024,chunkCount=Math.ceil(file.size/chunkBytes);
@@ -383,7 +385,7 @@ async function storeClipVideo(id,file){
    req.onerror=()=>reject(req.error||new Error('既存動画情報を読み込めません'));
    tx.onabort=()=>reject(tx.error||new Error('既存動画情報の読み込みが中断されました'));
   });
-  if(previous?.storageFormat==='chunked-v1')await verifyChunkedVideoGeneration(previous);
+  if(previous?.storageFormat==='chunked-v1')await verifyChunkedVideoGeneration(previous,db);
   await window.__rikuRecordVideoChange({key,kind:'replace',oldRecord:previous||null,newRecord:{name:file.name||'video',type:file.type||'application/octet-stream',blobType:file.type||'application/octet-stream',size:file.size,lastModified:Number(file.lastModified||0),storageFormat:'chunked-v1',chunkCount,chunkPrefix,chunkSha256},oldPrefix:previous?.storageFormat==='chunked-v1'?String(previous.chunkPrefix||''):null,newPrefix:chunkPrefix});
   changeRecorded=true;
   for(let i=0;i<chunkCount;i++){
@@ -398,7 +400,7 @@ async function storeClipVideo(id,file){
     tx.onabort=()=>reject(tx.error||new Error('動画チャンク保存が中断されました'));
    })}finally{ctx.chunkWriteAuthorized=false}
   }
-  await verifyChunkedVideoGeneration({storageFormat:'chunked-v1',chunkPrefix,chunkCount,size:file.size,chunkSha256});
+  await verifyChunkedVideoGeneration({storageFormat:'chunked-v1',chunkPrefix,chunkCount,size:file.size,chunkSha256},db);
   await window.__rikuMarkVideoStage('staged');
   const ctx=window.__rikuMutationContext;if(!ctx)throw new Error('動画メタデータ保存ロックを確認できません');
   ctx.videoMetadataWriteAuthorized=true;
