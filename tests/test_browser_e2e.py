@@ -3710,6 +3710,202 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertGreater(stale["oldChunkCount"], 0, results)
         self.assertTrue(stale["safeMode"], results)
 
+    def test_stage57_long_video_profiles_verify_chunks_and_preserve_old_generation_on_failures(self):
+        page = self.page
+        page.set_default_timeout(120000)
+        page.wait_for_function("typeof storeClipVideo === 'function'")
+        page.wait_for_function(
+            "window.__rikuMutationRecoveryReady && window.__rikuMutationRecoveryReady()",
+            timeout=15000,
+        )
+        result = page.evaluate("""async () => {
+            const key = 'stage57-d-long-video-profile';
+            const chunkBytes = 1024 * 1024;
+            const countPrefix = async prefix => {
+                const db = await openVideoDB();
+                try { return await new Promise((resolve, reject) => {
+                    const tx = db.transaction('videoChunks', 'readonly');
+                    const req = tx.objectStore('videoChunks').count(
+                        IDBKeyRange.bound(prefix, prefix + '\\uffff')
+                    );
+                    req.onsuccess = () => { tx.__count = req.result; };
+                    req.onerror = () => reject(req.error);
+                    tx.oncomplete = () => resolve(tx.__count);
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                }); } finally { db.close(); }
+            };
+            const readRecord = async () => {
+                const db = await openVideoDB();
+                try { return await new Promise((resolve, reject) => {
+                    const tx = db.transaction('videos', 'readonly');
+                    const req = tx.objectStore('videos').get(key);
+                    req.onsuccess = () => { tx.__record = req.result || null; };
+                    req.onerror = () => reject(req.error);
+                    tx.oncomplete = () => resolve(tx.__record);
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                }); } finally { db.close(); }
+            };
+            const makeProfileBlob = (durationSeconds, bitrate, seed) => {
+                const size = Math.ceil(durationSeconds * bitrate / 8);
+                const parts = [];
+                for (let offset = 0, index = 0; offset < size; offset += chunkBytes, index++) {
+                    const length = Math.min(chunkBytes, size - offset);
+                    const bytes = new Uint8Array(length);
+                    bytes.fill((seed + index * 17) & 255);
+                    parts.push(bytes);
+                }
+                return new Blob(parts, {type:'video/mp4'});
+            };
+            const save = blob => withGlobalMutationLock('storeClipVideo', () =>
+                storeClipVideo(key, blob));
+            const originalTransaction = IDBDatabase.prototype.transaction;
+            const originalDigest = crypto.subtle.digest.bind(crypto.subtle);
+            let activeChunkReadTransactions = 0, digestInsideReadTransaction = false;
+            IDBDatabase.prototype.transaction = function(stores, mode, ...args) {
+                const names = Array.isArray(stores) ? stores : [stores];
+                const tx = originalTransaction.call(this, stores, mode, ...args);
+                if (mode === 'readonly' && names.includes('videoChunks')) {
+                    activeChunkReadTransactions++;
+                    let ended = false;
+                    const finish = () => {
+                        if (ended) return;
+                        ended = true;
+                        activeChunkReadTransactions--;
+                    };
+                    tx.addEventListener('complete', finish, {once:true});
+                    tx.addEventListener('abort', finish, {once:true});
+                }
+                return tx;
+            };
+            Object.defineProperty(crypto.subtle, 'digest', {
+                configurable: true,
+                value: async (...args) => {
+                    if (activeChunkReadTransactions > 0) digestInsideReadTransaction = true;
+                    return originalDigest(...args);
+                }
+            });
+            let profile15, profile20, current, oldCountAfterReplace, lastChunkLength, lastHashMatches;
+            try {
+                // Synthetic 15/20-minute profiles at a declared 256 kbit/s test bitrate.
+                // These are byte-volume stress fixtures, not real camera recordings.
+                profile15 = makeProfileBlob(15 * 60, 256000, 13);
+                profile20 = makeProfileBlob(20 * 60, 256000, 29);
+                await save(profile15);
+                const first = await readRecord();
+                const firstCount = Math.ceil(profile15.size / chunkBytes);
+                const firstStoredCount = await countPrefix(first.chunkPrefix);
+                await save(profile20);
+                current = await readRecord();
+                oldCountAfterReplace = await countPrefix(first.chunkPrefix);
+                const expectedCount20 = Math.ceil(profile20.size / chunkBytes);
+                const currentCount = await countPrefix(current.chunkPrefix);
+                const lastKey = current.chunkPrefix + String(expectedCount20 - 1).padStart(8, '0');
+                const db = await openVideoDB();
+                try {
+                    const lastBytes = await new Promise((resolve, reject) => {
+                        const tx = db.transaction('videoChunks', 'readonly');
+                        const req = tx.objectStore('videoChunks').get(lastKey);
+                        req.onsuccess = () => { tx.__value = req.result; };
+                        req.onerror = () => reject(req.error);
+                        tx.oncomplete = () => resolve(tx.__value);
+                        tx.onerror = () => reject(tx.error);
+                        tx.onabort = () => reject(tx.error);
+                    });
+                    const view = lastBytes instanceof Uint8Array ? lastBytes :
+                        new Uint8Array(lastBytes instanceof ArrayBuffer ? lastBytes :
+                            lastBytes.buffer, lastBytes.byteOffset || 0, lastBytes.byteLength);
+                    lastChunkLength = view.byteLength;
+                    const digest = await originalDigest('SHA-256', view);
+                    const actual = [...new Uint8Array(digest)].map(v => v.toString(16).padStart(2,'0')).join('');
+                    lastHashMatches = actual === current.chunkSha256[expectedCount20 - 1];
+                } finally { db.close(); }
+
+                // Simulate storage exhaustion while writing a replacement generation.
+                const originalPut = IDBObjectStore.prototype.put;
+                let quotaInjected = false, quotaError = null, quotaWrites = 0;
+                IDBObjectStore.prototype.put = function(value, primaryKey) {
+                    if (!quotaInjected && this.name === 'videoChunks') {
+                        quotaWrites++;
+                        if (quotaWrites === 2) {
+                            quotaInjected = true;
+                            throw new DOMException('simulated storage quota exhaustion', 'QuotaExceededError');
+                        }
+                    }
+                    return originalPut.call(this, value, primaryKey);
+                };
+                try { await save(new Blob([new Uint8Array(2 * chunkBytes + 7)], {type:'video/mp4'})); }
+                catch (error) { quotaError = String(error?.name || error?.message || error); }
+                finally { IDBObjectStore.prototype.put = originalPut; }
+                const afterQuota = await readRecord();
+                const quotaOldCount = await countPrefix(current.chunkPrefix);
+
+                // Simulate an interrupted chunk-write transaction on another replacement.
+                let abortInjected = false, abortError = null;
+                IDBObjectStore.prototype.put = function(value, primaryKey) {
+                    const request = originalPut.call(this, value, primaryKey);
+                    if (!abortInjected && this.name === 'videoChunks') {
+                        abortInjected = true;
+                        queueMicrotask(() => { try { this.transaction.abort(); } catch (_) {} });
+                    }
+                    return request;
+                };
+                try { await save(new Blob([new Uint8Array(chunkBytes + 11)], {type:'video/mp4'})); }
+                catch (error) { abortError = String(error?.name || error?.message || error); }
+                finally {
+                    IDBObjectStore.prototype.put = originalPut;
+                    IDBDatabase.prototype.transaction = originalTransaction;
+                    delete crypto.subtle.digest;
+                }
+                const afterAbort = await readRecord();
+                return {
+                    profile15Size: profile15.size,
+                    profile20Size: profile20.size,
+                    profile15Chunks: firstCount,
+                    profile15StoredChunks: firstStoredCount,
+                    profile20Chunks: expectedCount20,
+                    profile20StoredChunks: currentCount,
+                    oldCountAfterReplace,
+                    lastChunkLength,
+                    expectedLastChunkLength: profile20.size - (expectedCount20 - 1) * chunkBytes,
+                    lastHashMatches,
+                    digestInsideReadTransaction,
+                    quotaInjected,
+                    quotaError,
+                    quotaOldCount,
+                    activeAfterQuota: afterQuota?.chunkPrefix || null,
+                    abortInjected,
+                    abortError,
+                    oldCountAfterAbort: await countPrefix(current.chunkPrefix),
+                    activeAfterAbort: afterAbort?.chunkPrefix || null
+                };
+            } finally {
+                IDBObjectStore.prototype.put = IDBObjectStore.prototype.put;
+                IDBDatabase.prototype.transaction = originalTransaction;
+                delete crypto.subtle.digest;
+            }
+        }""")
+        self.assertEqual(result["profile15Size"], 28_800_000, result)
+        self.assertEqual(result["profile20Size"], 38_400_000, result)
+        self.assertEqual(result["profile15Chunks"], 28, result)
+        self.assertEqual(result["profile15StoredChunks"], 28, result)
+        self.assertEqual(result["profile20Chunks"], 37, result)
+        self.assertEqual(result["profile20StoredChunks"], 37, result)
+        self.assertEqual(result["oldCountAfterReplace"], 0, result)
+        self.assertEqual(result["lastChunkLength"], result["expectedLastChunkLength"], result)
+        self.assertEqual(result["lastChunkLength"], 629_376, result)
+        self.assertTrue(result["lastHashMatches"], result)
+        self.assertFalse(result["digestInsideReadTransaction"], result)
+        self.assertTrue(result["quotaInjected"], result)
+        self.assertIn("QuotaExceededError", result["quotaError"] or "", result)
+        self.assertEqual(result["activeAfterQuota"], result["activeAfterAbort"] if not result["abortInjected"] else result["activeAfterQuota"], result)
+        self.assertGreater(result["quotaOldCount"], 0, result)
+        self.assertTrue(result["abortInjected"], result)
+        self.assertTrue(result["abortError"], result)
+        self.assertGreater(result["oldCountAfterAbort"], 0, result)
+        self.assertEqual(result["activeAfterAbort"], result["activeAfterQuota"], result)
+
     def test_stage57_pending_match_job_requires_persisted_analysis_before_clear(self):
         page = self.page
         result = page.evaluate("""async () => {
