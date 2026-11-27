@@ -164,12 +164,19 @@
         const get = store.get(targetId);
         get.onsuccess = () => {
           const row = get.result;
-          if (!row || row.ownerId !== ctx.ownerId || Number(row.fenceToken) !== Number(ctx.fenceToken) ||
+          const recoveryOwner = ctx.operation === "startup-recovery";
+          if (!row || (!recoveryOwner &&
+              (row.ownerId !== ctx.ownerId || Number(row.fenceToken) !== Number(ctx.fenceToken))) ||
               row.journalChecksum !== journalDigest(row)) {
             try { tx.abort(); } catch (_) {}
             return;
           }
           Object.assign(row, changes, { updatedAt: new Date().toISOString() });
+          if (recoveryOwner) {
+            // Rebind only under the current, transaction-verified recovery fence.
+            row.ownerId = ctx.ownerId;
+            row.fenceToken = ctx.fenceToken;
+          }
           row.journalChecksum = journalDigest(row);
           store.put(row);
         };
