@@ -3906,7 +3906,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertGreater(result["oldCountAfterAbort"], 0, result)
         self.assertEqual(result["activeAfterAbort"], result["activeAfterQuota"], result)
 
-    def test_stage57_recovery_required_rolls_back_to_old_generation_after_reload(self):
+    def test_stage57_interrupted_committed_cleanup_resumes_after_reload(self):
         page = self.page
         page.set_default_timeout(90000)
         page.wait_for_function("window.__rikuMutationRecoveryReady && window.__rikuMutationRecoveryReady()", timeout=15000)
@@ -4051,10 +4051,10 @@ class RikuBrowserE2ETests(unittest.TestCase):
         }""", {"oldPrefix": result["oldPrefix"], "newPrefix": result["newPrefix"]})
         self.assertGreater(recovered["activeChunkCount"], 0, recovered)
         self.assertEqual(recovered["hashCount"], recovered["activeChunkCount"], recovered)
-        self.assertEqual(recovered["activePrefix"], result["oldPrefix"], recovered)
+        self.assertEqual(recovered["activePrefix"], result["newPrefix"], recovered)
         self.assertEqual(recovered["journals"], 0, recovered)
-        self.assertGreater(recovered["oldCount"], 0, recovered)
-        self.assertEqual(recovered["newCount"], 0, recovered)
+        self.assertEqual(recovered["oldCount"], 0, recovered)
+        self.assertGreater(recovered["newCount"], 0, recovered)
         self.assertFalse(recovered["safeMode"], recovered)
         self.assertTrue(recovered["recoveryReady"], recovered)
 
