@@ -4048,6 +4048,29 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertFalse(recovered["safeMode"], recovered)
         self.assertTrue(recovered["recoveryReady"], recovered)
 
+    def test_stage57_recovery_required_stops_all_later_journal_cleanup(self):
+        source = (ROOT / "riku-global-mutation-lock.js").read_text(encoding="utf-8")
+        start = source.index("async function runRecovery()")
+        end = source.index("window.withGlobalMutationLock", start)
+        recovery = source[start:end]
+        unresolved = recovery.index('reason: "localStorage matches neither before nor confirmed after snapshot"')
+        stop = recovery.index('throw new Error("復旧ジャーナルがbefore/afterのどちらとも一致しません。後続の動画削除を停止しました")', unresolved)
+        self.assertLess(unresolved, stop)
+        self.assertIn('state: "recovery-required"', recovery[unresolved:stop])
+        self.assertIn("window.__rikuMutationSafeMode = true", recovery[unresolved:stop])
+        self.assertIn("for (const journal of journals)", recovery)
+        self.assertIn("await finishCommittedJournal(ctx, journal)", recovery)
+        self.assertIn("async function finishCommittedJournal", source)
+        finish_start = source.index("async function finishCommittedJournal")
+        finish_end = source.index("async function releaseFence", finish_start)
+        cleanup = source[finish_start:finish_end]
+        self.assertIn("await verifyPrefix(prefix, expectedRecord)", cleanup)
+        self.assertIn("latestJournal.journalChecksum !== journalDigest(latestJournal)", cleanup)
+        self.assertIn("Number(latestLock.leaseUntil) <= Date.now()", cleanup)
+        self.assertIn("videoRecordSummary(latest) !== JSON.stringify(videoRecordSummary(previous))", cleanup)
+        self.assertIn("ctx.chunkDeleteAuthorized = true", cleanup)
+        self.assertIn("tx.objectStore(\"restoreJournal\").delete(latestJournal.restoreId)", cleanup)
+
     def test_stage57_pending_match_job_requires_persisted_analysis_before_clear(self):
         page = self.page
         result = page.evaluate("""async () => {
