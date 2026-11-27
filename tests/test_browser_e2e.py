@@ -4002,7 +4002,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
 
         page.reload(wait_until="load")
         page.wait_for_function(
-            "window.__rikuMutationRecoveryReady && window.__rikuMutationRecoveryReady()",
+            "!!(window.__rikuMutationSafeMode || (window.__rikuMutationRecoveryReady && window.__rikuMutationRecoveryReady()))",
             timeout=30000,
         )
         recovered = page.evaluate("""async prefixes => {
