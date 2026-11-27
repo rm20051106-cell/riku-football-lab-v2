@@ -3670,6 +3670,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertTrue(read_failure["forcedReadFailure"], results)
         self.assertTrue(read_failure["error"], results)
         self.assertGreater(read_failure["oldChunkCount"], 0, results)
+        self.assertTrue(read_failure["safeMode"], results)
 
         corrupt = results["corrupt"]
         self.assertTrue(corrupt["corrupted"], results)
