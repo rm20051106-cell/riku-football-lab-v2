@@ -4071,6 +4071,10 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertIn("for (const journal of journals)", recovery)
         self.assertIn("await finishCommittedJournal(ctx, journal)", recovery)
         self.assertIn("async function finishCommittedJournal", source)
+        self.assertIn('const recoveryOwner = ctx.operation === "startup-recovery";', source)
+        self.assertIn("row.ownerId = ctx.ownerId", source)
+        self.assertIn("row.fenceToken = ctx.fenceToken", source)
+        self.assertIn('await updateJournal(ctx, { state: "committed" }, journal.restoreId);', recovery)
         finish_start = source.index("async function finishCommittedJournal")
         finish_end = source.index("async function releaseFence", finish_start)
         cleanup = source[finish_start:finish_end]
