@@ -794,6 +794,10 @@
               await finishCommittedJournal(ctx, journal);
               continue;
             }
+            if (journal.state === "recovery-required") {
+              window.__rikuMutationSafeMode = true;
+              throw new Error("recovery-requiredの未解決ジャーナルが残っています。後続の復旧・動画削除を停止しました");
+            }
             if (journal.state === "rolled-back") continue;
             const afterMatches = hint && hint.operationId === journal.operationId &&
               hint.checksum === currentChecksum &&
