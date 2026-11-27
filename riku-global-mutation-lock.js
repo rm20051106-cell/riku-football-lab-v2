@@ -103,10 +103,14 @@
         const row = request.result;
         if (!row || row.ownerId !== ctx.ownerId || Number(row.fenceToken) !== Number(ctx.fenceToken) ||
             (!allowExpired && Number(row.leaseUntil) <= Date.now())) {
+          ctx.fenceFailure = true;
           try { tx.abort(); } catch (_) {}
         }
       };
-      request.onerror = function () { try { tx.abort(); } catch (_) {} };
+      request.onerror = function () {
+        ctx.fenceFailure = true;
+        try { tx.abort(); } catch (_) {}
+      };
     }
     return tx;
   }
@@ -395,12 +399,6 @@
   async function finishCommittedJournal(ctx, journal) {
     const db = await openDB();
     const fail = message => new Error(message);
-    const diagnostic = window.__rikuStage57CleanupDiagnostic = {
-      onabortReached: false, txerrorReached: false, failureSet: false,
-      retryableAtAbort: null, retryableAfterAbort: null,
-      retryableAtCatch: null, cleanupVerificationFailedAtCatch: null,
-      errorName: null, errorMessage: null
-    };
     const readSnapshot = async () => new Promise((resolve, reject) => {
       const tx = db.transaction(["videos", "restoreJournal", "restoreLocks"], "readonly");
       const journals = tx.objectStore("restoreJournal");
@@ -608,35 +606,36 @@
         lockReq.onsuccess = () => { latestLock = lockReq.result || null; ready(); };
         for (const [key, request] of videoReqs) {
           request.onsuccess = () => { latestVideos.set(key, request.result || null); ready(); };
-          request.onerror = () => abort("削除直前の動画世代を再取得できません");
+          request.onerror = () => {
+            // An externally aborted transaction rejects its pending requests with
+            // AbortError. Let tx.onabort classify that as retryable instead of
+            // converting the abort cascade into an integrity failure.
+            if (request.error?.name === "AbortError" && !tx.error) return;
+            abort("削除直前の動画世代を再取得できません");
+          };
         }
-        journalReq.onerror = journalsReq.onerror = lockReq.onerror = () => abort("削除直前の所有権・ジャーナルを再取得できません");
+        const handleAuthorityRequestError = request => {
+          if (request.error?.name === "AbortError" && !tx.error) return;
+          abort("削除直前の所有権・ジャーナルを再取得できません");
+        };
+        journalReq.onerror = () => handleAuthorityRequestError(journalReq);
+        journalsReq.onerror = () => handleAuthorityRequestError(journalsReq);
+        lockReq.onerror = () => handleAuthorityRequestError(lockReq);
         tx.oncomplete = resolve;
         // Wait for onabort before rejecting: IndexedDB may emit error before
         // abort, and the outer catch must see the retryable-abort classification.
-        tx.onerror = () => { diagnostic.txerrorReached = true; };
+        tx.onerror = () => {};
         tx.onabort = () => {
-          diagnostic.onabortReached = true;
-          diagnostic.failureSet = !!failure;
-          diagnostic.retryableAtAbort = !!ctx.committedCleanupRetryable;
-          // A transaction aborted externally (without our own integrity/fence
-          // guard calling abort()) is retryable on the next startup recovery.
-          if (!failure) ctx.committedCleanupRetryable = true;
-          diagnostic.retryableAfterAbort = !!ctx.committedCleanupRetryable;
-          diagnostic.txErrorName = tx.error?.name || null;
-          diagnostic.txErrorMessage = tx.error?.message || null;
+          // A request's AbortError is also emitted when an external actor aborts
+          // this transaction. Do not confuse that cascade with an integrity failure.
+          if (!failure && !ctx.fenceFailure) ctx.committedCleanupRetryable = true;
           reject(failure || tx.error || fail("確定済み動画の後片付けが中断されました"));
         };
       });
     } catch (error) {
-      diagnostic.retryableAtCatch = !!ctx.committedCleanupRetryable;
-      diagnostic.cleanupVerificationFailedAtCatch = !!ctx.cleanupVerificationFailed;
-      diagnostic.errorName = error?.name || null;
-      diagnostic.errorMessage = error?.message || String(error);
       // Only integrity/fence failures block all further cleanup. An externally
       // aborted IndexedDB transaction is retryable and must not set this flag.
       if (!ctx.committedCleanupRetryable) ctx.cleanupVerificationFailed = true;
-      diagnostic.cleanupVerificationFailedAfterCatch = !!ctx.cleanupVerificationFailed;
       window.__rikuMutationSafeMode = true;
       throw error;
     } finally {
@@ -763,12 +762,6 @@
           // A failed committed cleanup is fail-closed: do not retry it from the outer
           // mutation catch, because a transient read failure must never become deletion.
           ctx.committedCleanupFailed = true;
-          if (window.__rikuStage57CleanupDiagnostic) {
-            window.__rikuStage57CleanupDiagnostic.retryableAtCallerCatch = !!ctx.committedCleanupRetryable;
-            window.__rikuStage57CleanupDiagnostic.cleanupVerificationFailedAtCallerCatch = !!ctx.cleanupVerificationFailed;
-            window.__rikuStage57CleanupDiagnostic.callerErrorName = cleanupError?.name || null;
-            window.__rikuStage57CleanupDiagnostic.callerErrorMessage = cleanupError?.message || String(cleanupError);
-          }
           throw cleanupError;
         }
       }
@@ -931,11 +924,6 @@
           window.__rikuMutationSafeMode = true;
           setNotice("確定済み動画の後片付けが中断されました。旧動画を保持し、再読み込み後に安全確認を再試行します");
         } else if (ctx.committedCleanupFailed) {
-          if (window.__rikuStage57CleanupDiagnostic) {
-            window.__rikuStage57CleanupDiagnostic.retryableAtOuterCatch = !!ctx.committedCleanupRetryable;
-            window.__rikuStage57CleanupDiagnostic.cleanupVerificationFailedAtOuterCatch = !!ctx.cleanupVerificationFailed;
-            window.__rikuStage57CleanupDiagnostic.journalFailureReason = "committed cleanup verification failed; retry requires explicit recovery";
-          }
           try {
             await updateJournal(ctx, {
               state: "recovery-required",
