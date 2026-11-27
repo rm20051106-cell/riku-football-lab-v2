@@ -3906,7 +3906,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertGreater(result["oldCountAfterAbort"], 0, result)
         self.assertEqual(result["activeAfterAbort"], result["activeAfterQuota"], result)
 
-    def test_stage57_committed_journal_recovers_after_interrupted_cleanup_and_reload(self):
+    def test_stage57_recovery_required_rolls_back_to_old_generation_after_reload(self):
         page = self.page
         page.set_default_timeout(90000)
         page.wait_for_function("window.__rikuMutationRecoveryReady && window.__rikuMutationRecoveryReady()", timeout=15000)
@@ -3984,6 +3984,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             const safeModeBeforeReload = !!window.__rikuMutationSafeMode;
             return {
                 oldPrefix: before.chunkPrefix,
+                newPrefix: interrupted?.chunkPrefix || null,
                 activePrefixBeforeReload: interrupted?.chunkPrefix || null,
                 cleanupAbortInjected,
                 replacementError,
@@ -4004,7 +4005,9 @@ class RikuBrowserE2ETests(unittest.TestCase):
             "window.__rikuMutationRecoveryReady && window.__rikuMutationRecoveryReady()",
             timeout=30000,
         )
-        recovered = page.evaluate("""async oldPrefix => {
+        recovered = page.evaluate("""async prefixes => {
+            const oldPrefix = prefixes.oldPrefix;
+            const newPrefix = prefixes.newPrefix;
             const key = 'stage57-e-reload-recovery';
             const db = await openVideoDB();
             try {
@@ -4019,10 +4022,10 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 });
                 const record = await read('videos', store => store.get(key));
                 const journals = await read('restoreJournal', store => store.getAll());
-                const oldCount = await new Promise((resolve, reject) => {
+                const countPrefix = prefix => new Promise((resolve, reject) => {
                     const tx = db.transaction('videoChunks', 'readonly');
                     const req = tx.objectStore('videoChunks').count(
-                        IDBKeyRange.bound(oldPrefix, oldPrefix + '\\uffff')
+                        IDBKeyRange.bound(prefix, prefix + '\\uffff')
                     );
                     req.onsuccess = () => { tx.__count = req.result; };
                     req.onerror = () => reject(req.error);
@@ -4030,21 +4033,26 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     tx.onerror = () => reject(tx.error);
                     tx.onabort = () => reject(tx.error);
                 });
+                const oldCount = await countPrefix(oldPrefix);
+                const newCount = await countPrefix(newPrefix);
                 return {
                     activePrefix: record?.chunkPrefix || null,
                     activeChunkCount: record?.chunkCount || 0,
                     hashCount: record?.chunkSha256?.length || 0,
                     journals: journals.length,
                     oldCount,
+                    newCount,
                     safeMode: !!window.__rikuMutationSafeMode,
                     recoveryReady: !!window.__rikuMutationRecoveryReady?.()
                 };
             } finally { db.close(); }
-        }""", result["oldPrefix"])
+        }""", {"oldPrefix": result["oldPrefix"], "newPrefix": result["newPrefix"]})
         self.assertGreater(recovered["activeChunkCount"], 0, recovered)
         self.assertEqual(recovered["hashCount"], recovered["activeChunkCount"], recovered)
+        self.assertEqual(recovered["activePrefix"], result["oldPrefix"], recovered)
         self.assertEqual(recovered["journals"], 0, recovered)
-        self.assertEqual(recovered["oldCount"], 0, recovered)
+        self.assertGreater(recovered["oldCount"], 0, recovered)
+        self.assertEqual(recovered["newCount"], 0, recovered)
         self.assertFalse(recovered["safeMode"], recovered)
         self.assertTrue(recovered["recoveryReady"], recovered)
 
