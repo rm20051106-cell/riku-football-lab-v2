@@ -3239,6 +3239,8 @@ class RikuBrowserE2ETests(unittest.TestCase):
             self.assertFalse(second.evaluate("window.__stage57SecondFinished"))
             self.assertIn("別のタブで保存処理中", second.evaluate("window.__stage57SecondError"))
             page.evaluate("window.__releaseStage57Hold()")
+            # Wait for finalization and navigator.locks release before retrying in tab two.
+            page.evaluate("window.__stage57HoldPromise")
             second.evaluate("""() => {
                 window.__stage57SecondError = null;
                 window.__stage57SecondFinished = false;
@@ -3246,7 +3248,14 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     window.__stage57SecondFinished = true;
                 }).catch(error => { window.__stage57SecondError = String(error); });
             }""")
-            second.wait_for_function("window.__stage57SecondFinished === true", timeout=15000)
+            second.wait_for_function(
+                "window.__stage57SecondFinished === true || !!window.__stage57SecondError",
+                timeout=15000,
+            )
+            self.assertTrue(
+                second.evaluate("window.__stage57SecondFinished"),
+                second.evaluate("window.__stage57SecondError || null") or "lock retry timed out",
+            )
             self.assertIsNone(second.evaluate("window.__stage57SecondError || null"))
         finally:
             try:
@@ -3414,7 +3423,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     oldRecord: null,
                     newRecord: {
                         storageFormat: "blob",
-                        name: "stage57-blob.mp4",
+                        name: "stage57-blob-⚽-陸玖.mp4",
                         type: "video/mp4",
                         blobType: "video/mp4",
                         lastModified: 1700000000000,
@@ -3611,6 +3620,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             result,
         )
         self.assertEqual(canonical["videoChanges"][0]["newRecord"]["blobSize"], 4, result)
+        self.assertEqual(canonical["videoChanges"][0]["newRecord"]["name"], "stage57-blob-⚽-陸玖.mp4", result)
         self.assertEqual(canonical["videoChanges"][1]["newRecord"]["blobDataBytes"], 3, result)
         self.assertEqual(canonical["videoChanges"][2]["newRecord"]["blobDataBytes"], 4, result)
         self.assertEqual(canonical["videoChanges"][3]["newRecord"]["chunkCount"], 2, result)
