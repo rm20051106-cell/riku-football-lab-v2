@@ -468,8 +468,7 @@
       if (!currentJournal || currentJournal.ownerId !== ctx.ownerId ||
           Number(currentJournal.fenceToken) !== Number(ctx.fenceToken) ||
           currentJournal.state !== "committed" ||
-          currentJournal.journalChecksum !== journalDigest(currentJournal) ||
-          currentJournal.journalChecksum !== journal.journalChecksum) {
+          currentJournal.journalChecksum !== journalDigest(currentJournal)) {
         throw fail("削除前にジャーナル所有者・状態・チェックサムが変化しました");
       }
       if (snapshot.journals.some(row => row.journalChecksum !== journalDigest(row))) {
