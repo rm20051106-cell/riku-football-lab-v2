@@ -3196,6 +3196,32 @@ class RikuBrowserE2ETests(unittest.TestCase):
         scenarios = [
             ("matching", """
                 const key = 'stage57-c-matching';
+                const originalTransaction = IDBDatabase.prototype.transaction;
+                const originalDigest = crypto.subtle.digest.bind(crypto.subtle);
+                let activeChunkReadTransactions = 0, digestDuringActiveChunkRead = false;
+                IDBDatabase.prototype.transaction = function(stores, mode, ...args) {
+                    const names = Array.isArray(stores) ? stores : [stores];
+                    const tx = originalTransaction.call(this, stores, mode, ...args);
+                    if (mode === 'readonly' && names.includes('videoChunks')) {
+                        activeChunkReadTransactions++;
+                        let ended = false;
+                        const finish = () => {
+                            if (ended) return;
+                            ended = true;
+                            activeChunkReadTransactions--;
+                        };
+                        tx.addEventListener('complete', finish, {once:true});
+                        tx.addEventListener('abort', finish, {once:true});
+                    }
+                    return tx;
+                };
+                Object.defineProperty(crypto.subtle, 'digest', {
+                    configurable: true,
+                    value: async (...args) => {
+                        if (activeChunkReadTransactions > 0) digestDuringActiveChunkRead = true;
+                        return originalDigest(...args);
+                    }
+                });
                 const save = bytes => withGlobalMutationLock('storeClipVideo', () =>
                     storeClipVideo(key, new Blob([Uint8Array.from(bytes)], {type:'video/mp4'})));
                 const readRecord = async () => {
@@ -3238,6 +3264,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     oldChunkCount: await hasChunk(oldRecord.chunkPrefix),
                     currentPrefix: current.chunkPrefix,
                     currentHashCount: current.chunkSha256?.length || 0,
+                    digestDuringActiveChunkRead,
                     journalCount: await (async () => {
                         const db = await openVideoDB();
                         try { return await new Promise((resolve, reject) => {
@@ -3250,6 +3277,56 @@ class RikuBrowserE2ETests(unittest.TestCase):
                             tx.onabort = () => reject(tx.error);
                         }); } finally { db.close(); }
                     })()
+                };
+            """),
+            ("read-failure", """
+                const key = 'stage57-c-read-failure';
+                const save = bytes => withGlobalMutationLock('storeClipVideo', () =>
+                    storeClipVideo(key, new Blob([Uint8Array.from(bytes)], {type:'video/mp4'})));
+                const readRecord = async () => {
+                    const db = await openVideoDB();
+                    try { return await new Promise((resolve, reject) => {
+                        const tx = db.transaction('videos', 'readonly');
+                        const req = tx.objectStore('videos').get(key);
+                        req.onsuccess = () => { tx.__record = req.result || null; };
+                        req.onerror = () => reject(req.error);
+                        tx.oncomplete = () => resolve(tx.__record);
+                        tx.onerror = () => reject(tx.error);
+                        tx.onabort = () => reject(tx.error);
+                    }); } finally { db.close(); }
+                };
+                const countChunks = async prefix => {
+                    const db = await openVideoDB();
+                    try { return await new Promise((resolve, reject) => {
+                        const tx = db.transaction('videoChunks', 'readonly');
+                        const req = tx.objectStore('videoChunks').count(IDBKeyRange.bound(prefix, prefix+'\\uffff'));
+                        req.onsuccess = () => { tx.__count = req.result; };
+                        req.onerror = () => reject(req.error);
+                        tx.oncomplete = () => resolve(tx.__count);
+                        tx.onerror = () => reject(tx.error);
+                        tx.onabort = () => reject(tx.error);
+                    }); } finally { db.close(); }
+                };
+                await save([111,112,113,114]);
+                const old = await readRecord();
+                const originalGet = IDBObjectStore.prototype.get;
+                let forcedReadFailure = false;
+                IDBObjectStore.prototype.get = function(primaryKey) {
+                    const request = originalGet.call(this, primaryKey);
+                    if (!forcedReadFailure && this.name === 'videoChunks') {
+                        forcedReadFailure = true;
+                        queueMicrotask(() => { try { request.transaction.abort(); } catch (_) {} });
+                    }
+                    return request;
+                };
+                let error = null;
+                try { await save([121,122,123,124]); }
+                catch (caught) { error = String(caught?.message || caught); }
+                finally { IDBObjectStore.prototype.get = originalGet; }
+                return {
+                    error, forcedReadFailure,
+                    oldChunkCount: await countChunks(old.chunkPrefix),
+                    activePrefix: (await readRecord())?.chunkPrefix || null
                 };
             """),
             ("corrupt", """
@@ -3587,6 +3664,12 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual(matching["oldChunkCount"], 0, results)
         self.assertGreater(matching["currentHashCount"], 0, results)
         self.assertEqual(matching["journalCount"], 0, results)
+        self.assertFalse(matching["digestDuringActiveChunkRead"], results)
+
+        read_failure = results["read-failure"]
+        self.assertTrue(read_failure["forcedReadFailure"], results)
+        self.assertTrue(read_failure["error"], results)
+        self.assertGreater(read_failure["oldChunkCount"], 0, results)
 
         corrupt = results["corrupt"]
         self.assertTrue(corrupt["corrupted"], results)
