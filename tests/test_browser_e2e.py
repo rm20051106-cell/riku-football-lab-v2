@@ -3351,10 +3351,10 @@ class RikuBrowserE2ETests(unittest.TestCase):
                         }); } finally { ctx.videoMetadataWriteAuthorized = false; }
                     } finally { db.close(); }
                 });
+                const legacyHashMissing = !(await readRecord()).chunkSha256;
                 let error = null;
                 try { await save([41,42,43,44]); }
                 catch (caught) { error = String(caught?.message || caught); }
-                const legacyHashMissing = !(await readRecord()).chunkSha256;
                 return {
                     error,
                     oldPrefix: old.chunkPrefix,
