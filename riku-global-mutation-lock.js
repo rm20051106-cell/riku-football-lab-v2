@@ -617,10 +617,9 @@
         };
       });
     } catch (error) {
-      ctx.cleanupVerificationFailed = true;
-      // An IndexedDB transaction abort is an interrupted cleanup, not proof that
-      // the committed journal is corrupt. Keep it committed so startup recovery
-      // can safely retry the full verification on the next page load.
+      // Only integrity/fence failures block all further cleanup. An externally
+      // aborted IndexedDB transaction is retryable and must not set this flag.
+      if (!ctx.committedCleanupRetryable) ctx.cleanupVerificationFailed = true;
       window.__rikuMutationSafeMode = true;
       throw error;
     } finally {
