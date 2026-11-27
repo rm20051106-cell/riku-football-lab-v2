@@ -1,0 +1,55 @@
+name: Stage 57 restore journal integrity validation
+
+on:
+  push:
+    branches:
+      - feature/stage57-global-mutation-restore-journal-20261126
+
+concurrency:
+  group: stage57-restore-journal-\${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  stage57-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install portable ffmpeg
+        run: |
+          python -m pip install --disable-pip-version-check imageio-ffmpeg
+          FFMPEG_EXE="$(python -c 'import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())')"
+          mkdir -p /tmp/riku-ffmpeg-bin
+          ln -sf "$FFMPEG_EXE" /tmp/riku-ffmpeg-bin/ffmpeg
+          echo "/tmp/riku-ffmpeg-bin" >> "$GITHUB_PATH"
+      - name: Install Playwright
+        run: |
+          python -m pip install --disable-pip-version-check playwright
+          python -m playwright install --with-deps chromium
+      - name: Check Python syntax
+        run: python -m compileall -q backend tests
+      - name: Check Stage 57 JavaScript syntax
+        run: node --check riku-global-mutation-lock.js
+      - name: Check inline application JavaScript syntax
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          html = Path("index.html").read_text(encoding="utf-8")
+          scripts = re.findall(r"<script\b[^>]*>([\s\S]*?)</script>", html, re.I)
+          if not scripts:
+              raise SystemExit("No inline scripts found")
+          Path("/tmp/riku-inline.js").write_text("\n".join(scripts), encoding="utf-8")
+          PY
+          node --check /tmp/riku-inline.js
+      - name: Run Stage 57 browser regression tests
+        run: python -m unittest discover -s tests -p test_browser_e2e.py -k stage57_ -v

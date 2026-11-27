@@ -3255,5 +3255,383 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 pass
             second.close()
 
+
+
+    def _stage57_v1_checksum(self, text):
+        encoded = text.encode("utf-16-le", "surrogatepass")
+        units = [
+            encoded[i] | (encoded[i + 1] << 8)
+            for i in range(0, len(encoded), 2)
+        ]
+        a = 0x811C9DC5
+        b = 0x9E3779B9
+        for i, code_unit in enumerate(units):
+            a = ((a ^ code_unit) * 0x01000193) & 0xFFFFFFFF
+            b = ((b ^ (code_unit + i)) * 0x85EBCA6B) & 0xFFFFFFFF
+
+        def base36(number):
+            digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+            if number == 0:
+                return "0"
+            result = ""
+            while number:
+                number, remainder = divmod(number, 36)
+                result = digits[remainder] + result
+            return result
+
+        return f"{base36(len(units))}-{a:08x}{b:08x}"
+
+    def test_stage57_journal_digest_matches_independent_v1_checksum(self):
+        result = self.page.evaluate("""async () => {
+            const binaryInfo = async value => {
+                if (value == null) return null;
+                let bytes;
+                let kind;
+                if (value instanceof Blob) {
+                    bytes = await value.arrayBuffer();
+                    kind = "Blob";
+                } else if (value instanceof ArrayBuffer) {
+                    bytes = value;
+                    kind = "ArrayBuffer";
+                } else if (ArrayBuffer.isView(value)) {
+                    bytes = value.buffer.slice(
+                        value.byteOffset,
+                        value.byteOffset + value.byteLength
+                    );
+                    kind = value.constructor?.name || "ArrayBufferView";
+                } else {
+                    return {kind: "json", value: JSON.stringify(value)};
+                }
+                const digest = await crypto.subtle.digest("SHA-256", bytes);
+                return {
+                    kind,
+                    byteLength: bytes.byteLength,
+                    sha256: [...new Uint8Array(digest)]
+                        .map(value => value.toString(16).padStart(2, "0"))
+                        .join("")
+                };
+            };
+
+            const summarizeVideoRecordForSnapshot = async record => {
+                if (!record) return null;
+                const metadata = {};
+                for (const key of Object.keys(record).sort()) {
+                    if (key === "blob" || key === "blobData") continue;
+                    metadata[key] = record[key];
+                }
+                return {
+                    metadata,
+                    blob: await binaryInfo(record.blob),
+                    blobData: await binaryInfo(record.blobData)
+                };
+            };
+
+            const snapshot = async () => {
+                const db = await openVideoDB();
+                try {
+                    const raw = await new Promise((resolve, reject) => {
+                        const tx = db.transaction(
+                            ["restoreJournal", "videos", "videoChunks"],
+                            "readonly"
+                        );
+                        const values = {};
+                        const requests = [
+                            ["journalCount", tx.objectStore("restoreJournal").count()],
+                            ["videoKeys", tx.objectStore("videos").getAllKeys()],
+                            ["videoRecords", tx.objectStore("videos").getAll()],
+                            ["chunkKeys", tx.objectStore("videoChunks").getAllKeys()],
+                            ["chunkRecords", tx.objectStore("videoChunks").getAll()]
+                        ];
+                        for (const [name, request] of requests) {
+                            request.onsuccess = () => { values[name] = request.result; };
+                            request.onerror = () => reject(
+                                request.error || new Error("snapshot request failed: " + name)
+                            );
+                        }
+                        tx.oncomplete = () => resolve(values);
+                        tx.onerror = () => reject(
+                            tx.error || new Error("snapshot transaction failed")
+                        );
+                        tx.onabort = () => reject(
+                            tx.error || new Error("snapshot transaction aborted")
+                        );
+                    });
+
+                    const videos = await Promise.all(
+                        raw.videoRecords.map(async (record, index) => ({
+                            key: String(raw.videoKeys[index]),
+                            value: await summarizeVideoRecordForSnapshot(record)
+                        }))
+                    );
+                    const chunks = await Promise.all(
+                        raw.chunkRecords.map(async (record, index) => ({
+                            key: String(raw.chunkKeys[index]),
+                            value: await binaryInfo(record)
+                        }))
+                    );
+                    return {
+                        journalCount: raw.journalCount,
+                        videos,
+                        chunks,
+                        appState: localStorage.getItem("rikuFootballLab_v3")
+                    };
+                } finally {
+                    db.close();
+                }
+            };
+
+            const blob = new Blob(
+                [Uint8Array.from([0, 1, 2, 255])],
+                {type: "video/mp4"}
+            );
+            const arrayBuffer = Uint8Array.from([10, 11, 12]).buffer;
+            const typedArray = Uint8Array.from([21, 22, 23, 24]);
+
+            const chunkedA = {
+                storageFormat: "chunks",
+                chunkPrefix: "stage57-b-chunked|generation-a|",
+                chunkCount: 2,
+                size: 7,
+                name: "stage57-a.mp4",
+                type: "video/mp4",
+                blobType: "video/mp4",
+                lastModified: 1700000000000,
+                blob: null,
+                blobData: null
+            };
+            const chunkedB = {
+                ...chunkedA,
+                chunkPrefix: "stage57-b-chunked|generation-b|",
+                chunkCount: 3,
+                size: 9,
+                name: "stage57-b.mp4"
+            };
+
+            const changes = [
+                {
+                    key: "stage57-b-blob", kind: "replace",
+                    oldPrefix: null, newPrefix: null,
+                    oldRecord: null,
+                    newRecord: {
+                        storageFormat: "blob",
+                        name: "stage57-blob.mp4",
+                        type: "video/mp4",
+                        blobType: "video/mp4",
+                        lastModified: 1700000000000,
+                        size: 4,
+                        blob,
+                        blobData: null
+                    }
+                },
+                {
+                    key: "stage57-b-arraybuffer", kind: "replace",
+                    oldPrefix: null, newPrefix: null,
+                    oldRecord: null,
+                    newRecord: {
+                        storageFormat: "arraybuffer",
+                        name: "stage57-arraybuffer.mp4",
+                        type: "video/mp4",
+                        blobType: "video/mp4",
+                        lastModified: 1700000000001,
+                        size: 3,
+                        blob: null,
+                        blobData: arrayBuffer
+                    }
+                },
+                {
+                    key: "stage57-b-view", kind: "replace",
+                    oldPrefix: null, newPrefix: null,
+                    oldRecord: null,
+                    newRecord: {
+                        storageFormat: "arraybuffer",
+                        name: "stage57-view.mp4",
+                        type: "video/mp4",
+                        blobType: "video/mp4",
+                        lastModified: 1700000000002,
+                        size: 4,
+                        blob: null,
+                        blobData: typedArray
+                    }
+                },
+                {
+                    key: "stage57-b-chunked", kind: "replace",
+                    oldPrefix: null, newPrefix: null,
+                    oldRecord: null,
+                    newRecord: chunkedA
+                },
+                {
+                    key: "stage57-b-chunked", kind: "replace",
+                    oldPrefix: null, newPrefix: null,
+                    oldRecord: chunkedA,
+                    newRecord: chunkedB
+                }
+            ];
+
+            function videoRecordSummary(record) {
+                if (!record) return null;
+                const blobData = record.blobData;
+                return {
+                    storageFormat: record.storageFormat || null,
+                    chunkPrefix: record.chunkPrefix || null,
+                    chunkCount: Number(record.chunkCount) || null,
+                    size: Number(record.size) ||
+                        (record.blob instanceof Blob ? record.blob.size : null),
+                    name: record.name || null,
+                    type: record.type || null,
+                    blobType: record.blobType || null,
+                    lastModified: Number(record.lastModified) || 0,
+                    blobSize: record.blob instanceof Blob
+                        ? record.blob.size : null,
+                    blobDataBytes: blobData instanceof ArrayBuffer
+                        ? blobData.byteLength
+                        : (ArrayBuffer.isView(blobData)
+                            ? blobData.byteLength : null)
+                };
+            }
+
+            function canonicalJournal(row) {
+                return {
+                    restoreId: row.restoreId,
+                    operationId: row.operationId,
+                    ownerId: row.ownerId,
+                    fenceToken: Number(row.fenceToken),
+                    operation: row.operation,
+                    state: row.state,
+                    beforeStateChecksum: row.beforeStateChecksum,
+                    beforeStateLength: row.beforeStateLength,
+                    afterStateChecksum: row.afterStateChecksum,
+                    afterStateLength: row.afterStateLength,
+                    videoChanges: (row.videoChanges || []).map(change => ({
+                        key: String(change.key),
+                        kind: change.kind || null,
+                        oldPrefix: change.oldPrefix || null,
+                        newPrefix: change.newPrefix || null,
+                        oldRecord: videoRecordSummary(change.oldRecord),
+                        newRecord: videoRecordSummary(change.newRecord)
+                    }))
+                };
+            }
+
+            const before = await snapshot();
+            const captured = await window.withGlobalMutationLock(
+                "stage57-test-b-digest",
+                async () => {
+                    for (const change of changes) {
+                        await window.__rikuRecordVideoChange(change);
+                    }
+
+                    const db = await openVideoDB();
+                    try {
+                        return await new Promise((resolve, reject) => {
+                            const tx = db.transaction("restoreJournal", "readonly");
+                            let row;
+                            const request = tx.objectStore("restoreJournal")
+                                .get(window.__rikuMutationContext.restoreId);
+                            request.onsuccess = () => { row = request.result; };
+                            request.onerror = () => reject(
+                                request.error || new Error("journal read failed")
+                            );
+                            tx.oncomplete = () => {
+                                if (!row) {
+                                    reject(new Error("Stage57 journal row missing"));
+                                    return;
+                                }
+                                const canonical = canonicalJournal(row);
+                                resolve({
+                                    state: row.state,
+                                    journalChecksum: row.journalChecksum,
+                                    canonicalJson: JSON.stringify(canonical),
+                                    changeCount: row.videoChanges.length,
+                                    keys: row.videoChanges.map(change => String(change.key))
+                                });
+                            };
+                            tx.onerror = () => reject(
+                                tx.error || new Error("journal transaction failed")
+                            );
+                            tx.onabort = () => reject(
+                                tx.error || new Error("journal transaction aborted")
+                            );
+                        });
+                    } finally {
+                        db.close();
+                    }
+                }
+            );
+            const after = await snapshot();
+            return {before, captured, after};
+        }""");
+
+        const captured = result["captured"];
+        const canonical = json.loads(captured["canonicalJson"]);
+
+        self.assertEqual(captured["state"], "prepared", result)
+        self.assertEqual(captured["changeCount"], 5, result)
+        self.assertEqual(
+            captured["keys"],
+            [
+                "stage57-b-blob",
+                "stage57-b-arraybuffer",
+                "stage57-b-view",
+                "stage57-b-chunked",
+                "stage57-b-chunked",
+            ],
+            result,
+        )
+        self.assertEqual(
+            list(canonical.keys()),
+            [
+                "restoreId",
+                "operationId",
+                "ownerId",
+                "fenceToken",
+                "operation",
+                "state",
+                "beforeStateChecksum",
+                "beforeStateLength",
+                "afterStateChecksum",
+                "afterStateLength",
+                "videoChanges",
+            ],
+            result,
+        )
+        self.assertEqual(
+            list(canonical["videoChanges"][0]["newRecord"].keys()),
+            [
+                "storageFormat",
+                "chunkPrefix",
+                "chunkCount",
+                "size",
+                "name",
+                "type",
+                "blobType",
+                "lastModified",
+                "blobSize",
+                "blobDataBytes",
+            ],
+            result,
+        )
+        self.assertEqual(canonical["videoChanges"][0]["newRecord"]["blobSize"], 4, result)
+        self.assertEqual(canonical["videoChanges"][1]["newRecord"]["blobDataBytes"], 3, result)
+        self.assertEqual(canonical["videoChanges"][2]["newRecord"]["blobDataBytes"], 4, result)
+        self.assertEqual(canonical["videoChanges"][3]["newRecord"]["chunkCount"], 2, result)
+        self.assertEqual(canonical["videoChanges"][4]["newRecord"]["chunkCount"], 3, result)
+        self.assertEqual(
+            canonical["videoChanges"][3]["newRecord"],
+            canonical["videoChanges"][4]["oldRecord"],
+            result,
+        )
+        self.assertEqual(
+            captured["journalChecksum"],
+            self._stage57_v1_checksum(captured["canonicalJson"]),
+            result,
+        )
+
+        self.assertEqual(result["after"]["journalCount"], result["before"]["journalCount"], result)
+        self.assertEqual(result["after"]["videos"], result["before"]["videos"], result)
+        self.assertEqual(result["after"]["chunks"], result["before"]["chunks"], result)
+        self.assertEqual(result["after"]["appState"], result["before"]["appState"], result)
+        self.assertEqual(result["after"]["journalCount"], 0, result)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
