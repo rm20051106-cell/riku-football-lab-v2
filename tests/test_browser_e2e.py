@@ -3561,8 +3561,8 @@ class RikuBrowserE2ETests(unittest.TestCase):
             return {before, captured, after};
         }""");
 
-        const captured = result["captured"];
-        const canonical = json.loads(captured["canonicalJson"]);
+        captured = result["captured"]
+        canonical = json.loads(captured["canonicalJson"])
 
         self.assertEqual(captured["state"], "prepared", result)
         self.assertEqual(captured["changeCount"], 5, result)
