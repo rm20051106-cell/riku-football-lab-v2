@@ -3442,7 +3442,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     "window.__rikuMutationRecoveryReady && window.__rikuMutationRecoveryReady()",
                     timeout=15000,
                 )
-                return page.evaluate("(script) => eval('(' + script + ')')()") if False else page.evaluate(script)
+                return page.evaluate("(script) => (async () => { " + script + " })()", script)
             finally:
                 context.close()
 
