@@ -3362,6 +3362,141 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     oldHashWasRemoved: legacyHashMissing
                 };
             """),
+            ("stale-generation", """
+                const key = 'stage57-c-stale-generation';
+                const save = bytes => withGlobalMutationLock('storeClipVideo', () =>
+                    storeClipVideo(key, new Blob([Uint8Array.from(bytes)], {type:'video/mp4'})));
+                const countChunks = async prefix => {
+                    const db = await openVideoDB();
+                    try { return await new Promise((resolve, reject) => {
+                        const tx = db.transaction('videoChunks', 'readonly');
+                        const req = tx.objectStore('videoChunks').count(IDBKeyRange.bound(prefix, prefix+'\\uffff'));
+                        req.onsuccess = () => { tx.__count = req.result; };
+                        req.onerror = () => reject(req.error);
+                        tx.oncomplete = () => resolve(tx.__count);
+                        tx.onerror = () => reject(tx.error);
+                        tx.onabort = () => reject(tx.error);
+                    }); } finally { db.close(); }
+                };
+                const readRecord = async () => {
+                    const db = await openVideoDB();
+                    try { return await new Promise((resolve, reject) => {
+                        const tx = db.transaction('videos', 'readonly');
+                        const req = tx.objectStore('videos').get(key);
+                        req.onsuccess = () => { tx.__record = req.result || null; };
+                        req.onerror = () => reject(req.error);
+                        tx.oncomplete = () => resolve(tx.__record);
+                        tx.onerror = () => reject(tx.error);
+                        tx.onabort = () => reject(tx.error);
+                    }); } finally { db.close(); }
+                };
+                await save([71,72,73,74]);
+                const old = await readRecord();
+                const originalDigest = crypto.subtle.digest.bind(crypto.subtle);
+                let digestCount = 0, generationChanged = false;
+                Object.defineProperty(crypto.subtle, 'digest', {
+                    configurable: true,
+                    value: async (...args) => {
+                        const result = await originalDigest(...args);
+                        digestCount++;
+                        if (digestCount === 3 && !generationChanged) {
+                            generationChanged = true;
+                            const ctx = window.__rikuMutationContext;
+                            const db = await openVideoDB();
+                            ctx.videoMetadataWriteAuthorized = true;
+                            try { await new Promise((resolve, reject) => {
+                                const tx = db.transaction('videos', 'readwrite');
+                                const store = tx.objectStore('videos');
+                                const req = store.get(key);
+                                req.onsuccess = () => store.put({...req.result, chunkPrefix:key+'|tampered-generation|'}, key);
+                                req.onerror = () => reject(req.error);
+                                tx.oncomplete = resolve;
+                                tx.onerror = () => reject(tx.error);
+                                tx.onabort = () => reject(tx.error);
+                            }); } finally { ctx.videoMetadataWriteAuthorized = false; db.close(); }
+                        }
+                        return result;
+                    }
+                });
+                let error = null;
+                try { await save([81,82,83,84]); }
+                catch (caught) { error = String(caught?.message || caught); }
+                finally { delete crypto.subtle.digest; }
+                return {
+                    error, generationChanged,
+                    oldChunkCount: await countChunks(old.chunkPrefix),
+                    safeMode: !!window.__rikuMutationSafeMode
+                };
+            """),
+            ("stale-checksum", """
+                const key = 'stage57-c-stale-checksum';
+                const save = bytes => withGlobalMutationLock('storeClipVideo', () =>
+                    storeClipVideo(key, new Blob([Uint8Array.from(bytes)], {type:'video/mp4'})));
+                const countChunks = async prefix => {
+                    const db = await openVideoDB();
+                    try { return await new Promise((resolve, reject) => {
+                        const tx = db.transaction('videoChunks', 'readonly');
+                        const req = tx.objectStore('videoChunks').count(IDBKeyRange.bound(prefix, prefix+'\\uffff'));
+                        req.onsuccess = () => { tx.__count = req.result; };
+                        req.onerror = () => reject(req.error);
+                        tx.oncomplete = () => resolve(tx.__count);
+                        tx.onerror = () => reject(tx.error);
+                        tx.onabort = () => reject(tx.error);
+                    }); } finally { db.close(); }
+                };
+                const readRecord = async () => {
+                    const db = await openVideoDB();
+                    try { return await new Promise((resolve, reject) => {
+                        const tx = db.transaction('videos', 'readonly');
+                        const req = tx.objectStore('videos').get(key);
+                        req.onsuccess = () => { tx.__record = req.result || null; };
+                        req.onerror = () => reject(req.error);
+                        tx.oncomplete = () => resolve(tx.__record);
+                        tx.onerror = () => reject(tx.error);
+                        tx.onabort = () => reject(tx.error);
+                    }); } finally { db.close(); }
+                };
+                await save([91,92,93,94]);
+                const old = await readRecord();
+                const originalDigest = crypto.subtle.digest.bind(crypto.subtle);
+                let digestCount = 0, checksumChanged = false;
+                Object.defineProperty(crypto.subtle, 'digest', {
+                    configurable: true,
+                    value: async (...args) => {
+                        const result = await originalDigest(...args);
+                        digestCount++;
+                        if (digestCount === 3 && !checksumChanged) {
+                            checksumChanged = true;
+                            const db = await openVideoDB();
+                            try { await new Promise((resolve, reject) => {
+                                const tx = db.transaction('restoreJournal', 'readwrite');
+                                const store = tx.objectStore('restoreJournal');
+                                const req = store.getAll();
+                                req.onsuccess = () => {
+                                    const row = (req.result || []).find(item => item.state === 'committed');
+                                    if (!row) { try { tx.abort(); } catch (_) {} return; }
+                                    row.afterStateChecksum = 'stage57-tampered-checksum';
+                                    store.put(row);
+                                };
+                                req.onerror = () => reject(req.error);
+                                tx.oncomplete = resolve;
+                                tx.onerror = () => reject(tx.error);
+                                tx.onabort = () => reject(tx.error);
+                            }); } finally { db.close(); }
+                        }
+                        return result;
+                    }
+                });
+                let error = null;
+                try { await save([101,102,103,104]); }
+                catch (caught) { error = String(caught?.message || caught); }
+                finally { delete crypto.subtle.digest; }
+                return {
+                    error, checksumChanged,
+                    oldChunkCount: await countChunks(old.chunkPrefix),
+                    safeMode: !!window.__rikuMutationSafeMode
+                };
+            """),
             ("stale-fence", """
                 const key = 'stage57-c-stale-fence';
                 const save = bytes => withGlobalMutationLock('storeClipVideo', () =>
