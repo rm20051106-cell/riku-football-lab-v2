@@ -108,6 +108,10 @@
         }
       };
       request.onerror = function () {
+        // A transaction aborted externally rejects its pending fence request
+        // with AbortError. Preserve retryability; only genuine fence-read
+        // failures should be classified as ownership/integrity failures.
+        if (request.error?.name === "AbortError" && !tx.error) return;
         ctx.fenceFailure = true;
         try { tx.abort(); } catch (_) {}
       };
