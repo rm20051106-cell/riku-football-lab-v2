@@ -303,6 +303,7 @@
           }
           row.videoChanges = (row.videoChanges || []).filter(change => change.newPrefix !== newPrefix);
           row.updatedAt = new Date().toISOString();
+          row.journalChecksum = journalDigest(row);
           store.put(row);
         };
         get.onerror = () => { try { tx.abort(); } catch (_) {} };
@@ -601,6 +602,10 @@
         tx.onerror = () => reject(failure || tx.error || fail("確定済み動画の後片付けに失敗しました"));
         tx.onabort = () => reject(failure || tx.error || fail("確定済み動画の後片付けが中断されました"));
       });
+    } catch (error) {
+      ctx.cleanupVerificationFailed = true;
+      window.__rikuMutationSafeMode = true;
+      throw error;
     } finally {
       ctx.chunkDeleteAuthorized = false;
       db.close();
@@ -649,6 +654,10 @@
     } finally { db.close(); }
   }
   async function finalizeOperation(ctx) {
+    if (ctx.cleanupVerificationFailed) {
+      window.__rikuMutationSafeMode = true;
+      throw new Error("動画チャンク検証に失敗したため、同一操作内の後続削除・再試行を禁止しました");
+    }
     const db = await openDB();
     let journal;
     try {
