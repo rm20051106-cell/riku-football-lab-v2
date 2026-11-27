@@ -4067,7 +4067,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertIn("await verifyPrefix(prefix, expectedRecord)", cleanup)
         self.assertIn("latestJournal.journalChecksum !== journalDigest(latestJournal)", cleanup)
         self.assertIn("Number(latestLock.leaseUntil) <= Date.now()", cleanup)
-        self.assertIn("videoRecordSummary(latest) !== JSON.stringify(videoRecordSummary(previous))", cleanup)
+        self.assertIn("JSON.stringify(videoRecordSummary(latest)) !== JSON.stringify(videoRecordSummary(previous))", cleanup)
         self.assertIn("ctx.chunkDeleteAuthorized = true", cleanup)
         self.assertIn("tx.objectStore(\"restoreJournal\").delete(latestJournal.restoreId)", cleanup)
 
