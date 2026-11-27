@@ -4063,6 +4063,12 @@ class RikuBrowserE2ETests(unittest.TestCase):
         start = source.index("async function runRecovery()")
         end = source.index("window.withGlobalMutationLock", start)
         recovery = source[start:end]
+        recovery_required_guard = recovery.index('if (journal.state === "recovery-required")')
+        after_matches_branch = recovery.index("const afterMatches =")
+        recovery_required_throw = recovery.index('throw new Error("recovery-requiredの未解決ジャーナルが残っています。後続の復旧・動画削除を停止しました")')
+        self.assertLess(recovery_required_guard, after_matches_branch)
+        self.assertLess(recovery_required_guard, recovery_required_throw)
+        self.assertIn("window.__rikuMutationSafeMode = true", recovery[recovery_required_guard:recovery_required_throw])
         unresolved = recovery.index('reason: "localStorage matches neither before nor confirmed after snapshot"')
         stop = recovery.index('throw new Error("復旧ジャーナルがbefore/afterのどちらとも一致しません。後続の動画削除を停止しました")', unresolved)
         self.assertLess(unresolved, stop)
