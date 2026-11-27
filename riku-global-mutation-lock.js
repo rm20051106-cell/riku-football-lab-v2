@@ -788,6 +788,9 @@
                 window.__rikuMutationSafeMode = true;
                 throw new Error("確定済みジャーナルと記録データが一致しません。旧動画を削除せず安全停止しました");
               }
+              // A committed journal belongs to the previous page's fence.
+              // Rebind it to this startup-recovery fence before cleanup verification.
+              await updateJournal(ctx, { state: "committed" }, journal.restoreId);
               await finishCommittedJournal(ctx, journal);
               continue;
             }
