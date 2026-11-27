@@ -29,7 +29,7 @@
   function videoRecordSummary(record) {
     if (!record) return null;
     const blobData = record.blobData;
-    return {
+    const summary = {
       storageFormat: record.storageFormat || null,
       chunkPrefix: record.chunkPrefix || null,
       chunkCount: Number(record.chunkCount) || null,
@@ -42,6 +42,10 @@
       blobDataBytes: blobData instanceof ArrayBuffer ? blobData.byteLength :
         (ArrayBuffer.isView(blobData) ? blobData.byteLength : null)
     };
+    if (Array.isArray(record.chunkSha256)) {
+      summary.chunkSha256 = record.chunkSha256.map(value => String(value).toLowerCase());
+    }
+    return summary;
   }
   function journalDigest(row) {
     const canonical = {
@@ -379,118 +383,226 @@
   }
   async function finishCommittedJournal(ctx, journal) {
     const db = await openDB();
+    const fail = message => new Error(message);
+    const readSnapshot = async () => new Promise((resolve, reject) => {
+      const tx = db.transaction(["videos", "restoreJournal", "restoreLocks"], "readonly");
+      const journals = tx.objectStore("restoreJournal");
+      const requests = {
+        journal: journals.get(journal.restoreId),
+        journals: journals.getAll(),
+        lock: tx.objectStore("restoreLocks").get(LOCK_KEY),
+        videos: new Map()
+      };
+      const keys = [...new Set((journal.videoChanges || []).map(change => String(change.key)))];
+      for (const key of keys) requests.videos.set(key, tx.objectStore("videos").get(key));
+      const values = { videos: new Map() };
+      let remaining = 3 + keys.length;
+      const done = () => { remaining--; };
+      requests.journal.onsuccess = () => { values.journal = requests.journal.result || null; done(); };
+      requests.journals.onsuccess = () => { values.journals = requests.journals.result || []; done(); };
+      requests.lock.onsuccess = () => { values.lock = requests.lock.result || null; done(); };
+      for (const [key, request] of requests.videos) {
+        request.onsuccess = () => { values.videos.set(key, request.result || null); done(); };
+        request.onerror = () => { try { tx.abort(); } catch (_) {} };
+      }
+      requests.journal.onerror = requests.journals.onerror = requests.lock.onerror = () => {
+        try { tx.abort(); } catch (_) {}
+      };
+      tx.oncomplete = () => {
+        if (remaining !== 0) { reject(fail("動画削除前の整合性スナップショットが不完全です")); return; }
+        resolve(values);
+      };
+      tx.onerror = () => reject(tx.error || fail("動画削除前の整合性確認に失敗しました"));
+      tx.onabort = () => reject(tx.error || fail("動画削除前の整合性確認が中断されました"));
+    });
+    const readChunk = async key => new Promise((resolve, reject) => {
+      const tx = db.transaction("videoChunks", "readonly");
+      const request = tx.objectStore("videoChunks").get(key);
+      let value = null;
+      request.onsuccess = () => { value = request.result == null ? null : request.result; };
+      request.onerror = () => { try { tx.abort(); } catch (_) {} };
+      tx.oncomplete = () => resolve(value);
+      tx.onerror = () => reject(tx.error || fail("動画チャンクの読み取りに失敗しました"));
+      tx.onabort = () => reject(tx.error || fail("動画チャンクの読み取りが中断されました"));
+    });
+    const bytesOf = async value => {
+      if (value instanceof Blob) return new Uint8Array(await value.arrayBuffer());
+      if (value instanceof ArrayBuffer) return new Uint8Array(value);
+      if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+      throw fail("動画チャンクの保存形式が不正です");
+    };
+    const sha256 = async bytes => {
+      const digest = await crypto.subtle.digest("SHA-256", bytes);
+      return [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2, "0")).join("");
+    };
+    const verifyPrefix = async (prefix, record) => {
+      const hashes = record && record.chunkSha256;
+      const count = Number(record && record.chunkCount);
+      const size = Number(record && record.size);
+      if (!Array.isArray(hashes) || !Number.isSafeInteger(count) || count < 1 ||
+          hashes.length !== count || !Number.isSafeInteger(size) || size < 1 ||
+          hashes.some(value => !/^[0-9a-f]{64}$/i.test(String(value)))) {
+        throw fail("期待SHA256がない旧動画世代は削除できません");
+      }
+      let total = 0;
+      for (let index = 0; index < count; index++) {
+        const key = prefix + String(index).padStart(8, "0");
+        const stored = await readChunk(key);
+        if (stored == null) throw fail("検証対象の動画チャンクが不足しています");
+        const bytes = await bytesOf(stored);
+        const expectedLength = Math.min(1024 * 1024, size - index * 1024 * 1024);
+        if (expectedLength <= 0 || bytes.byteLength !== expectedLength) {
+          throw fail("動画チャンクのサイズが一致しません");
+        }
+        const actualHash = await sha256(bytes);
+        if (actualHash !== String(hashes[index]).toLowerCase()) {
+          throw fail("動画チャンクのSHA256が一致しません");
+        }
+        total += bytes.byteLength;
+      }
+      if (total !== size) throw fail("動画世代の合計サイズが一致しません");
+    };
     try {
+      const snapshot = await readSnapshot();
+      const currentJournal = snapshot.journal;
+      if (!currentJournal || currentJournal.ownerId !== ctx.ownerId ||
+          Number(currentJournal.fenceToken) !== Number(ctx.fenceToken) ||
+          currentJournal.state !== "committed" ||
+          currentJournal.journalChecksum !== journalDigest(currentJournal) ||
+          currentJournal.journalChecksum !== journal.journalChecksum) {
+        throw fail("削除前にジャーナル所有者・状態・チェックサムが変化しました");
+      }
+      if (snapshot.journals.some(row => row.journalChecksum !== journalDigest(row))) {
+        throw fail("別の復旧ジャーナルが破損しているため削除を停止しました");
+      }
+      const lock = snapshot.lock;
+      if (!lock || lock.ownerId !== ctx.ownerId ||
+          Number(lock.fenceToken) !== Number(ctx.fenceToken) ||
+          Number(lock.leaseUntil) <= Date.now()) {
+        throw fail("削除前にfence所有権または期限を確認できません");
+      }
+
+      const changes = currentJournal.videoChanges || [];
+      const byKey = new Map();
+      for (const change of changes) {
+        const key = String(change.key);
+        if (!byKey.has(key)) byKey.set(key, []);
+        byKey.get(key).push(change);
+      }
+      const entries = [...byKey.entries()];
+      const deletionCandidates = new Map();
+      const expectedCurrent = new Map();
+      for (const [key, keyChanges] of entries) {
+        const current = snapshot.videos.get(key) || null;
+        const finalChange = keyChanges[keyChanges.length - 1];
+        if (finalChange.kind === "delete" && current) throw fail("削除対象の動画メタデータが残っています");
+        if (finalChange.newPrefix && current?.chunkPrefix !== finalChange.newPrefix) {
+          throw fail("動画世代が切り替わっているため削除を停止しました");
+        }
+        if (finalChange.kind === "restore" && !finalChange.newPrefix &&
+            (!current || (finalChange.newRecord &&
+              JSON.stringify(videoRecordSummary(current)) !== JSON.stringify(videoRecordSummary(finalChange.newRecord))))) {
+          throw fail("復元対象の動画メタデータが一致しません");
+        }
+        expectedCurrent.set(key, current);
+        const candidates = new Map();
+        for (const change of keyChanges) {
+          if (change.oldPrefix) candidates.set(String(change.oldPrefix), change.oldRecord || null);
+          if (change.newPrefix) candidates.set(String(change.newPrefix), change.newRecord || null);
+        }
+        const activePrefix = current?.chunkPrefix ? String(current.chunkPrefix) : "";
+        for (const [prefix, record] of candidates) {
+          const expectedRecord = prefix === activePrefix ? current : record;
+          const referencedElsewhere = snapshot.journals.some(other =>
+            other.restoreId !== currentJournal.restoreId &&
+            (other.videoChanges || []).some(item => item.oldPrefix === prefix || item.newPrefix === prefix)
+          );
+          if (!referencedElsewhere || prefix === activePrefix) {
+            await verifyPrefix(prefix, expectedRecord);
+            if (prefix !== activePrefix && !referencedElsewhere) deletionCandidates.set(prefix, true);
+          }
+        }
+      }
+
+      // All asynchronous hashing above ran after each readonly transaction completed.
+      // Re-fetch every authority and generation in one new write transaction before deleting.
       await new Promise((resolve, reject) => {
-        const tx = internalTransaction(db, ["videos", "videoChunks", "restoreJournal"], "readwrite", ctx);
-        const videos = tx.objectStore("videos");
-        const chunks = tx.objectStore("videoChunks");
-        const journals = tx.objectStore("restoreJournal");
-        const allJournals = journals.getAll();
-        allJournals.onsuccess = () => {
-          const journalRows = allJournals.result || [];
-          if (journalRows.some(row => row.journalChecksum !== journalDigest(row))) {
-            try { tx.abort(); } catch (_) {}
+        const tx = internalTransaction(db, ["videos", "videoChunks", "restoreJournal", "restoreLocks"], "readwrite", ctx);
+        let failure = null;
+        const abort = message => {
+          failure = fail(message);
+          try { tx.abort(); } catch (_) {}
+        };
+        const journalReq = tx.objectStore("restoreJournal").get(currentJournal.restoreId);
+        const journalsReq = tx.objectStore("restoreJournal").getAll();
+        const lockReq = tx.objectStore("restoreLocks").get(LOCK_KEY);
+        const videoReqs = new Map();
+        for (const key of expectedCurrent.keys()) videoReqs.set(key, tx.objectStore("videos").get(key));
+        let remaining = 3 + videoReqs.size;
+        let latestJournal, latestJournals, latestLock;
+        const latestVideos = new Map();
+        const ready = () => {
+          remaining--;
+          if (remaining !== 0) return;
+          if (!latestJournal || latestJournal.ownerId !== ctx.ownerId ||
+              Number(latestJournal.fenceToken) !== Number(ctx.fenceToken) ||
+              latestJournal.state !== "committed" ||
+              latestJournal.journalChecksum !== currentJournal.journalChecksum ||
+              latestJournal.journalChecksum !== journalDigest(latestJournal)) {
+            abort("ハッシュ計算中にジャーナルのowner/fence/checksumが変化しました");
             return;
           }
-          const changes = journal.videoChanges || [];
-          const byKey = new Map();
-          for (const change of changes) {
-            const key = String(change.key);
-            if (!byKey.has(key)) byKey.set(key, []);
-            byKey.get(key).push(change);
-          }
-          const entries = [...byKey.entries()];
-          if (!entries.length) {
-            journals.delete(journal.restoreId);
+          if (!latestLock || latestLock.ownerId !== ctx.ownerId ||
+              Number(latestLock.fenceToken) !== Number(ctx.fenceToken) ||
+              Number(latestLock.leaseUntil) <= Date.now()) {
+            abort("ハッシュ計算中にfence所有権が変化しました");
             return;
           }
-          let remaining = entries.length;
-          for (const [key, keyChanges] of entries) {
-            const finalChange = keyChanges[keyChanges.length - 1];
-            const currentReq = videos.get(key);
-            currentReq.onsuccess = () => {
-              const current = currentReq.result || null;
-              if (finalChange.kind === "delete" && current) {
-                try { tx.abort(); } catch (_) {}
-                return;
+          if (latestJournals.some(row => row.journalChecksum !== journalDigest(row))) {
+            abort("削除直前に別の復旧ジャーナルの整合性が崩れました");
+            return;
+          }
+          for (const [key, previous] of expectedCurrent) {
+            const latest = latestVideos.get(key) || null;
+            if (JSON.stringify(videoRecordSummary(latest)) !== JSON.stringify(videoRecordSummary(previous))) {
+              abort("ハッシュ計算中に動画世代・generationが変化しました");
+              return;
+            }
+          }
+          ctx.chunkDeleteAuthorized = true;
+          try {
+            for (const prefix of deletionCandidates.keys()) {
+              const referencedElsewhere = latestJournals.some(other =>
+                other.restoreId !== latestJournal.restoreId &&
+                (other.videoChanges || []).some(item => item.oldPrefix === prefix || item.newPrefix === prefix)
+              );
+              if (!referencedElsewhere) {
+                tx.objectStore("videoChunks").delete(IDBKeyRange.bound(prefix, prefix + "\uffff"));
               }
-              if (finalChange.newPrefix && current?.chunkPrefix !== finalChange.newPrefix) {
-                try { tx.abort(); } catch (_) {}
-                return;
-              }
-              if (finalChange.kind === "restore" && !finalChange.newPrefix &&
-                  (!current || (finalChange.newRecord && JSON.stringify(videoRecordSummary(current)) !== JSON.stringify(videoRecordSummary(finalChange.newRecord))))) {
-                try { tx.abort(); } catch (_) {}
-                return;
-              }
-              const verifyAndClean = () => {
-                const activePrefix = current?.chunkPrefix ? String(current.chunkPrefix) : "";
-                const candidates = new Set();
-                for (const change of keyChanges) {
-                  if (change.oldPrefix) candidates.add(String(change.oldPrefix));
-                  if (change.newPrefix) candidates.add(String(change.newPrefix));
-                }
-                ctx.chunkDeleteAuthorized = true;
-                try {
-                  for (const prefix of candidates) {
-                    if (prefix === activePrefix) continue;
-                    const referencedByOtherJournal = journalRows.some(other =>
-                      other.restoreId !== journal.restoreId &&
-                      (other.videoChanges || []).some(item => item.oldPrefix === prefix || item.newPrefix === prefix)
-                    );
-                    if (!referencedByOtherJournal) {
-                      chunks.delete(IDBKeyRange.bound(prefix, prefix + "\uffff"));
-                    }
-                  }
-                } finally { ctx.chunkDeleteAuthorized = false; }
-                remaining--;
-                if (remaining === 0) journals.delete(journal.restoreId);
-              };
-              if (finalChange.newPrefix) {
-                const range = IDBKeyRange.bound(finalChange.newPrefix, finalChange.newPrefix + "\uffff");
-                const cursorReq = chunks.openCursor(range);
-                let count = 0, bytes = 0, expectedIndex = 0;
-                cursorReq.onsuccess = () => {
-                  const cursor = cursorReq.result;
-                  if (!cursor) {
-                    if (count !== Number(current.chunkCount) || bytes !== Number(current.size)) {
-                      try { tx.abort(); } catch (_) {}
-                      return;
-                    }
-                    verifyAndClean();
-                    return;
-                  }
-                  const expectedKey = finalChange.newPrefix + String(expectedIndex).padStart(8, "0");
-                  if (String(cursor.primaryKey) !== expectedKey) {
-                    try { tx.abort(); } catch (_) {}
-                    return;
-                  }
-                  const value = cursor.value;
-                  const byteLength = value instanceof ArrayBuffer ? value.byteLength :
-                    (ArrayBuffer.isView(value) ? value.byteLength : Number(value?.size || 0));
-                  if (!Number.isFinite(byteLength) || byteLength <= 0) {
-                    try { tx.abort(); } catch (_) {}
-                    return;
-                  }
-                  count++;
-                  bytes += byteLength;
-                  expectedIndex++;
-                  cursor.continue();
-                };
-                cursorReq.onerror = () => { try { tx.abort(); } catch (_) {} };
-              } else {
-                verifyAndClean();
-              }
-            };
-            currentReq.onerror = () => { try { tx.abort(); } catch (_) {} };
+            }
+            tx.objectStore("restoreJournal").delete(latestJournal.restoreId);
+          } catch (error) {
+            abort(error?.message || "旧動画チャンクの削除要求に失敗しました");
+          } finally {
+            ctx.chunkDeleteAuthorized = false;
           }
         };
-        allJournals.onerror = () => { try { tx.abort(); } catch (_) {} };
+        journalReq.onsuccess = () => { latestJournal = journalReq.result || null; ready(); };
+        journalsReq.onsuccess = () => { latestJournals = journalsReq.result || []; ready(); };
+        lockReq.onsuccess = () => { latestLock = lockReq.result || null; ready(); };
+        for (const [key, request] of videoReqs) {
+          request.onsuccess = () => { latestVideos.set(key, request.result || null); ready(); };
+          request.onerror = () => abort("削除直前の動画世代を再取得できません");
+        }
+        journalReq.onerror = journalsReq.onerror = lockReq.onerror = () => abort("削除直前の所有権・ジャーナルを再取得できません");
         tx.oncomplete = resolve;
-        tx.onerror = () => reject(tx.error || new Error("確定済み動画の後片付けに失敗しました"));
-        tx.onabort = () => reject(tx.error || new Error("確定済み動画の後片付けが中断されました"));
+        tx.onerror = () => reject(failure || tx.error || fail("確定済み動画の後片付けに失敗しました"));
+        tx.onabort = () => reject(failure || tx.error || fail("確定済み動画の後片付けが中断されました"));
       });
-    } finally { db.close(); }
+    } finally {
+      ctx.chunkDeleteAuthorized = false;
+      db.close();
+    }
   }
   async function releaseFence(ctx) {
     const db = await openDB();
