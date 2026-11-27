@@ -3222,8 +3222,13 @@ class RikuBrowserE2ETests(unittest.TestCase):
                         return originalDigest(...args);
                     }
                 });
+                const makeBytes = (length, seed) => {
+                    const bytes = new Uint8Array(length);
+                    for (let i = 0; i < length; i++) bytes[i] = (i * 31 + seed) & 255;
+                    return bytes;
+                };
                 const save = bytes => withGlobalMutationLock('storeClipVideo', () =>
-                    storeClipVideo(key, new Blob([Uint8Array.from(bytes)], {type:'video/mp4'})));
+                    storeClipVideo(key, new Blob([bytes], {type:'video/mp4'})));
                 const readRecord = async () => {
                     const db = await openVideoDB();
                     try {
@@ -3255,15 +3260,17 @@ class RikuBrowserE2ETests(unittest.TestCase):
                         });
                     } finally { db.close(); }
                 };
-                await save([1,2,3,4,5]);
+                await save(makeBytes(1024 * 1024 + 37, 1));
                 const oldRecord = await readRecord();
-                await save([6,7,8,9,10,11]);
+                await save(makeBytes(2 * 1024 * 1024 + 19, 2));
                 const current = await readRecord();
                 return {
                     oldPrefix: oldRecord.chunkPrefix,
+                    oldHashCount: oldRecord.chunkSha256?.length || 0,
                     oldChunkCount: await hasChunk(oldRecord.chunkPrefix),
                     currentPrefix: current.chunkPrefix,
                     currentHashCount: current.chunkSha256?.length || 0,
+                    currentChunkCount: await hasChunk(current.chunkPrefix),
                     digestDuringActiveChunkRead,
                     journalCount: await (async () => {
                         const db = await openVideoDB();
@@ -3663,7 +3670,9 @@ class RikuBrowserE2ETests(unittest.TestCase):
         results = {name: run_scenario(script) for name, script in scenarios}
         matching = results["matching"]
         self.assertEqual(matching["oldChunkCount"], 0, results)
-        self.assertGreater(matching["currentHashCount"], 0, results)
+        self.assertEqual(matching["oldHashCount"], 2, results)
+        self.assertEqual(matching["currentHashCount"], 3, results)
+        self.assertEqual(matching["currentChunkCount"], 3, results)
         self.assertEqual(matching["journalCount"], 0, results)
         self.assertFalse(matching["digestDuringActiveChunkRead"], results)
 
