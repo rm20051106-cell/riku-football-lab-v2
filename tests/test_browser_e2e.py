@@ -3906,7 +3906,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertGreater(result["oldCountAfterAbort"], 0, result)
         self.assertEqual(result["activeAfterAbort"], result["activeAfterQuota"], result)
 
-    def test_stage57_committed_journal_recovers_after_reload_and_recovery_required_fails_closed(self):
+    def test_stage57_committed_journal_recovers_after_interrupted_cleanup_and_reload(self):
         page = self.page
         page.set_default_timeout(90000)
         page.wait_for_function("window.__rikuMutationRecoveryReady && window.__rikuMutationRecoveryReady()", timeout=15000)
@@ -3994,7 +3994,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         }""")
         self.assertTrue(result["cleanupAbortInjected"], result)
         self.assertTrue(result["replacementError"], result)
-        self.assertEqual(result["activePrefixBeforeReload"], result["oldPrefix"] if False else result["activePrefixBeforeReload"], result)
+        self.assertNotEqual(result["activePrefixBeforeReload"], result["oldPrefix"], result)
         self.assertGreater(result["oldChunksBeforeReload"], 0, result)
         self.assertGreater(result["journalsBeforeReload"], 0, result)
         self.assertTrue(result["safeModeBeforeReload"], result)
@@ -4004,7 +4004,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             "window.__rikuMutationRecoveryReady && window.__rikuMutationRecoveryReady()",
             timeout=30000,
         )
-        recovered = page.evaluate("""async () => {
+        recovered = page.evaluate("""async oldPrefix => {
             const key = 'stage57-e-reload-recovery';
             const db = await openVideoDB();
             try {
@@ -4022,7 +4022,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 const oldCount = await new Promise((resolve, reject) => {
                     const tx = db.transaction('videoChunks', 'readonly');
                     const req = tx.objectStore('videoChunks').count(
-                        IDBKeyRange.bound('' + window.__stage57OldPrefix, window.__stage57OldPrefix + '\\uffff')
+                        IDBKeyRange.bound(oldPrefix, oldPrefix + '\\uffff')
                     );
                     req.onsuccess = () => { tx.__count = req.result; };
                     req.onerror = () => reject(req.error);
@@ -4040,7 +4040,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     recoveryReady: !!window.__rikuMutationRecoveryReady?.()
                 };
             } finally { db.close(); }
-        }""")
+        }""", result["oldPrefix"])
         self.assertGreater(recovered["activeChunkCount"], 0, recovered)
         self.assertEqual(recovered["hashCount"], recovered["activeChunkCount"], recovered)
         self.assertEqual(recovered["journals"], 0, recovered)
