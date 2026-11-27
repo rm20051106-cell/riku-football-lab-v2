@@ -607,14 +607,18 @@
         journalReq.onerror = journalsReq.onerror = lockReq.onerror = () => abort("削除直前の所有権・ジャーナルを再取得できません");
         tx.oncomplete = resolve;
         tx.onerror = () => reject(failure || tx.error || fail("確定済み動画の後片付けに失敗しました"));
-        tx.onabort = () => reject(failure || tx.error || fail("確定済み動画の後片付けが中断されました"));
+        tx.onabort = () => {
+          // A transaction aborted externally (without our own integrity/fence
+          // guard calling abort()) is retryable on the next startup recovery.
+          if (!failure) ctx.committedCleanupRetryable = true;
+          reject(failure || tx.error || fail("確定済み動画の後片付けが中断されました"));
+        };
       });
     } catch (error) {
       ctx.cleanupVerificationFailed = true;
       // An IndexedDB transaction abort is an interrupted cleanup, not proof that
       // the committed journal is corrupt. Keep it committed so startup recovery
       // can safely retry the full verification on the next page load.
-      if (error && error.name === "AbortError") ctx.committedCleanupRetryable = true;
       window.__rikuMutationSafeMode = true;
       throw error;
     } finally {
