@@ -15,6 +15,9 @@
   let recoveryReady = false;
   let recoveryPromise = null;
   let heartbeat = null;
+  let originalSetItem = null;
+  let originalRemoveItem = null;
+  let originalClear = null;
 
   function checksum(value) {
     const text = value == null ? "<null>" : String(value);
@@ -1086,9 +1089,9 @@
 
   // Protect durable app state and Stage 48 checkpoints from unguarded writes.
   try {
-    const originalSetItem = Storage.prototype.setItem;
-    const originalRemoveItem = Storage.prototype.removeItem;
-    const originalClear = Storage.prototype.clear;
+    originalSetItem = Storage.prototype.setItem;
+    originalRemoveItem = Storage.prototype.removeItem;
+    originalClear = Storage.prototype.clear;
     Storage.prototype.setItem = function (key, value) {
       const name = String(key);
       if (this === localStorage && protectedKeys.has(name)) {
