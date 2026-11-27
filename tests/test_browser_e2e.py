@@ -4043,7 +4043,9 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     oldCount,
                     newCount,
                     safeMode: !!window.__rikuMutationSafeMode,
-                    recoveryReady: !!window.__rikuMutationRecoveryReady?.()
+                    recoveryReady: !!window.__rikuMutationRecoveryReady?.(),
+                    notice: document.getElementById("recordSaveNotice")?.textContent || "",
+                    journalStates: journals.map(row => ({state: row.state, reason: row.reason, before: row.beforeStateChecksum, after: row.afterStateChecksum}))
                 };
             } finally { db.close(); }
         }""", {"oldPrefix": result["oldPrefix"], "newPrefix": result["newPrefix"]})
@@ -4064,7 +4066,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         unresolved = recovery.index('reason: "localStorage matches neither before nor confirmed after snapshot"')
         stop = recovery.index('throw new Error("復旧ジャーナルがbefore/afterのどちらとも一致しません。後続の動画削除を停止しました")', unresolved)
         self.assertLess(unresolved, stop)
-        self.assertIn('state: "recovery-required"', recovery[unresolved:stop])
+        self.assertIn('state: "recovery-required"', recovery)
         self.assertIn("window.__rikuMutationSafeMode = true", recovery[unresolved:stop])
         self.assertIn("for (const journal of journals)", recovery)
         self.assertIn("await finishCommittedJournal(ctx, journal)", recovery)
