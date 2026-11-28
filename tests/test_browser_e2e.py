@@ -5135,11 +5135,13 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 oldChunkCountAfter: await countChunks(seeded.chunkPrefix),
                 oldChunkBytesUnchanged: JSON.stringify(oldChunkAfter) === JSON.stringify(oldChunkBefore),
                 hashStillMissing: !Array.isArray(after?.chunkSha256),
+                hashPropertyAbsent: !Object.prototype.hasOwnProperty.call(after || {}, 'chunkSha256'),
                 safeMode: !!window.__rikuMutationSafeMode
             };
         }""")
         self.assertTrue(result["ownerChanged"], result)
         self.assertGreaterEqual(result["digestCalls"], 2, result)
+        self.assertEqual(result["digestCalls"], 2, result)
         self.assertTrue(result["migrationError"], result)
         self.assertTrue(result["oldRecordUnchanged"], result)
         self.assertEqual(result["oldPrefixAfter"], result["oldPrefixBefore"], result)
@@ -5147,6 +5149,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual(result["oldChunkCountAfter"], result["oldChunkCountBefore"], result)
         self.assertTrue(result["oldChunkBytesUnchanged"], result)
         self.assertTrue(result["hashStillMissing"], result)
+        self.assertTrue(result["hashPropertyAbsent"], result)
         self.assertTrue(result["safeMode"], result)
 
 
@@ -5296,11 +5299,13 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 oldChunkCountAfter: await countChunks(seeded.chunkPrefix),
                 oldChunkBytesUnchanged: JSON.stringify(oldChunkAfter) === JSON.stringify(oldChunkBefore),
                 hashStillMissing: !Array.isArray(after?.chunkSha256),
+                hashPropertyAbsent: !Object.prototype.hasOwnProperty.call(after || {}, 'chunkSha256'),
                 safeMode: !!window.__rikuMutationSafeMode
             };
         }""")
         self.assertTrue(result["fenceChanged"], result)
         self.assertGreaterEqual(result["digestCalls"], 2, result)
+        self.assertEqual(result["digestCalls"], 2, result)
         self.assertTrue(result["migrationError"], result)
         self.assertTrue(result["oldRecordUnchanged"], result)
         self.assertEqual(result["oldPrefixAfter"], result["oldPrefixBefore"], result)
@@ -5308,6 +5313,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual(result["oldChunkCountAfter"], result["oldChunkCountBefore"], result)
         self.assertTrue(result["oldChunkBytesUnchanged"], result)
         self.assertTrue(result["hashStillMissing"], result)
+        self.assertTrue(result["hashPropertyAbsent"], result)
         self.assertTrue(result["safeMode"], result)
 
 
