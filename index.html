@@ -405,7 +405,9 @@ async function verifyChunkedVideoGeneration(record,database,key){
       abort('旧動画SHA256移行の更新処理で例外が発生しました: '+String(error?.message||error));
       return;
      }finally{ctx.videoMetadataWriteAuthorized=false}
-    };
+    }catch(error){
+     abort('旧動画SHA256移行の検証処理で例外が発生しました: '+String(error?.message||error));
+    }};
     videoReq.onsuccess=()=>{latestVideo=videoReq.result||null;ready()};
     lockReq.onsuccess=()=>{latestLock=lockReq.result||null;ready()};
     videoReq.onerror=lockReq.onerror=()=>abort('旧動画SHA256移行の再確認に失敗しました');
