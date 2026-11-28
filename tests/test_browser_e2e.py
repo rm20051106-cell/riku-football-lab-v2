@@ -6525,8 +6525,8 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     else delete crypto.subtle.digest;
                 };
             })();"""
-            await page.add_init_script(init_script)
-            await second.add_init_script(init_script)
+            page.add_init_script(init_script)
+            second.add_init_script(init_script)
             page.evaluate("localStorage.setItem('stage57-recovery-digest-pause', 'yes')")
 
             page.reload(wait_until="load")
