@@ -5317,5 +5317,332 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertTrue(result["safeMode"], result)
 
 
+    def test_stage57_legacy_multichunk_migration_stops_after_second_chunk_on_owner_change(self):
+        page = self.page
+        page.set_default_timeout(120000)
+        page.wait_for_function("typeof storeClipVideo === 'function'")
+        page.wait_for_function(
+            "window.__rikuMutationRecoveryReady && window.__rikuMutationRecoveryReady()",
+            timeout=15000,
+        )
+        result = page.evaluate("""async () => {
+            const key = 'stage57-legacy-multi-owner-migration';
+            const oldBytes = new Uint8Array(1024 * 1024 + 17).fill(41);
+            const readRecord = async () => {
+                const db = await openVideoDB();
+                try { return await new Promise((resolve, reject) => {
+                    const tx = db.transaction('videos', 'readonly');
+                    const req = tx.objectStore('videos').get(key);
+                    req.onsuccess = () => { tx.__record = req.result || null; };
+                    req.onerror = () => reject(req.error);
+                    tx.oncomplete = () => resolve(tx.__record);
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                }); } finally { db.close(); }
+            };
+            const readLock = async () => {
+                const db = await openVideoDB();
+                try { return await new Promise((resolve, reject) => {
+                    const tx = db.transaction('restoreLocks', 'readonly');
+                    const req = tx.objectStore('restoreLocks').get('global-mutation');
+                    req.onsuccess = () => { tx.__row = req.result || null; };
+                    req.onerror = () => reject(req.error);
+                    tx.oncomplete = () => resolve(tx.__row);
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                }); } finally { db.close(); }
+            };
+            const readChunk = async (prefix, index) => {
+                const db = await openVideoDB();
+                try { return await new Promise((resolve, reject) => {
+                    const tx = db.transaction('videoChunks', 'readonly');
+                    const req = tx.objectStore('videoChunks').get(prefix + String(index).padStart(8, '0'));
+                    req.onsuccess = () => { tx.__bytes = req.result ? Array.from(req.result) : null; };
+                    req.onerror = () => reject(req.error);
+                    tx.oncomplete = () => resolve(tx.__bytes);
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                }); } finally { db.close(); }
+            };
+            const countChunks = async prefix => {
+                const db = await openVideoDB();
+                try { return await new Promise((resolve, reject) => {
+                    const tx = db.transaction('videoChunks', 'readonly');
+                    const req = tx.objectStore('videoChunks').count(
+                        IDBKeyRange.bound(prefix, prefix + '\\uffff')
+                    );
+                    req.onsuccess = () => { tx.__count = req.result; };
+                    req.onerror = () => reject(req.error);
+                    tx.oncomplete = () => resolve(tx.__count);
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                }); } finally { db.close(); }
+            };
+            const save = bytes => withGlobalMutationLock('storeClipVideo', () =>
+                storeClipVideo(key, new Blob([bytes], {type:'video/mp4'}))
+            );
+
+            await save(oldBytes);
+            const seeded = await readRecord();
+            if (!seeded) throw new Error('legacy fence fixture did not persist its initial video');
+            const {chunkSha256, ...legacyRecord} = seeded;
+            await withGlobalMutationLock('storeClipVideo', async ctx => {
+                ctx.videoMetadataWriteAuthorized = true;
+                try { await new Promise((resolve, reject) => {
+                    const txdb = openVideoDB();
+                    txdb.then(database => {
+                        const tx = database.transaction('videos', 'readwrite');
+                        tx.objectStore('videos').put(legacyRecord, key);
+                        tx.oncomplete = () => { database.close(); resolve(); };
+                        tx.onerror = () => { database.close(); reject(tx.error); };
+                        tx.onabort = () => { database.close(); reject(tx.error); };
+                    }, reject);
+                }); } finally { ctx.videoMetadataWriteAuthorized = false; }
+            });
+            const legacyBefore = await readRecord();
+            const oldChunkBytesBefore = await Promise.all(Array.from({length: seeded.chunkCount}, (_, index) => readChunk(seeded.chunkPrefix, index)));
+            const oldChunkCountBefore = await countChunks(seeded.chunkPrefix);
+            if (Array.isArray(legacyBefore?.chunkSha256)) {
+                throw new Error('fixture did not create a legacy record without chunkSha256');
+            }
+
+            const originalDigest = crypto.subtle.digest.bind(crypto.subtle);
+            const digestDescriptor = Object.getOwnPropertyDescriptor(crypto.subtle, 'digest');
+            let digestCalls = 0, ownerChanged = false, changedLock = null, migrationError = null;
+            Object.defineProperty(crypto.subtle, 'digest', {
+                configurable: true,
+                value: async (...args) => {
+                    const digest = await originalDigest(...args);
+                    digestCalls++;
+                    // #1 hashes replacement input; #2/#3 hash legacy chunks 0/1.
+                    if (digestCalls === 3 && !ownerChanged) {
+                        const current = await readLock();
+                        if (!current) throw new Error('global mutation lock row disappeared during fixture');
+                        const db = await openVideoDB();
+                        try { await new Promise((resolve, reject) => {
+                            const tx = db.transaction('restoreLocks', 'readwrite');
+                            const store = tx.objectStore('restoreLocks');
+                            const req = store.get('global-mutation');
+                            req.onsuccess = () => {
+                                const row = req.result;
+                                store.put({
+                                    ...row,
+                                    ownerId: 'stage57-stale-legacy-owner'
+                                });
+                            };
+                            req.onerror = () => reject(req.error);
+                            tx.oncomplete = resolve;
+                            tx.onerror = () => reject(tx.error);
+                            tx.onabort = () => reject(tx.error);
+                        }); } finally { db.close(); }
+                        changedLock = await readLock();
+                        ownerChanged = !!changedLock &&
+                            changedLock.ownerId === 'stage57-stale-legacy-owner' &&
+                            Number(changedLock.fenceToken) === Number(current.fenceToken);
+                    }
+                    return digest;
+                }
+            });
+            try {
+                await save(Uint8Array.from([51,52,53,54,55]));
+            } catch (error) {
+                migrationError = String(error?.message || error);
+            } finally {
+                if (digestDescriptor) Object.defineProperty(crypto.subtle, 'digest', digestDescriptor);
+                else delete crypto.subtle.digest;
+            }
+
+            const after = await readRecord();
+            const oldChunkBytesAfter = await Promise.all(Array.from({length: seeded.chunkCount}, (_, index) => readChunk(seeded.chunkPrefix, index)));
+            return {
+                digestCalls, ownerChanged, migrationError,
+                oldRecordUnchanged: JSON.stringify(after) === JSON.stringify(legacyBefore),
+                oldPrefixBefore: seeded.chunkPrefix,
+                oldPrefixAfter: after?.chunkPrefix || null,
+                oldChunkCountBefore,
+                oldChunkCountAfter: await countChunks(seeded.chunkPrefix),
+                oldChunkBytesUnchanged: JSON.stringify(oldChunkBytesAfter) === JSON.stringify(oldChunkBytesBefore),
+                hashStillMissing: !Array.isArray(after?.chunkSha256),
+                hashPropertyAbsent: !Object.prototype.hasOwnProperty.call(after || {}, 'chunkSha256'),
+                safeMode: !!window.__rikuMutationSafeMode
+            };
+        }""")
+        self.assertTrue(result["ownerChanged"], result)
+        self.assertEqual(result["digestCalls"], 3, result)
+        self.assertTrue(result["migrationError"], result)
+        self.assertTrue(result["oldRecordUnchanged"], result)
+        self.assertEqual(result["oldPrefixAfter"], result["oldPrefixBefore"], result)
+        self.assertEqual(result["oldChunkCountBefore"], 2, result)
+        self.assertEqual(result["oldChunkCountAfter"], result["oldChunkCountBefore"], result)
+        self.assertTrue(result["oldChunkBytesUnchanged"], result)
+        self.assertTrue(result["hashStillMissing"], result)
+        self.assertTrue(result["hashPropertyAbsent"], result)
+        self.assertTrue(result["safeMode"], result)
+
+
+
+    def test_stage57_legacy_multichunk_migration_stops_after_second_chunk_on_fence_change(self):
+        page = self.page
+        page.set_default_timeout(120000)
+        page.wait_for_function("typeof storeClipVideo === 'function'")
+        page.wait_for_function(
+            "window.__rikuMutationRecoveryReady && window.__rikuMutationRecoveryReady()",
+            timeout=15000,
+        )
+        result = page.evaluate("""async () => {
+            const key = 'stage57-legacy-multi-fence-migration';
+            const oldBytes = new Uint8Array(1024 * 1024 + 17).fill(41);
+            const readRecord = async () => {
+                const db = await openVideoDB();
+                try { return await new Promise((resolve, reject) => {
+                    const tx = db.transaction('videos', 'readonly');
+                    const req = tx.objectStore('videos').get(key);
+                    req.onsuccess = () => { tx.__record = req.result || null; };
+                    req.onerror = () => reject(req.error);
+                    tx.oncomplete = () => resolve(tx.__record);
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                }); } finally { db.close(); }
+            };
+            const readLock = async () => {
+                const db = await openVideoDB();
+                try { return await new Promise((resolve, reject) => {
+                    const tx = db.transaction('restoreLocks', 'readonly');
+                    const req = tx.objectStore('restoreLocks').get('global-mutation');
+                    req.onsuccess = () => { tx.__row = req.result || null; };
+                    req.onerror = () => reject(req.error);
+                    tx.oncomplete = () => resolve(tx.__row);
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                }); } finally { db.close(); }
+            };
+            const readChunk = async (prefix, index) => {
+                const db = await openVideoDB();
+                try { return await new Promise((resolve, reject) => {
+                    const tx = db.transaction('videoChunks', 'readonly');
+                    const req = tx.objectStore('videoChunks').get(prefix + String(index).padStart(8, '0'));
+                    req.onsuccess = () => { tx.__bytes = req.result ? Array.from(req.result) : null; };
+                    req.onerror = () => reject(req.error);
+                    tx.oncomplete = () => resolve(tx.__bytes);
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                }); } finally { db.close(); }
+            };
+            const countChunks = async prefix => {
+                const db = await openVideoDB();
+                try { return await new Promise((resolve, reject) => {
+                    const tx = db.transaction('videoChunks', 'readonly');
+                    const req = tx.objectStore('videoChunks').count(
+                        IDBKeyRange.bound(prefix, prefix + '\\uffff')
+                    );
+                    req.onsuccess = () => { tx.__count = req.result; };
+                    req.onerror = () => reject(req.error);
+                    tx.oncomplete = () => resolve(tx.__count);
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                }); } finally { db.close(); }
+            };
+            const save = bytes => withGlobalMutationLock('storeClipVideo', () =>
+                storeClipVideo(key, new Blob([bytes], {type:'video/mp4'}))
+            );
+
+            await save(oldBytes);
+            const seeded = await readRecord();
+            if (!seeded) throw new Error('legacy fence fixture did not persist its initial video');
+            const {chunkSha256, ...legacyRecord} = seeded;
+            await withGlobalMutationLock('storeClipVideo', async ctx => {
+                ctx.videoMetadataWriteAuthorized = true;
+                try { await new Promise((resolve, reject) => {
+                    const txdb = openVideoDB();
+                    txdb.then(database => {
+                        const tx = database.transaction('videos', 'readwrite');
+                        tx.objectStore('videos').put(legacyRecord, key);
+                        tx.oncomplete = () => { database.close(); resolve(); };
+                        tx.onerror = () => { database.close(); reject(tx.error); };
+                        tx.onabort = () => { database.close(); reject(tx.error); };
+                    }, reject);
+                }); } finally { ctx.videoMetadataWriteAuthorized = false; }
+            });
+            const legacyBefore = await readRecord();
+            const oldChunkBytesBefore = await Promise.all(Array.from({length: seeded.chunkCount}, (_, index) => readChunk(seeded.chunkPrefix, index)));
+            const oldChunkCountBefore = await countChunks(seeded.chunkPrefix);
+            if (Array.isArray(legacyBefore?.chunkSha256)) {
+                throw new Error('fixture did not create a legacy record without chunkSha256');
+            }
+
+            const originalDigest = crypto.subtle.digest.bind(crypto.subtle);
+            const digestDescriptor = Object.getOwnPropertyDescriptor(crypto.subtle, 'digest');
+            let digestCalls = 0, fenceChanged = false, changedLock = null, migrationError = null;
+            Object.defineProperty(crypto.subtle, 'digest', {
+                configurable: true,
+                value: async (...args) => {
+                    const digest = await originalDigest(...args);
+                    digestCalls++;
+                    // #1 hashes replacement input; #2/#3 hash legacy chunks 0/1.
+                    if (digestCalls === 3 && !fenceChanged) {
+                        const current = await readLock();
+                        if (!current) throw new Error('global mutation lock row disappeared during fixture');
+                        const db = await openVideoDB();
+                        try { await new Promise((resolve, reject) => {
+                            const tx = db.transaction('restoreLocks', 'readwrite');
+                            const store = tx.objectStore('restoreLocks');
+                            const req = store.get('global-mutation');
+                            req.onsuccess = () => {
+                                const row = req.result;
+                                store.put({
+                                    ...row,
+                                    fenceToken: Number(row.fenceToken) + 1
+                                });
+                            };
+                            req.onerror = () => reject(req.error);
+                            tx.oncomplete = resolve;
+                            tx.onerror = () => reject(tx.error);
+                            tx.onabort = () => reject(tx.error);
+                        }); } finally { db.close(); }
+                        changedLock = await readLock();
+                        fenceChanged = !!changedLock &&
+                            changedLock.ownerId === current.ownerId &&
+                            Number(changedLock.fenceToken) === Number(current.fenceToken) + 1;
+                    }
+                    return digest;
+                }
+            });
+            try {
+                await save(Uint8Array.from([51,52,53,54,55]));
+            } catch (error) {
+                migrationError = String(error?.message || error);
+            } finally {
+                if (digestDescriptor) Object.defineProperty(crypto.subtle, 'digest', digestDescriptor);
+                else delete crypto.subtle.digest;
+            }
+
+            const after = await readRecord();
+            const oldChunkBytesAfter = await Promise.all(Array.from({length: seeded.chunkCount}, (_, index) => readChunk(seeded.chunkPrefix, index)));
+            return {
+                digestCalls, fenceChanged, migrationError,
+                oldRecordUnchanged: JSON.stringify(after) === JSON.stringify(legacyBefore),
+                oldPrefixBefore: seeded.chunkPrefix,
+                oldPrefixAfter: after?.chunkPrefix || null,
+                oldChunkCountBefore,
+                oldChunkCountAfter: await countChunks(seeded.chunkPrefix),
+                oldChunkBytesUnchanged: JSON.stringify(oldChunkBytesAfter) === JSON.stringify(oldChunkBytesBefore),
+                hashStillMissing: !Array.isArray(after?.chunkSha256),
+                hashPropertyAbsent: !Object.prototype.hasOwnProperty.call(after || {}, 'chunkSha256'),
+                safeMode: !!window.__rikuMutationSafeMode
+            };
+        }""")
+        self.assertTrue(result["fenceChanged"], result)
+        self.assertEqual(result["digestCalls"], 3, result)
+        self.assertTrue(result["migrationError"], result)
+        self.assertTrue(result["oldRecordUnchanged"], result)
+        self.assertEqual(result["oldPrefixAfter"], result["oldPrefixBefore"], result)
+        self.assertEqual(result["oldChunkCountBefore"], 2, result)
+        self.assertEqual(result["oldChunkCountAfter"], result["oldChunkCountBefore"], result)
+        self.assertTrue(result["oldChunkBytesUnchanged"], result)
+        self.assertTrue(result["hashStillMissing"], result)
+        self.assertTrue(result["hashPropertyAbsent"], result)
+        self.assertTrue(result["safeMode"], result)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
