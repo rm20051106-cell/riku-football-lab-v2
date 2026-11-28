@@ -103,5 +103,46 @@ class Stage70FormSamplingTests(unittest.TestCase):
         self.assertIn("FORM_MAX_SAMPLES = 240", BACKEND_SOURCE)
 
 
+    @classmethod
+    def load_kick_phase_builder(cls):
+        node = function_node("build_kick_phase_candidates")
+        namespace = {"np": SimpleNamespace(isfinite=math.isfinite)}
+        exec(compile(ast.Module(body=[node], type_ignores=[]),
+                     "<stage70-kick-phase>", "exec"), namespace)
+        return namespace["build_kick_phase_candidates"]
+
+    def kick_frames(self, speeds):
+        return [
+            {"time_seconds": index * 0.25,
+             "right_foot_image_motion_per_sec": speed,
+             "left_foot_image_motion_per_sec": 0.1}
+            for index, speed in enumerate(speeds)
+        ]
+
+    def test_4fps_isolated_short_peak_is_not_promoted_to_kick_or_impact(self):
+        build = self.load_kick_phase_builder()
+        result = build(self.kick_frames([0.05, 0.06, 1.0, 0.04, 0.05]),
+                       0.25, "right")
+        phases = {phase["key"]: phase for phase in result["phases"]}
+
+        self.assertIsNone(result["preferred_foot_peak_candidate"])
+        self.assertEqual(result["feet"]["right"]["status"], "insufficient_peak_support")
+        self.assertEqual(phases["swing"]["status"], "manual_review_required")
+        self.assertEqual(phases["impact"]["status"], "manual_review_required")
+        self.assertIsNone(phases["impact"]["time_seconds"])
+
+    def test_4fps_supported_swing_peak_still_never_confirms_ball_contact_time(self):
+        build = self.load_kick_phase_builder()
+        result = build(self.kick_frames([0.1, 0.4, 1.0, 0.2, 0.1]),
+                       0.25, "right")
+        phases = {phase["key"]: phase for phase in result["phases"]}
+
+        self.assertIsNotNone(result["preferred_foot_peak_candidate"])
+        self.assertEqual(phases["swing"]["status"], "candidate_only")
+        self.assertEqual(phases["impact"]["status"], "manual_review_required")
+        self.assertIsNone(phases["impact"]["time_seconds"])
+        self.assertNotIn("impact_time_seconds", result)
+
+
 if __name__ == "__main__":
     unittest.main()
