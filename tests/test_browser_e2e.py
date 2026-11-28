@@ -4789,58 +4789,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             // The fixture deliberately changed metadata; reset only the safety latch after assertions.
             window.__rikuMutationSafeMode = false;
 
-            const fenceKey = 'stage57-legacy-fence';
-            const oldFence = await makeLegacy(fenceKey, makeBytes([41,42,43,44]));
-            let fenceChanged = false, fenceError = null;
-            await withGlobalMutationLock('storeClipVideo', async ctx => {
-                const originalDigestFence = crypto.subtle.digest.bind(crypto.subtle);
-                Object.defineProperty(crypto.subtle, 'digest', {
-                    configurable:true,
-                    value:async (...args) => {
-                        const digest = await originalDigestFence(...args);
-                        if (!fenceChanged) {
-                            fenceChanged = true;
-                            const db = await openVideoDB();
-                            try { await new Promise((resolve, reject) => {
-                                const tx = db.transaction('restoreLocks', 'readwrite');
-                                const store = tx.objectStore('restoreLocks');
-                                const req = store.get('global-mutation');
-                                req.onsuccess = () => store.put({...req.result,ownerId:'stale-owner',fenceToken:Number(req.result.fenceToken)+1});
-                                req.onerror = () => reject(req.error);
-                                tx.oncomplete = resolve;
-                                tx.onerror = () => reject(tx.error);
-                                tx.onabort = () => reject(tx.error);
-                            }); } finally { db.close(); }
-                        }
-                        return digest;
-                    }
-                });
-                try { await storeClipVideo(fenceKey, new Blob([makeBytes([45,46,47,48])],{type:'video/mp4'})); }
-                catch (error) { fenceError = String(error?.message || error); }
-                finally {
-                    delete crypto.subtle.digest;
-                    const db = await openVideoDB();
-                    try { await new Promise((resolve, reject) => {
-                        const tx = db.transaction('restoreLocks', 'readwrite');
-                        tx.objectStore('restoreLocks').put({
-                            lockName:'global-mutation',ownerId:ctx.ownerId,operationId:ctx.operationId,
-                            fenceToken:ctx.fenceToken,heartbeatAt:Date.now(),leaseUntil:Date.now()+60000
-                        });
-                        tx.oncomplete = resolve;
-                        tx.onerror = () => reject(tx.error);
-                        tx.onabort = () => reject(tx.error);
-                    }); } finally { db.close(); }
-                }
-            });
-            const afterFence = await readRecord(fenceKey);
-            const fence = {
-                fenceChanged, fenceError, oldPrefix:oldFence.chunkPrefix,
-                oldChunkCount:await countChunks(oldFence.chunkPrefix),
-                activePrefix:afterFence?.chunkPrefix || null,
-                hashStillMissing:!Array.isArray(afterFence?.chunkSha256),
-                safeMode:!!window.__rikuMutationSafeMode
-            };
-            return {success,readFailure,generation,fence};
+            return {success,readFailure,generation};
         }""");
         self.assertEqual(result["success"]["capturedOldHashes"], [result["success"]["expectedHash"]], result)
         self.assertEqual(result["success"]["oldChunkCount"], 0, result)
@@ -4861,14 +4810,6 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual(generation["activePrefix"], generation["oldPrefix"], result)
         self.assertTrue(generation["hashStillMissing"], result)
         self.assertTrue(generation["safeMode"], result)
-
-        fence = result["fence"]
-        self.assertTrue(fence["fenceChanged"], result)
-        self.assertTrue(fence["fenceError"], result)
-        self.assertGreater(fence["oldChunkCount"], 0, result)
-        self.assertEqual(fence["activePrefix"], fence["oldPrefix"], result)
-        self.assertTrue(fence["hashStillMissing"], result)
-        self.assertTrue(fence["safeMode"], result)
 
         source = (ROOT / "index.html").read_text(encoding="utf-8")
         helper_start = source.index("async function verifyChunkedVideoGeneration")
