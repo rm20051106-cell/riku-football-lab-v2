@@ -3441,11 +3441,14 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 let error = null;
                 try { await save([41,42,43,44]); }
                 catch (caught) { error = String(caught?.message || caught); }
+                const after = await readRecord();
                 return {
                     error,
                     oldPrefix: old.chunkPrefix,
                     oldChunkCount: await countChunks(old.chunkPrefix),
-                    oldHashWasRemoved: legacyHashMissing
+                    oldHashWasRemoved: legacyHashMissing,
+                    activePrefix: after?.chunkPrefix || null,
+                    activeHashCount: after?.chunkSha256?.length || 0
                 };
             """),
             ("stale-generation", """
@@ -3690,8 +3693,10 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual(corrupt["activePrefix"], corrupt["oldPrefix"], results)
 
         legacy = results["legacy"]
-        self.assertIn("SHA256", legacy["error"] or "", results)
-        self.assertGreater(legacy["oldChunkCount"], 0, results)
+        self.assertIsNone(legacy["error"], results)
+        self.assertEqual(legacy["oldChunkCount"], 0, results)
+        self.assertNotEqual(legacy["activePrefix"], legacy["oldPrefix"], results)
+        self.assertEqual(legacy["activeHashCount"], 1, results)
         self.assertTrue(legacy["oldHashWasRemoved"], results)
 
         generation = results["stale-generation"]
@@ -4557,6 +4562,319 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual(result["after"]["chunks"], result["before"]["chunks"], result)
         self.assertEqual(result["after"]["appState"], result["before"]["appState"], result)
         self.assertEqual(result["after"]["journalCount"], 0, result)
+
+
+    def test_stage57_cancel_video_change_rejects_corrupt_journal_before_chunk_cleanup(self):
+        page = self.page
+        page.wait_for_function("typeof window.__rikuCancelVideoChange === 'function'")
+        result = page.evaluate("""async () => {
+            const key = 'stage57-cancel-corrupt';
+            const prefix = key + '|generation|';
+            window.__stage57CancelDiag = null;
+            try {
+                await withGlobalMutationLock('stage57-cancel-corrupt', async () => {
+                    await window.__rikuRecordVideoChange({
+                        key, kind:'replace', oldPrefix:null, newPrefix:prefix,
+                        oldRecord:null,
+                        newRecord:{storageFormat:'chunked-v1',chunkPrefix:prefix,chunkCount:1,size:4}
+                    });
+                    const db = await openVideoDB();
+                    let tamperedChecksum, beforeChanges;
+                    try {
+                        await new Promise((resolve, reject) => {
+                            const tx = db.transaction('restoreJournal', 'readwrite');
+                            const store = tx.objectStore('restoreJournal');
+                            const req = store.get(window.__rikuMutationContext.restoreId);
+                            req.onsuccess = () => {
+                                const row = req.result;
+                                row.beforeStateChecksum = 'tampered-before-checksum';
+                                tamperedChecksum = row.journalChecksum;
+                                beforeChanges = row.videoChanges.length;
+                                store.put(row);
+                            };
+                            req.onerror = () => reject(req.error);
+                            tx.oncomplete = resolve;
+                            tx.onerror = () => reject(tx.error);
+                            tx.onabort = () => reject(tx.error);
+                        });
+                    } finally { db.close(); }
+                    let cancelError = null;
+                    try { await window.__rikuCancelVideoChange(prefix); }
+                    catch (error) { cancelError = String(error?.message || error); }
+                    const checkDb = await openVideoDB();
+                    let after;
+                    try {
+                        after = await new Promise((resolve, reject) => {
+                            const tx = checkDb.transaction('restoreJournal', 'readonly');
+                            const req = tx.objectStore('restoreJournal')
+                                .get(window.__rikuMutationContext.restoreId);
+                            req.onsuccess = () => { tx.__row = req.result; };
+                            req.onerror = () => reject(req.error);
+                            tx.oncomplete = () => resolve(tx.__row);
+                            tx.onerror = () => reject(tx.error);
+                            tx.onabort = () => reject(tx.error);
+                        });
+                    } finally { checkDb.close(); }
+                    window.__stage57CancelDiag = {
+                        cancelError,
+                        tamperedChecksum,
+                        afterChecksum:after?.journalChecksum || null,
+                        beforeChanges,
+                        afterChanges:after?.videoChanges?.length || 0,
+                        retainedPrefix:after?.videoChanges?.[0]?.newPrefix || null,
+                        safeMode:!!window.__rikuMutationSafeMode
+                    };
+                });
+            } catch (_) {}
+            return window.__stage57CancelDiag;
+        }""");
+        self.assertIsNotNone(result, result)
+        self.assertTrue(result["cancelError"], result)
+        self.assertEqual(result["afterChecksum"], result["tamperedChecksum"], result)
+        self.assertEqual(result["afterChanges"], result["beforeChanges"], result)
+        self.assertEqual(result["retainedPrefix"], "stage57-cancel-corrupt|generation|", result)
+        self.assertTrue(result["safeMode"], result)
+
+        source = (ROOT / "index.html").read_text(encoding="utf-8")
+        start = source.index("async function storeClipVideo")
+        end = source.index("\nasync function ", start + 30)
+        catch = source[start:end]
+        self.assertLess(
+            catch.index("await window.__rikuCancelVideoChange(chunkPrefix)"),
+            catch.index("await deleteChunks(chunkPrefix)"),
+        )
+
+    def test_stage57_legacy_chunk_hash_migration_rechecks_authority_and_generation(self):
+        page = self.page
+        page.set_default_timeout(120000)
+        page.wait_for_function("typeof storeClipVideo === 'function'")
+        page.wait_for_function(
+            "window.__rikuMutationRecoveryReady && window.__rikuMutationRecoveryReady()",
+            timeout=15000,
+        )
+        result = page.evaluate("""async () => {
+            const makeBytes = values => Uint8Array.from(values);
+            const readRecord = async key => {
+                const db = await openVideoDB();
+                try { return await new Promise((resolve, reject) => {
+                    const tx = db.transaction('videos', 'readonly');
+                    const req = tx.objectStore('videos').get(key);
+                    req.onsuccess = () => { tx.__record = req.result || null; };
+                    req.onerror = () => reject(req.error);
+                    tx.oncomplete = () => resolve(tx.__record);
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                }); } finally { db.close(); }
+            };
+            const countChunks = async prefix => {
+                const db = await openVideoDB();
+                try { return await new Promise((resolve, reject) => {
+                    const tx = db.transaction('videoChunks', 'readonly');
+                    const req = tx.objectStore('videoChunks').count(
+                        IDBKeyRange.bound(prefix, prefix + '\\\\uffff')
+                    );
+                    req.onsuccess = () => { tx.__count = req.result; };
+                    req.onerror = () => reject(req.error);
+                    tx.oncomplete = () => resolve(tx.__count);
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                }); } finally { db.close(); }
+            };
+            const writeRecord = async (key, record) => {
+                const db = await openVideoDB();
+                try { await new Promise((resolve, reject) => {
+                    const tx = db.transaction('videos', 'readwrite');
+                    tx.objectStore('videos').put(record, key);
+                    tx.oncomplete = resolve;
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                }); } finally { db.close(); }
+            };
+            const makeLegacy = async (key, bytes) => {
+                await withGlobalMutationLock('stage57-seed-legacy', async () => {
+                    await storeClipVideo(key, new Blob([bytes], {type:'video/mp4'}));
+                });
+                const record = await readRecord(key);
+                const {chunkSha256, ...legacy} = record;
+                await withGlobalMutationLock('stage57-remove-legacy-hash', async ctx => {
+                    ctx.videoMetadataWriteAuthorized = true;
+                    try { await writeRecord(key, legacy); }
+                    finally { ctx.videoMetadataWriteAuthorized = false; }
+                });
+                return record;
+            };
+            const saveReplacement = (key, bytes) => withGlobalMutationLock(
+                'storeClipVideo', () => storeClipVideo(key, new Blob([bytes], {type:'video/mp4'}))
+            );
+
+            const successKey = 'stage57-legacy-success';
+            const successBytes = makeBytes([1,2,3,4,5,6,7]);
+            const oldSuccess = await makeLegacy(successKey, successBytes);
+            let capturedOldHashes = null;
+            const originalRecordChange = window.__rikuRecordVideoChange;
+            window.__rikuRecordVideoChange = async change => {
+                if (change.key === successKey) capturedOldHashes = change.oldRecord?.chunkSha256 || null;
+                return originalRecordChange(change);
+            };
+            await saveReplacement(successKey, makeBytes([8,9,10,11,12]));
+            window.__rikuRecordVideoChange = originalRecordChange;
+            const successCurrent = await readRecord(successKey);
+            const expectedDigest = await crypto.subtle.digest('SHA-256', successBytes);
+            const expectedHash = [...new Uint8Array(expectedDigest)].map(v => v.toString(16).padStart(2,'0')).join('');
+            const success = {
+                capturedOldHashes,
+                expectedHash,
+                oldPrefix:oldSuccess.chunkPrefix,
+                oldChunkCount:await countChunks(oldSuccess.chunkPrefix),
+                activePrefix:successCurrent?.chunkPrefix || null,
+                activeHashCount:successCurrent?.chunkSha256?.length || 0
+            };
+
+            const readKey = 'stage57-legacy-read-failure';
+            const oldRead = await makeLegacy(readKey, makeBytes([21,22,23,24]));
+            const originalGet = IDBObjectStore.prototype.get;
+            let readAbortInjected = false, readError = null;
+            IDBObjectStore.prototype.get = function(primaryKey) {
+                const request = originalGet.call(this, primaryKey);
+                if (!readAbortInjected && this.name === 'videoChunks') {
+                    readAbortInjected = true;
+                    queueMicrotask(() => { try { request.transaction.abort(); } catch (_) {} });
+                }
+                return request;
+            };
+            try { await saveReplacement(readKey, makeBytes([25,26,27,28])); }
+            catch (error) { readError = String(error?.message || error); }
+            finally { IDBObjectStore.prototype.get = originalGet; }
+            const afterRead = await readRecord(readKey);
+            const readFailure = {
+                readAbortInjected, readError, oldPrefix:oldRead.chunkPrefix,
+                oldChunkCount:await countChunks(oldRead.chunkPrefix),
+                activePrefix:afterRead?.chunkPrefix || null,
+                hashStillMissing:!Array.isArray(afterRead?.chunkSha256)
+            };
+
+            const generationKey = 'stage57-legacy-generation';
+            const oldGeneration = await makeLegacy(generationKey, makeBytes([31,32,33,34]));
+            const originalDigestMethod = crypto.subtle.digest.bind(crypto.subtle);
+            let generationChanged = false, generationError = null;
+            Object.defineProperty(crypto.subtle, 'digest', {
+                configurable:true,
+                value:async (...args) => {
+                    const digest = await originalDigestMethod(...args);
+                    if (!generationChanged) {
+                        generationChanged = true;
+                        const latest = await readRecord(generationKey);
+                        await writeRecord(generationKey, {...latest,name:'generation-tampered'});
+                    }
+                    return digest;
+                }
+            });
+            try { await saveReplacement(generationKey, makeBytes([35,36,37,38])); }
+            catch (error) { generationError = String(error?.message || error); }
+            finally { delete crypto.subtle.digest; }
+            const afterGeneration = await readRecord(generationKey);
+            const generation = {
+                generationChanged, generationError, oldPrefix:oldGeneration.chunkPrefix,
+                oldChunkCount:await countChunks(oldGeneration.chunkPrefix),
+                activePrefix:afterGeneration?.chunkPrefix || null,
+                hashStillMissing:!Array.isArray(afterGeneration?.chunkSha256),
+                safeMode:!!window.__rikuMutationSafeMode
+            };
+            await writeRecord(generationKey, {...afterGeneration,name:oldGeneration.name});
+
+            const fenceKey = 'stage57-legacy-fence';
+            const oldFence = await makeLegacy(fenceKey, makeBytes([41,42,43,44]));
+            let fenceChanged = false, fenceError = null;
+            await withGlobalMutationLock('stage57-legacy-fence-check', async ctx => {
+                const originalDigestFence = crypto.subtle.digest.bind(crypto.subtle);
+                Object.defineProperty(crypto.subtle, 'digest', {
+                    configurable:true,
+                    value:async (...args) => {
+                        const digest = await originalDigestFence(...args);
+                        if (!fenceChanged) {
+                            fenceChanged = true;
+                            const db = await openVideoDB();
+                            try { await new Promise((resolve, reject) => {
+                                const tx = db.transaction('restoreLocks', 'readwrite');
+                                const store = tx.objectStore('restoreLocks');
+                                const req = store.get('global-mutation');
+                                req.onsuccess = () => store.put({...req.result,ownerId:'stale-owner',fenceToken:Number(req.result.fenceToken)+1});
+                                req.onerror = () => reject(req.error);
+                                tx.oncomplete = resolve;
+                                tx.onerror = () => reject(tx.error);
+                                tx.onabort = () => reject(tx.error);
+                            }); } finally { db.close(); }
+                        }
+                        return digest;
+                    }
+                });
+                try { await storeClipVideo(fenceKey, new Blob([makeBytes([45,46,47,48])],{type:'video/mp4'})); }
+                catch (error) { fenceError = String(error?.message || error); }
+                finally {
+                    delete crypto.subtle.digest;
+                    const db = await openVideoDB();
+                    try { await new Promise((resolve, reject) => {
+                        const tx = db.transaction('restoreLocks', 'readwrite');
+                        tx.objectStore('restoreLocks').put({
+                            lockName:'global-mutation',ownerId:ctx.ownerId,operationId:ctx.operationId,
+                            fenceToken:ctx.fenceToken,heartbeatAt:Date.now(),leaseUntil:Date.now()+60000
+                        });
+                        tx.oncomplete = resolve;
+                        tx.onerror = () => reject(tx.error);
+                        tx.onabort = () => reject(tx.error);
+                    }); } finally { db.close(); }
+                }
+            });
+            const afterFence = await readRecord(fenceKey);
+            const fence = {
+                fenceChanged, fenceError, oldPrefix:oldFence.chunkPrefix,
+                oldChunkCount:await countChunks(oldFence.chunkPrefix),
+                activePrefix:afterFence?.chunkPrefix || null,
+                hashStillMissing:!Array.isArray(afterFence?.chunkSha256),
+                safeMode:!!window.__rikuMutationSafeMode
+            };
+            return {success,readFailure,generation,fence};
+        }""");
+        self.assertEqual(result["success"]["capturedOldHashes"], [result["success"]["expectedHash"]], result)
+        self.assertEqual(result["success"]["oldChunkCount"], 0, result)
+        self.assertNotEqual(result["success"]["activePrefix"], result["success"]["oldPrefix"], result)
+        self.assertEqual(result["success"]["activeHashCount"], 1, result)
+
+        read_failure = result["readFailure"]
+        self.assertTrue(read_failure["readAbortInjected"], result)
+        self.assertTrue(read_failure["readError"], result)
+        self.assertGreater(read_failure["oldChunkCount"], 0, result)
+        self.assertEqual(read_failure["activePrefix"], read_failure["oldPrefix"], result)
+        self.assertTrue(read_failure["hashStillMissing"], result)
+
+        generation = result["generation"]
+        self.assertTrue(generation["generationChanged"], result)
+        self.assertTrue(generation["generationError"], result)
+        self.assertGreater(generation["oldChunkCount"], 0, result)
+        self.assertEqual(generation["activePrefix"], generation["oldPrefix"], result)
+        self.assertTrue(generation["hashStillMissing"], result)
+        self.assertTrue(generation["safeMode"], result)
+
+        fence = result["fence"]
+        self.assertTrue(fence["fenceChanged"], result)
+        self.assertTrue(fence["fenceError"], result)
+        self.assertGreater(fence["oldChunkCount"], 0, result)
+        self.assertEqual(fence["activePrefix"], fence["oldPrefix"], result)
+        self.assertTrue(fence["hashStillMissing"], result)
+        self.assertTrue(fence["safeMode"], result)
+
+        source = (ROOT / "index.html").read_text(encoding="utf-8")
+        helper_start = source.index("async function verifyChunkedVideoGeneration")
+        helper_end = source.index("async function storeClipVideo", helper_start)
+        helper = source[helper_start:helper_end]
+        self.assertIn("db.transaction(['videos','restoreLocks'],'readwrite')", helper)
+        self.assertIn("latestLock.ownerId!==ctx.ownerId", helper)
+        self.assertIn("Number(latestLock.fenceToken)!==Number(ctx.fenceToken)", helper)
+        self.assertIn("String(latestVideo.chunkPrefix||'')!==prefix", helper)
+        self.assertLess(
+            helper.index("crypto.subtle.digest('SHA-256',bytes)"),
+            helper.index("db.transaction(['videos','restoreLocks'],'readwrite')"),
+        )
 
 
 if __name__ == "__main__":
