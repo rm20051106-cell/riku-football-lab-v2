@@ -29,6 +29,8 @@ MAX_MATCH_SECONDS = int(os.getenv("MAX_MATCH_VIDEO_SECONDS", "1200"))
 MAX_MATCH_UPLOAD_MB = int(os.getenv("MAX_MATCH_UPLOAD_MB", "500"))
 MATCH_SAMPLE_RATE = float(os.getenv("MATCH_SAMPLE_RATE", "2.0"))
 MATCH_MAX_SAMPLES = int(os.getenv("MATCH_MAX_SAMPLES", "2400"))
+FORM_SAMPLE_RATE = 4.0
+FORM_MAX_SAMPLES = 240
 POSE_LANDMARKER_MODEL = os.getenv("POSE_LANDMARKER_MODEL", "/app/models/pose_landmarker_lite.task")
 match_jobs = {}
 MATCH_UPLOAD_CHUNK_BYTES = 12 * 1024 * 1024
@@ -1200,6 +1202,34 @@ def build_video_scan_quality(sampled_video_frames, pose_detected_frames):
     }
 
 
+
+def build_form_sampling_plan(fps):
+    """Build a bounded form-only sampling plan without exceeding source FPS."""
+    try:
+        source_rate = float(fps or 0)
+    except (TypeError, ValueError, OverflowError):
+        source_rate = 0.0
+    if not np.isfinite(source_rate) or source_rate <= 0:
+        effective_rate = 1.0
+        frame_interval = 1.0
+    else:
+        effective_rate = min(FORM_SAMPLE_RATE, source_rate)
+        frame_interval = source_rate / effective_rate
+    return {
+        "frame_interval": frame_interval,
+        "sampling_interval_seconds": 1.0 / effective_rate,
+        "sampling_rate_fps": effective_rate,
+        "sample_limit": FORM_MAX_SAMPLES,
+    }
+
+
+def advance_form_sampling_cursor(frame_index, next_sample_frame, frame_interval):
+    """Advance a fractional frame cursor to produce evenly spaced samples."""
+    if frame_index + 1e-9 < next_sample_frame:
+        return False, next_sample_frame
+    return True, next_sample_frame + frame_interval
+
+
 def process_video(path: str, mode: str, camera_angle: str = "未選択", progress_callback=None, jersey_numbers=None, preferred_foot: str = "right"):
     if mode == "match":
         return process_match_video(path, progress_callback=progress_callback, jersey_numbers=jersey_numbers)
@@ -1213,11 +1243,19 @@ def process_video(path: str, mode: str, camera_angle: str = "未選択", progres
     if duration > allowed_seconds:
         cap.release()
         raise HTTPException(status_code=413, detail=f"動画が長すぎます。{mode}解析は{allowed_seconds}秒以内にしてください。")
-    # Match mode scans the full match at a light sampling rate; form mode stays dense.
-    target_sample_rate = MATCH_SAMPLE_RATE if mode == "match" else 2.0
-    interval = max(1, int(round(fps / target_sample_rate))) if fps > 0 else max(1, int(round(1 / target_sample_rate)))
-    actual_interval = interval / fps if fps > 0 else 1 / target_sample_rate
-    max_samples = MATCH_MAX_SAMPLES if mode == "match" else 120
+    # Match scanning remains unchanged; form analysis uses a separate 4fps bounded plan.
+    if mode == "match":
+        target_sample_rate = MATCH_SAMPLE_RATE
+        interval = max(1, int(round(fps / target_sample_rate))) if fps > 0 else max(1, int(round(1 / target_sample_rate)))
+        actual_interval = interval / fps if fps > 0 else 1 / target_sample_rate
+        max_samples = MATCH_MAX_SAMPLES
+        next_form_sample_frame = None
+    else:
+        form_sampling_plan = build_form_sampling_plan(fps)
+        interval = form_sampling_plan["frame_interval"]
+        actual_interval = form_sampling_plan["sampling_interval_seconds"]
+        max_samples = form_sampling_plan["sample_limit"]
+        next_form_sample_frame = 0.0
     frames = []
     sampled_video_frames = 0
     pose_detected_frames = 0
@@ -1236,9 +1274,12 @@ def process_video(path: str, mode: str, camera_angle: str = "未選択", progres
                 ok, frame = cap.read()
                 current_frame_idx = frame_idx
                 frame_idx += 1
+                sample_due, next_form_sample_frame = advance_form_sampling_cursor(
+                    current_frame_idx, next_form_sample_frame, interval
+                )
             if not ok:
                 break
-            if mode == "match" or current_frame_idx % interval == 0:
+            if mode == "match" or sample_due:
                 sampled_video_frames += 1
                 h, w = frame.shape[:2]
                 if w > 960:

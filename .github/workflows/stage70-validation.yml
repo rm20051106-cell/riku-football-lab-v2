@@ -1,0 +1,27 @@
+name: Stage 70 high-frequency form sampling validation
+
+on:
+  push:
+    branches:
+      - feature/stage57-global-mutation-restore-journal-20261126
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stage70-form-sampling-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  stage70-form-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check Python syntax
+        run: python -m compileall -q backend tests
+      - name: Run Stage 70 form sampling regression tests
+        run: python -m unittest discover -s tests -p test_stage70_form_sampling.py -v
