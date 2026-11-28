@@ -6544,7 +6544,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     const journalReq = tx.objectStore('restoreJournal').getAll();
                     const lockReq = tx.objectStore('restoreLocks').get('global-mutation');
                     const chunkReq = tx.objectStore('videoChunks').count(
-                        IDBKeyRange.bound(key + '|', key + '|\\\\uffff')
+                        IDBKeyRange.bound(key + '|', key + '|\uffff')
                     );
                     const result = {};
                     journalReq.onsuccess = () => { result.journals = journalReq.result || []; };
@@ -6599,10 +6599,10 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     const recordReq = tx.objectStore('videos').get(key);
                     const journalsReq = tx.objectStore('restoreJournal').getAll();
                     const oldReq = tx.objectStore('videoChunks').count(
-                        IDBKeyRange.bound(oldPrefix, oldPrefix + '\\\\uffff')
+                        IDBKeyRange.bound(oldPrefix, oldPrefix + '\uffff')
                     );
                     const activeReq = tx.objectStore('videoChunks').count(
-                        IDBKeyRange.bound(activePrefix, activePrefix + '\\\\uffff')
+                        IDBKeyRange.bound(activePrefix, activePrefix + '\uffff')
                     );
                     const result = {};
                     recordReq.onsuccess = () => { result.record = recordReq.result || null; };
