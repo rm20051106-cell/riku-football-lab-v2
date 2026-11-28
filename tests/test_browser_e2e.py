@@ -4681,6 +4681,8 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 }); } finally { db.close(); }
             };
             const writeRecord = async (key, record) => {
+                const ctx = window.__rikuMutationContext;
+                if (ctx) ctx.videoMetadataWriteAuthorized = true;
                 const db = await openVideoDB();
                 try { await new Promise((resolve, reject) => {
                     const tx = db.transaction('videos', 'readwrite');
@@ -4688,7 +4690,10 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     tx.oncomplete = resolve;
                     tx.onerror = () => reject(tx.error);
                     tx.onabort = () => reject(tx.error);
-                }); } finally { db.close(); }
+                }); } finally {
+                    db.close();
+                    if (ctx) ctx.videoMetadataWriteAuthorized = false;
+                }
             };
             const makeLegacy = async (key, bytes) => {
                 await withGlobalMutationLock('storeClipVideo', async () => {
@@ -4781,7 +4786,8 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 hashStillMissing:!Array.isArray(afterGeneration?.chunkSha256),
                 safeMode:!!window.__rikuMutationSafeMode
             };
-            await writeRecord(generationKey, {...afterGeneration,name:oldGeneration.name});
+            // The fixture deliberately changed metadata; reset only the safety latch after assertions.
+            window.__rikuMutationSafeMode = false;
 
             const fenceKey = 'stage57-legacy-fence';
             const oldFence = await makeLegacy(fenceKey, makeBytes([41,42,43,44]));
