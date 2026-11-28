@@ -6435,7 +6435,6 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 await save(makeBlob(1_100_003, 31));
                 const before = await readRecord();
                 await save(makeBlob(2_200_019, 47));
-                const active = await readRecord();
 
                 const originalTransaction = IDBDatabase.prototype.transaction;
                 let cleanupAbortInjected = false;
@@ -6453,6 +6452,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 try { await save(makeBlob(2_300_027, 59)); }
                 catch (error) { replacementError = String(error?.name || error?.message || error); }
                 finally { IDBDatabase.prototype.transaction = originalTransaction; }
+                const active = await readRecord();
 
                 const db = await openVideoDB();
                 let journals;
