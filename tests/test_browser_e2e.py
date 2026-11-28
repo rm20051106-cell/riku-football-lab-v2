@@ -4695,6 +4695,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     await storeClipVideo(key, new Blob([bytes], {type:'video/mp4'}));
                 });
                 const record = await readRecord(key);
+                if (!record) throw new Error('legacy fixture seed did not persist a video record: ' + key);
                 const {chunkSha256, ...legacy} = record;
                 await withGlobalMutationLock('storeClipVideo', async ctx => {
                     ctx.videoMetadataWriteAuthorized = true;
