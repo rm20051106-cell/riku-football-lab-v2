@@ -5644,5 +5644,309 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertTrue(result["safeMode"], result)
 
 
+    def test_stage57_legacy_chunk_hash_migration_retries_after_transient_chunk_read_failure(self):
+        page = self.page
+        page.set_default_timeout(120000)
+        page.wait_for_function("typeof storeClipVideo === 'function'")
+        page.wait_for_function(
+            "window.__rikuMutationRecoveryReady && window.__rikuMutationRecoveryReady()",
+            timeout=15000,
+        )
+        result = page.evaluate("""async () => {
+            const key = 'stage57-legacy-read-retry';
+            const oldBytes = Uint8Array.from([61,62,63,64,65,66,67]);
+            const replacementBytes = Uint8Array.from([71,72,73,74,75]);
+            const readRecord = async () => {
+                const db = await openVideoDB();
+                try { return await new Promise((resolve, reject) => {
+                    const tx = db.transaction('videos', 'readonly');
+                    const req = tx.objectStore('videos').get(key);
+                    req.onsuccess = () => { tx.__record = req.result || null; };
+                    req.onerror = () => reject(req.error);
+                    tx.oncomplete = () => resolve(tx.__record);
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                }); } finally { db.close(); }
+            };
+            const countChunks = async prefix => {
+                const db = await openVideoDB();
+                try { return await new Promise((resolve, reject) => {
+                    const tx = db.transaction('videoChunks', 'readonly');
+                    const req = tx.objectStore('videoChunks').count(
+                        IDBKeyRange.bound(prefix, prefix + '\\uffff')
+                    );
+                    req.onsuccess = () => { tx.__count = req.result; };
+                    req.onerror = () => reject(req.error);
+                    tx.oncomplete = () => resolve(tx.__count);
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                }); } finally { db.close(); }
+            };
+            const readChunk = async prefix => {
+                const db = await openVideoDB();
+                try { return await new Promise((resolve, reject) => {
+                    const tx = db.transaction('videoChunks', 'readonly');
+                    const req = tx.objectStore('videoChunks').get(prefix + '00000000');
+                    req.onsuccess = () => { tx.__bytes = req.result ? Array.from(req.result) : null; };
+                    req.onerror = () => reject(req.error);
+                    tx.oncomplete = () => resolve(tx.__bytes);
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                }); } finally { db.close(); }
+            };
+            const writeRecord = async record => {
+                const ctx = window.__rikuMutationContext;
+                if (ctx) ctx.videoMetadataWriteAuthorized = true;
+                const db = await openVideoDB();
+                try { await new Promise((resolve, reject) => {
+                    const tx = db.transaction('videos', 'readwrite');
+                    tx.objectStore('videos').put(record, key);
+                    tx.oncomplete = resolve;
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                }); } finally {
+                    db.close();
+                    if (ctx) ctx.videoMetadataWriteAuthorized = false;
+                }
+            };
+            const save = bytes => withGlobalMutationLock('storeClipVideo', () =>
+                storeClipVideo(key, new Blob([bytes], {type:'video/mp4'}))
+            );
+            await save(oldBytes);
+            const seeded = await readRecord();
+            if (!seeded) throw new Error('legacy retry fixture did not persist its initial video');
+            const {chunkSha256, ...legacyRecord} = seeded;
+            await withGlobalMutationLock('storeClipVideo', async ctx => {
+                ctx.videoMetadataWriteAuthorized = true;
+                try { await writeRecord(legacyRecord); }
+                finally { ctx.videoMetadataWriteAuthorized = false; }
+            });
+            const legacyBefore = await readRecord();
+            const oldChunkBefore = await readChunk(seeded.chunkPrefix);
+            const oldCountBefore = await countChunks(seeded.chunkPrefix);
+
+            const originalGet = IDBObjectStore.prototype.get;
+            let readAbortInjected = false, firstError = null;
+            IDBObjectStore.prototype.get = function(primaryKey) {
+                const request = originalGet.call(this, primaryKey);
+                if (!readAbortInjected && this.name === 'videoChunks') {
+                    readAbortInjected = true;
+                    queueMicrotask(() => { try { request.transaction.abort(); } catch (_) {} });
+                }
+                return request;
+            };
+            try { await save(replacementBytes); }
+            catch (error) { firstError = String(error?.message || error); }
+            finally { IDBObjectStore.prototype.get = originalGet; }
+
+            const afterFailure = await readRecord();
+            const failureChunk = await readChunk(seeded.chunkPrefix);
+            const failure = {
+                readAbortInjected, firstError,
+                recordUnchanged: JSON.stringify(afterFailure) === JSON.stringify(legacyBefore),
+                oldChunkCount: await countChunks(seeded.chunkPrefix),
+                oldChunkBytesUnchanged: JSON.stringify(failureChunk) === JSON.stringify(oldChunkBefore),
+                hashPropertyAbsent: !Object.prototype.hasOwnProperty.call(afterFailure || {}, 'chunkSha256'),
+                safeMode: !!window.__rikuMutationSafeMode
+            };
+
+            const originalRecordChange = window.__rikuRecordVideoChange;
+            let migratedOldHashes = null;
+            window.__rikuRecordVideoChange = async change => {
+                if (change.key === key) migratedOldHashes = change.oldRecord?.chunkSha256 || null;
+                return originalRecordChange(change);
+            };
+            let retryError = null;
+            try { await save(replacementBytes); }
+            catch (error) { retryError = String(error?.message || error); }
+            finally { window.__rikuRecordVideoChange = originalRecordChange; }
+            const afterRetry = await readRecord();
+            const expectedDigest = await crypto.subtle.digest('SHA-256', oldBytes);
+            const expectedOldHash = [...new Uint8Array(expectedDigest)]
+                .map(value => value.toString(16).padStart(2, '0')).join('');
+            return {
+                failure, retryError, migratedOldHashes, expectedOldHash,
+                oldCountBefore,
+                oldCountAfter: await countChunks(seeded.chunkPrefix),
+                oldPrefixBefore: seeded.chunkPrefix,
+                activePrefixAfter: afterRetry?.chunkPrefix || null,
+                activeHashCount: afterRetry?.chunkSha256?.length || 0,
+                activeSize: afterRetry?.size || 0
+            };
+        }""")
+        failure = result["failure"]
+        self.assertTrue(failure["readAbortInjected"], result)
+        self.assertTrue(failure["firstError"], result)
+        self.assertTrue(failure["recordUnchanged"], result)
+        self.assertGreater(failure["oldChunkCount"], 0, result)
+        self.assertTrue(failure["oldChunkBytesUnchanged"], result)
+        self.assertTrue(failure["hashPropertyAbsent"], result)
+        self.assertFalse(failure["safeMode"], result)
+        self.assertIsNone(result["retryError"], result)
+        self.assertEqual(result["migratedOldHashes"], [result["expectedOldHash"]], result)
+        self.assertEqual(result["oldCountBefore"], 1, result)
+        self.assertEqual(result["oldCountAfter"], 0, result)
+        self.assertNotEqual(result["activePrefixAfter"], result["oldPrefixBefore"], result)
+        self.assertEqual(result["activeHashCount"], 1, result)
+        self.assertEqual(result["activeSize"], 5, result)
+
+
+    def test_stage57_legacy_chunk_hash_migration_two_tab_conflict_preserves_then_retries(self):
+        page = self.page
+        page.set_default_timeout(120000)
+        second = page.context.new_page()
+        try:
+            second.goto(self.base_url, wait_until="load")
+            page.wait_for_function("typeof storeClipVideo === 'function'")
+            page.wait_for_function(
+                "window.__rikuMutationRecoveryReady && window.__rikuMutationRecoveryReady()",
+                timeout=15000,
+            )
+            second.wait_for_function(
+                "window.__rikuMutationRecoveryReady && window.__rikuMutationRecoveryReady()",
+                timeout=15000,
+            )
+            seeded = page.evaluate("""async () => {
+                const key = 'stage57-legacy-two-tab-migration';
+                const oldBytes = new Uint8Array(1024 * 1024 + 17).fill(81);
+                const readRecord = async () => {
+                    const db = await openVideoDB();
+                    try { return await new Promise((resolve, reject) => {
+                        const tx = db.transaction('videos', 'readonly');
+                        const req = tx.objectStore('videos').get(key);
+                        req.onsuccess = () => { tx.__record = req.result || null; };
+                        req.onerror = () => reject(req.error);
+                        tx.oncomplete = () => resolve(tx.__record);
+                        tx.onerror = () => reject(tx.error);
+                        tx.onabort = () => reject(tx.error);
+                    }); } finally { db.close(); }
+                };
+                const writeRecord = async record => {
+                    const ctx = window.__rikuMutationContext;
+                    if (ctx) ctx.videoMetadataWriteAuthorized = true;
+                    const db = await openVideoDB();
+                    try { await new Promise((resolve, reject) => {
+                        const tx = db.transaction('videos', 'readwrite');
+                        tx.objectStore('videos').put(record, key);
+                        tx.oncomplete = resolve;
+                        tx.onerror = () => reject(tx.error);
+                        tx.onabort = () => reject(tx.error);
+                    }); } finally {
+                        db.close();
+                        if (ctx) ctx.videoMetadataWriteAuthorized = false;
+                    }
+                };
+                await withGlobalMutationLock('storeClipVideo', () =>
+                    storeClipVideo(key, new Blob([oldBytes], {type:'video/mp4'}))
+                );
+                const record = await readRecord();
+                if (!record) throw new Error('two-tab legacy fixture did not persist its video');
+                const {chunkSha256, ...legacy} = record;
+                await withGlobalMutationLock('storeClipVideo', async ctx => {
+                    ctx.videoMetadataWriteAuthorized = true;
+                    try { await writeRecord(legacy); }
+                    finally { ctx.videoMetadataWriteAuthorized = false; }
+                });
+                return {key, prefix:record.chunkPrefix, count:record.chunkCount};
+            }""")
+            page.evaluate("""() => {
+                window.__stage57MigrationLockEntered = false;
+                window.__stage57MigrationLockPromise = withGlobalMutationLock(
+                    'stage57-migration-hold',
+                    async () => {
+                        window.__stage57MigrationLockEntered = true;
+                        await new Promise(resolve => { window.__releaseStage57MigrationLock = resolve; });
+                    }
+                );
+            }""")
+            page.wait_for_function("window.__stage57MigrationLockEntered === true")
+            second.evaluate("""key => {
+                window.__stage57ConflictFinished = false;
+                window.__stage57ConflictError = null;
+                window.__stage57ConflictPromise = withGlobalMutationLock(
+                    'storeClipVideo',
+                    () => storeClipVideo(key, new Blob([Uint8Array.from([91,92,93,94])], {type:'video/mp4'}))
+                ).then(() => { window.__stage57ConflictFinished = true; })
+                 .catch(error => { window.__stage57ConflictError = String(error?.message || error); });
+            }""", seeded["key"])
+            second.wait_for_function("!!window.__stage57ConflictError || window.__stage57ConflictFinished")
+            self.assertFalse(second.evaluate("window.__stage57ConflictFinished"))
+            self.assertIn("別のタブで保存処理中", second.evaluate("window.__stage57ConflictError"))
+
+            unchanged = page.evaluate("""async ({key, prefix}) => {
+                const db = await openVideoDB();
+                try { return await new Promise((resolve, reject) => {
+                    const tx = db.transaction(['videos','videoChunks'], 'readonly');
+                    const recordReq = tx.objectStore('videos').get(key);
+                    const chunkReq = tx.objectStore('videoChunks').get(prefix + '00000000');
+                    const result = {};
+                    recordReq.onsuccess = () => { result.record = recordReq.result || null; };
+                    chunkReq.onsuccess = () => { result.chunk = chunkReq.result ? Array.from(chunkReq.result) : null; };
+                    tx.oncomplete = () => resolve(result);
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                }); } finally { db.close(); }
+            }""", seeded)
+            self.assertEqual(unchanged["record"]["chunkPrefix"], seeded["prefix"])
+            self.assertNotIn("chunkSha256", unchanged["record"])
+            self.assertEqual(len(unchanged["chunk"]), 1024 * 1024)
+            self.assertEqual(unchanged["chunk"][0], 81)
+            self.assertEqual(unchanged["chunk"][-1], 81)
+
+            page.evaluate("window.__releaseStage57MigrationLock()")
+            page.evaluate("window.__stage57MigrationLockPromise")
+            second.evaluate("""key => {
+                window.__stage57ConflictError = null;
+                window.__stage57ConflictFinished = false;
+                window.__stage57RetryHashes = null;
+                const original = window.__rikuRecordVideoChange;
+                window.__rikuRecordVideoChange = async change => {
+                    if (change.key === key) window.__stage57RetryHashes = change.oldRecord?.chunkSha256 || null;
+                    return original(change);
+                };
+                window.__stage57RetryPromise = withGlobalMutationLock(
+                    'storeClipVideo',
+                    () => storeClipVideo(key, new Blob([Uint8Array.from([91,92,93,94])], {type:'video/mp4'}))
+                ).then(() => { window.__stage57ConflictFinished = true; })
+                 .catch(error => { window.__stage57ConflictError = String(error?.message || error); });
+            }""", seeded["key"])
+            second.wait_for_function(
+                "window.__stage57ConflictFinished || !!window.__stage57ConflictError",
+                timeout=30000,
+            )
+            self.assertTrue(
+                second.evaluate("window.__stage57ConflictFinished"),
+                second.evaluate("window.__stage57ConflictError || null") or "two-tab migration retry timed out",
+            )
+            after = second.evaluate("""async key => {
+                const db = await openVideoDB();
+                try { return await new Promise((resolve, reject) => {
+                    const tx = db.transaction(['videos','videoChunks'], 'readonly');
+                    const req = tx.objectStore('videos').get(key);
+                    req.onsuccess = () => { tx.__record = req.result || null; };
+                    tx.oncomplete = () => resolve(tx.__record);
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                }); } finally { db.close(); }
+            }""", seeded["key"])
+            expected = page.evaluate("""async () => {
+                const bytes = new Uint8Array(1024 * 1024 + 17).fill(81);
+                const digest = await crypto.subtle.digest('SHA-256', bytes);
+                return [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2,'0')).join('');
+            }""")
+            retry_hashes = second.evaluate("window.__stage57RetryHashes")
+            self.assertEqual(retry_hashes, [expected], retry_hashes)
+            self.assertNotEqual(after["chunkPrefix"], seeded["prefix"])
+            self.assertEqual(after["size"], 4)
+            self.assertEqual(len(after["chunkSha256"]), 1)
+        finally:
+            try:
+                page.evaluate("window.__releaseStage57MigrationLock && window.__releaseStage57MigrationLock()")
+                page.evaluate("window.__stage57MigrationLockPromise")
+            except Exception:
+                pass
+            second.close()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
