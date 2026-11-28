@@ -399,7 +399,9 @@ async function verifyChunkedVideoGeneration(record,database,key){
       return;
      }
      verifiedRecord={...latestVideo,chunkSha256:hashes};
-     tx.objectStore('videos').put(verifiedRecord,videoKey);
+     ctx.videoMetadataWriteAuthorized=true;
+     try{tx.objectStore('videos').put(verifiedRecord,videoKey)}
+     finally{ctx.videoMetadataWriteAuthorized=false}
     }catch(error){
      abort('旧動画SHA256移行の更新処理で例外が発生しました: '+String(error?.message||error));
     }};
