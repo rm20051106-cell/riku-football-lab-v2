@@ -3422,7 +3422,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 };
                 await save([31,32,33,34]);
                 const old = await readRecord();
-                await withGlobalMutationLock('stage57-make-legacy-v1-fixture', async ctx => {
+                await withGlobalMutationLock('storeClipVideo', async ctx => {
                     const db = await openVideoDB();
                     try {
                         const record = await readRecord();
@@ -4691,12 +4691,12 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 }); } finally { db.close(); }
             };
             const makeLegacy = async (key, bytes) => {
-                await withGlobalMutationLock('stage57-seed-legacy', async () => {
+                await withGlobalMutationLock('storeClipVideo', async () => {
                     await storeClipVideo(key, new Blob([bytes], {type:'video/mp4'}));
                 });
                 const record = await readRecord(key);
                 const {chunkSha256, ...legacy} = record;
-                await withGlobalMutationLock('stage57-remove-legacy-hash', async ctx => {
+                await withGlobalMutationLock('storeClipVideo', async ctx => {
                     ctx.videoMetadataWriteAuthorized = true;
                     try { await writeRecord(key, legacy); }
                     finally { ctx.videoMetadataWriteAuthorized = false; }
