@@ -25,3 +25,13 @@ jobs:
         run: python -m compileall -q backend tests
       - name: Run Stage 70 form sampling regression tests
         run: python -m unittest discover -s tests -p test_stage70_form_sampling.py -v
+      - name: Run backend form analysis contract tests
+        run: python -m unittest discover -s tests -p test_backend_video_form_contracts.py -v
+      - name: Run Stage 52 kick peak support tests
+        run: python -m unittest discover -s tests -p test_stage52_kick_peak_support.py -v
+      - name: Run Stage 53 kick sample validation tests
+        run: python -m unittest discover -s tests -p test_stage53_kick_sample_validation.py -v
+      - name: Run Stage 55 form evidence quality tests
+        run: python -m unittest discover -s tests -p test_stage55_form_evidence_quality.py -v
+      - name: Run Stage 60 adjacent sample timing tests
+        run: python -m unittest discover -s tests -p test_stage60_adjacent_sample_timing.py -v
