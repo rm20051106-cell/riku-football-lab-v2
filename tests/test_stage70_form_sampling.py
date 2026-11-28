@@ -144,5 +144,23 @@ class Stage70FormSamplingTests(unittest.TestCase):
         self.assertNotIn("impact_time_seconds", result)
 
 
+    def test_4fps_candidate_time_is_observed_sample_time_not_interpolated_event_time(self):
+        build = self.load_kick_phase_builder()
+        frames = self.kick_frames([0.1, 0.4, 1.0, 0.2, 0.1])
+        result = build(frames, 0.25, "right")
+        candidate = result["preferred_foot_peak_candidate"]
+        phases = {phase["key"]: phase for phase in result["phases"]}
+
+        # The timestamp identifies the sampled frame carrying the peak, not
+        # an inferred continuous-time peak or a ball-contact instant.
+        self.assertEqual(candidate["frame_index"], 2)
+        self.assertEqual(candidate["time_seconds"], frames[2]["time_seconds"])
+        self.assertEqual(candidate["time_seconds"], 0.5)
+        self.assertEqual(phases["swing"]["status"], "candidate_only")
+        self.assertEqual(phases["swing"]["time_source"], "preferred_foot_peak")
+        self.assertEqual(phases["impact"]["status"], "manual_review_required")
+        self.assertIsNone(phases["impact"]["time_seconds"])
+
+
 if __name__ == "__main__":
     unittest.main()
