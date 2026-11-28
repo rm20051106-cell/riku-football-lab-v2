@@ -6433,8 +6433,8 @@ class RikuBrowserE2ETests(unittest.TestCase):
                     storeClipVideo(key, blob)
                 );
                 await save(makeBlob(1_100_003, 31));
-                const before = await readRecord();
                 await save(makeBlob(2_200_019, 47));
+                const before = await readRecord();
 
                 const originalTransaction = IDBDatabase.prototype.transaction;
                 let cleanupAbortInjected = false;
