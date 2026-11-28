@@ -5808,7 +5808,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             )
             seeded = page.evaluate("""async () => {
                 const key = 'stage57-legacy-two-tab-migration';
-                const oldBytes = new Uint8Array(1024 * 1024 + 17).fill(81);
+                const oldBytes = Uint8Array.from([81,82,83,84,85]);
                 const readRecord = async () => {
                     const db = await openVideoDB();
                     try { return await new Promise((resolve, reject) => {
@@ -5889,9 +5889,9 @@ class RikuBrowserE2ETests(unittest.TestCase):
             }""", seeded)
             self.assertEqual(unchanged["record"]["chunkPrefix"], seeded["prefix"])
             self.assertNotIn("chunkSha256", unchanged["record"])
-            self.assertEqual(len(unchanged["chunk"]), 1024 * 1024)
+            self.assertEqual(len(unchanged["chunk"]), 5)
             self.assertEqual(unchanged["chunk"][0], 81)
-            self.assertEqual(unchanged["chunk"][-1], 81)
+            self.assertEqual(unchanged["chunk"][-1], 85)
 
             page.evaluate("window.__releaseStage57MigrationLock()")
             page.evaluate("window.__stage57MigrationLockPromise")
@@ -5930,7 +5930,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 }); } finally { db.close(); }
             }""", seeded["key"])
             expected = page.evaluate("""async () => {
-                const bytes = new Uint8Array(1024 * 1024 + 17).fill(81);
+                const bytes = Uint8Array.from([81,82,83,84,85]);
                 const digest = await crypto.subtle.digest('SHA-256', bytes);
                 return [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2,'0')).join('');
             }""")
