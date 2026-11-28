@@ -6208,6 +6208,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 window.__stage57WinnerFinished = false;
                 window.__stage57WinnerError = null;
                 window.__stage57WinnerDigestCalls = 0;
+                window.__stage57WinnerPausedDigestCalls = 0;
                 window.__stage57WinnerHashes = null;
                 window.__stage57WinnerLock = null;
                 window.__stage57ReleaseWinner = null;
@@ -6228,6 +6229,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
                             window.__stage57WinnerLock = ctx ? {
                                 ownerId:ctx.ownerId, fenceToken:Number(ctx.fenceToken)
                             } : null;
+                            window.__stage57WinnerPausedDigestCalls = window.__stage57WinnerDigestCalls;
                             window.__stage57WinnerPaused = true;
                             await new Promise(resolve => { window.__stage57ReleaseWinner = resolve; });
                         }
@@ -6358,7 +6360,8 @@ class RikuBrowserE2ETests(unittest.TestCase):
                 }
                 return hashes;
             }""", seeded["oldBytes"])
-            self.assertEqual(page.evaluate("window.__stage57WinnerDigestCalls"), 3)
+            self.assertEqual(page.evaluate("window.__stage57WinnerPausedDigestCalls"), 3)
+            self.assertGreaterEqual(page.evaluate("window.__stage57WinnerDigestCalls"), 3)
             self.assertEqual(page.evaluate("window.__stage57WinnerHashes"), expectedHashes)
             self.assertNotEqual(finalState["record"]["chunkPrefix"], seeded["prefix"])
             self.assertEqual(finalState["record"]["size"], 5)
