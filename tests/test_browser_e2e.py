@@ -4786,7 +4786,7 @@ class RikuBrowserE2ETests(unittest.TestCase):
             const fenceKey = 'stage57-legacy-fence';
             const oldFence = await makeLegacy(fenceKey, makeBytes([41,42,43,44]));
             let fenceChanged = false, fenceError = null;
-            await withGlobalMutationLock('stage57-legacy-fence-check', async ctx => {
+            await withGlobalMutationLock('storeClipVideo', async ctx => {
                 const originalDigestFence = crypto.subtle.digest.bind(crypto.subtle);
                 Object.defineProperty(crypto.subtle, 'digest', {
                     configurable:true,
