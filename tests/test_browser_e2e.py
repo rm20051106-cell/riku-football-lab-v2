@@ -4762,12 +4762,13 @@ class RikuBrowserE2ETests(unittest.TestCase):
             const generationKey = 'stage57-legacy-generation';
             const oldGeneration = await makeLegacy(generationKey, makeBytes([31,32,33,34]));
             const originalDigestMethod = crypto.subtle.digest.bind(crypto.subtle);
-            let generationChanged = false, generationError = null;
+            let generationChanged = false, generationError = null, generationDigestCalls = 0;
             Object.defineProperty(crypto.subtle, 'digest', {
                 configurable:true,
                 value:async (...args) => {
                     const digest = await originalDigestMethod(...args);
-                    if (!generationChanged) {
+                    generationDigestCalls++;
+                    if (!generationChanged && generationDigestCalls === 2) {
                         generationChanged = true;
                         const latest = await readRecord(generationKey);
                         await writeRecord(generationKey, {...latest,name:'generation-tampered'});
