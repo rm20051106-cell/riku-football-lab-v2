@@ -369,7 +369,7 @@ async function verifyChunkedVideoGeneration(record,database,key){
      window.__rikuMutationSafeMode=true;
      try{tx.abort()}catch(_){}
     };
-    const ready=()=>{
+    const ready=()=>{try{
      remaining--;
      if(remaining!==0)return;
      if(!latestLock||latestLock.ownerId!==ctx.ownerId||
