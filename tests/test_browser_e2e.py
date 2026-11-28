@@ -5948,5 +5948,205 @@ class RikuBrowserE2ETests(unittest.TestCase):
             second.close()
 
 
+    def test_stage57_legacy_multichunk_migration_success_and_second_chunk_retry(self):
+        page = self.page
+        page.set_default_timeout(120000)
+        page.wait_for_function("typeof storeClipVideo === 'function'")
+        page.wait_for_function(
+            "window.__rikuMutationRecoveryReady && window.__rikuMutationRecoveryReady()",
+            timeout=15000,
+        )
+        result = page.evaluate("""async () => {
+            const chunkSize = 1024 * 1024;
+            const makeLegacy = async (key, bytes) => {
+                const save = data => withGlobalMutationLock('storeClipVideo', () =>
+                    storeClipVideo(key, new Blob([data], {type:'video/mp4'}))
+                );
+                await save(bytes);
+                const db = await openVideoDB();
+                let record;
+                try { record = await new Promise((resolve, reject) => {
+                    const tx = db.transaction('videos', 'readonly');
+                    const req = tx.objectStore('videos').get(key);
+                    req.onsuccess = () => { tx.__record = req.result || null; };
+                    req.onerror = () => reject(req.error);
+                    tx.oncomplete = () => resolve(tx.__record);
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                }); } finally { db.close(); }
+                if (!record) throw new Error('multichunk legacy fixture did not persist');
+                const {chunkSha256, ...legacy} = record;
+                await withGlobalMutationLock('storeClipVideo', async ctx => {
+                    ctx.videoMetadataWriteAuthorized = true;
+                    const legacyDb = await openVideoDB();
+                    try { await new Promise((resolve, reject) => {
+                        const tx = legacyDb.transaction('videos', 'readwrite');
+                        tx.objectStore('videos').put(legacy, key);
+                        tx.oncomplete = resolve;
+                        tx.onerror = () => reject(tx.error);
+                        tx.onabort = () => reject(tx.error);
+                    }); } finally {
+                        legacyDb.close();
+                        ctx.videoMetadataWriteAuthorized = false;
+                    }
+                });
+                return record;
+            };
+            const readRecord = async key => {
+                const db = await openVideoDB();
+                try { return await new Promise((resolve, reject) => {
+                    const tx = db.transaction('videos', 'readonly');
+                    const req = tx.objectStore('videos').get(key);
+                    req.onsuccess = () => { tx.__record = req.result || null; };
+                    req.onerror = () => reject(req.error);
+                    tx.oncomplete = () => resolve(tx.__record);
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                }); } finally { db.close(); }
+            };
+            const readChunks = async prefix => {
+                const db = await openVideoDB();
+                try { return await new Promise((resolve, reject) => {
+                    const tx = db.transaction('videoChunks', 'readonly');
+                    const req = tx.objectStore('videoChunks').getAll(
+                        IDBKeyRange.bound(prefix, prefix + '\\uffff')
+                    );
+                    req.onsuccess = () => {
+                        tx.__chunks = req.result.map(value => Array.from(value));
+                    };
+                    req.onerror = () => reject(req.error);
+                    tx.oncomplete = () => resolve(tx.__chunks);
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                }); } finally { db.close(); }
+            };
+            const countChunks = async prefix => {
+                const db = await openVideoDB();
+                try { return await new Promise((resolve, reject) => {
+                    const tx = db.transaction('videoChunks', 'readonly');
+                    const req = tx.objectStore('videoChunks').count(
+                        IDBKeyRange.bound(prefix, prefix + '\\uffff')
+                    );
+                    req.onsuccess = () => { tx.__count = req.result; };
+                    req.onerror = () => reject(req.error);
+                    tx.oncomplete = () => resolve(tx.__count);
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                }); } finally { db.close(); }
+            };
+            const expectedHashes = async bytes => {
+                const hashes = [];
+                for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+                    const digest = await crypto.subtle.digest(
+                        'SHA-256', bytes.slice(offset, Math.min(bytes.length, offset + chunkSize))
+                    );
+                    hashes.push([...new Uint8Array(digest)].map(v => v.toString(16).padStart(2, '0')).join(''));
+                }
+                return hashes;
+            };
+            const save = (key, bytes) => withGlobalMutationLock('storeClipVideo', () =>
+                storeClipVideo(key, new Blob([bytes], {type:'video/mp4'}))
+            );
+            const oldBytes = new Uint8Array(chunkSize + 17).fill(57);
+            const replacement = Uint8Array.from([91,92,93,94,95]);
+
+            const successKey = 'stage57-legacy-multichunk-success';
+            const oldSuccess = await makeLegacy(successKey, oldBytes);
+            const successChunksBefore = await readChunks(oldSuccess.chunkPrefix);
+            let successMigratedHashes = null;
+            const originalRecordChange = window.__rikuRecordVideoChange;
+            window.__rikuRecordVideoChange = async change => {
+                if (change.key === successKey) successMigratedHashes = change.oldRecord?.chunkSha256 || null;
+                return originalRecordChange(change);
+            };
+            await save(successKey, replacement);
+            window.__rikuRecordVideoChange = originalRecordChange;
+            const successCurrent = await readRecord(successKey);
+            const success = {
+                expectedHashes: await expectedHashes(oldBytes),
+                migratedHashes: successMigratedHashes,
+                oldChunkCountBefore: successChunksBefore.length,
+                oldChunkCountAfter: await countChunks(oldSuccess.chunkPrefix),
+                activePrefixChanged: successCurrent?.chunkPrefix !== oldSuccess.chunkPrefix,
+                activeHashCount: successCurrent?.chunkSha256?.length || 0
+            };
+
+            const retryKey = 'stage57-legacy-multichunk-second-read-retry';
+            const oldRetry = await makeLegacy(retryKey, oldBytes);
+            const retryRecordBefore = await readRecord(retryKey);
+            const retryChunksBefore = await readChunks(oldRetry.chunkPrefix);
+            const originalGet = IDBObjectStore.prototype.get;
+            let secondChunkAbortInjected = false, firstError = null;
+            IDBObjectStore.prototype.get = function(primaryKey) {
+                const request = originalGet.call(this, primaryKey);
+                if (!secondChunkAbortInjected &&
+                    this.name === 'videoChunks' &&
+                    primaryKey === oldRetry.chunkPrefix + '00000001') {
+                    secondChunkAbortInjected = true;
+                    queueMicrotask(() => { try { request.transaction.abort(); } catch (_) {} });
+                }
+                return request;
+            };
+            try { await save(retryKey, replacement); }
+            catch (error) { firstError = String(error?.message || error); }
+            finally { IDBObjectStore.prototype.get = originalGet; }
+            const retryAfterFailure = await readRecord(retryKey);
+            const retryChunksAfterFailure = await readChunks(oldRetry.chunkPrefix);
+            const failure = {
+                secondChunkAbortInjected,
+                firstError,
+                recordUnchanged: JSON.stringify(retryAfterFailure) === JSON.stringify(retryRecordBefore),
+                chunkCountBefore: retryChunksBefore.length,
+                chunkCountAfter: retryChunksAfterFailure.length,
+                allChunkBytesUnchanged: JSON.stringify(retryChunksAfterFailure) === JSON.stringify(retryChunksBefore),
+                hashPropertyAbsent: !Object.prototype.hasOwnProperty.call(retryAfterFailure || {}, 'chunkSha256'),
+                safeMode: !!window.__rikuMutationSafeMode
+            };
+
+            let retryMigratedHashes = null, retryError = null;
+            window.__rikuRecordVideoChange = async change => {
+                if (change.key === retryKey) retryMigratedHashes = change.oldRecord?.chunkSha256 || null;
+                return originalRecordChange(change);
+            };
+            try { await save(retryKey, replacement); }
+            catch (error) { retryError = String(error?.message || error); }
+            finally { window.__rikuRecordVideoChange = originalRecordChange; }
+            const retryCurrent = await readRecord(retryKey);
+            const retry = {
+                expectedHashes: await expectedHashes(oldBytes),
+                migratedHashes: retryMigratedHashes,
+                oldChunkCountAfter: await countChunks(oldRetry.chunkPrefix),
+                activePrefixChanged: retryCurrent?.chunkPrefix !== oldRetry.chunkPrefix,
+                activeHashCount: retryCurrent?.chunkSha256?.length || 0,
+                activeSize: retryCurrent?.size || 0
+            };
+            return {success, failure, retryError, retry};
+        }""")
+        success = result["success"]
+        self.assertEqual(success["oldChunkCountBefore"], 2, result)
+        self.assertEqual(success["migratedHashes"], success["expectedHashes"], result)
+        self.assertEqual(success["oldChunkCountAfter"], 0, result)
+        self.assertTrue(success["activePrefixChanged"], result)
+        self.assertEqual(success["activeHashCount"], 1, result)
+
+        failure = result["failure"]
+        self.assertTrue(failure["secondChunkAbortInjected"], result)
+        self.assertTrue(failure["firstError"], result)
+        self.assertTrue(failure["recordUnchanged"], result)
+        self.assertEqual(failure["chunkCountBefore"], 2, result)
+        self.assertEqual(failure["chunkCountAfter"], 2, result)
+        self.assertTrue(failure["allChunkBytesUnchanged"], result)
+        self.assertTrue(failure["hashPropertyAbsent"], result)
+        self.assertFalse(failure["safeMode"], result)
+
+        retry = result["retry"]
+        self.assertIsNone(result["retryError"], result)
+        self.assertEqual(retry["migratedHashes"], retry["expectedHashes"], result)
+        self.assertEqual(retry["oldChunkCountAfter"], 0, result)
+        self.assertTrue(retry["activePrefixChanged"], result)
+        self.assertEqual(retry["activeHashCount"], 1, result)
+        self.assertEqual(retry["activeSize"], 5, result)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
