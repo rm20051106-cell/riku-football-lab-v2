@@ -6379,5 +6379,263 @@ class RikuBrowserE2ETests(unittest.TestCase):
             second.close()
 
 
+    def test_stage57_two_tabs_serialize_startup_recovery_rebind_fence_and_cleanup_once(self):
+        page = self.page
+        page.set_default_timeout(90000)
+        second = page.context.new_page()
+        try:
+            second.goto(self.base_url, wait_until="load")
+            for tab in (page, second):
+                tab.wait_for_function(
+                    "window.__rikuMutationRecoveryReady && window.__rikuMutationRecoveryReady()",
+                    timeout=15000,
+                )
+
+            fixture = page.evaluate("""async () => {
+                const key = 'stage57-two-tab-startup-recovery';
+                const chunkSize = 1024 * 1024;
+                const makeBlob = (size, seed) => {
+                    const parts = [];
+                    for (let offset = 0, index = 0; offset < size; offset += chunkSize, index++) {
+                        const bytes = new Uint8Array(Math.min(chunkSize, size - offset));
+                        bytes.fill((seed + index * 23) & 255);
+                        parts.push(bytes);
+                    }
+                    return new Blob(parts, {type:'video/mp4'});
+                };
+                const readRecord = async () => {
+                    const db = await openVideoDB();
+                    try { return await new Promise((resolve, reject) => {
+                        const tx = db.transaction('videos', 'readonly');
+                        const req = tx.objectStore('videos').get(key);
+                        req.onsuccess = () => { tx.__record = req.result || null; };
+                        req.onerror = () => reject(req.error);
+                        tx.oncomplete = () => resolve(tx.__record);
+                        tx.onerror = () => reject(tx.error);
+                        tx.onabort = () => reject(tx.error);
+                    }); } finally { db.close(); }
+                };
+                const countPrefix = async prefix => {
+                    const db = await openVideoDB();
+                    try { return await new Promise((resolve, reject) => {
+                        const tx = db.transaction('videoChunks', 'readonly');
+                        const req = tx.objectStore('videoChunks').count(
+                            IDBKeyRange.bound(prefix, prefix + '\\\\uffff')
+                        );
+                        req.onsuccess = () => { tx.__count = req.result; };
+                        req.onerror = () => reject(req.error);
+                        tx.oncomplete = () => resolve(tx.__count);
+                        tx.onerror = () => reject(tx.error);
+                        tx.onabort = () => reject(tx.error);
+                    }); } finally { db.close(); }
+                };
+                const save = blob => withGlobalMutationLock('storeClipVideo', () =>
+                    storeClipVideo(key, blob)
+                );
+                await save(makeBlob(1_100_003, 31));
+                const before = await readRecord();
+                await save(makeBlob(2_200_019, 47));
+                const active = await readRecord();
+
+                const originalTransaction = IDBDatabase.prototype.transaction;
+                let cleanupAbortInjected = false;
+                IDBDatabase.prototype.transaction = function(stores, mode, ...args) {
+                    const names = Array.isArray(stores) ? stores : [stores];
+                    const tx = originalTransaction.call(this, stores, mode, ...args);
+                    if (!cleanupAbortInjected && mode === 'readwrite' &&
+                        ['videos','videoChunks','restoreJournal','restoreLocks'].every(name => names.includes(name))) {
+                        cleanupAbortInjected = true;
+                        queueMicrotask(() => { try { tx.abort(); } catch (_) {} });
+                    }
+                    return tx;
+                };
+                let replacementError = null;
+                try { await save(makeBlob(2_300_027, 59)); }
+                catch (error) { replacementError = String(error?.name || error?.message || error); }
+                finally { IDBDatabase.prototype.transaction = originalTransaction; }
+
+                const db = await openVideoDB();
+                let journals;
+                try { journals = await new Promise((resolve, reject) => {
+                    const tx = db.transaction('restoreJournal', 'readonly');
+                    const req = tx.objectStore('restoreJournal').getAll();
+                    req.onsuccess = () => { tx.__rows = req.result || []; };
+                    req.onerror = () => reject(req.error);
+                    tx.oncomplete = () => resolve(tx.__rows);
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                }); } finally { db.close(); }
+                return {
+                    key,
+                    oldPrefix:before.chunkPrefix,
+                    activePrefix:active.chunkPrefix,
+                    activeRecordPrefix:(await readRecord())?.chunkPrefix || null,
+                    oldChunkCount:await countPrefix(before.chunkPrefix),
+                    cleanupAbortInjected,
+                    replacementError,
+                    journalCount:journals.length,
+                    journalState:journals[0]?.state || null,
+                    originalJournalOwner:journals[0]?.ownerId || null,
+                    originalJournalFence:Number(journals[0]?.fenceToken || 0),
+                    originalJournalChecksum:journals[0]?.journalChecksum || null
+                };
+            }""")
+            self.assertTrue(fixture["cleanupAbortInjected"], fixture)
+            self.assertTrue(fixture["replacementError"], fixture)
+            self.assertNotEqual(fixture["activePrefix"], fixture["oldPrefix"], fixture)
+            self.assertEqual(fixture["activeRecordPrefix"], fixture["activePrefix"], fixture)
+            self.assertGreater(fixture["oldChunkCount"], 0, fixture)
+            self.assertEqual(fixture["journalCount"], 1, fixture)
+            self.assertEqual(fixture["journalState"], "committed", fixture)
+            self.assertTrue(fixture["originalJournalOwner"], fixture)
+            self.assertGreater(fixture["originalJournalFence"], 0, fixture)
+            self.assertTrue(fixture["originalJournalChecksum"], fixture)
+
+            init_script = r"""(() => {
+                window.__stage57RecoveryFenceWrites = [];
+                const originalPut = IDBObjectStore.prototype.put;
+                IDBObjectStore.prototype.put = function(value, ...args) {
+                    if (this.name === 'restoreLocks' && value && value.ownerId) {
+                        window.__stage57RecoveryFenceWrites.push({
+                            ownerId:String(value.ownerId),
+                            fenceToken:Number(value.fenceToken),
+                            operationId:value.operationId || null
+                        });
+                    }
+                    return originalPut.call(this, value, ...args);
+                };
+                const originalDigest = crypto.subtle.digest.bind(crypto.subtle);
+                const descriptor = Object.getOwnPropertyDescriptor(crypto.subtle, 'digest');
+                Object.defineProperty(crypto.subtle, 'digest', {
+                    configurable:true,
+                    value:async (...args) => {
+                        const result = await originalDigest(...args);
+                        if (localStorage.getItem('stage57-recovery-digest-pause') === 'yes' &&
+                            !window.__stage57RecoveryDigestPaused) {
+                            window.__stage57RecoveryDigestPaused = true;
+                            await new Promise(resolve => {
+                                window.__stage57ReleaseRecoveryDigest = resolve;
+                            });
+                        }
+                        return result;
+                    }
+                });
+                window.__stage57RestoreDigest = () => {
+                    if (descriptor) Object.defineProperty(crypto.subtle, 'digest', descriptor);
+                    else delete crypto.subtle.digest;
+                };
+            })();"""
+            await page.add_init_script(init_script)
+            await second.add_init_script(init_script)
+            page.evaluate("localStorage.setItem('stage57-recovery-digest-pause', 'yes')")
+
+            page.reload(wait_until="load")
+            page.wait_for_function("window.__stage57RecoveryDigestPaused === true", timeout=30000)
+            first_fence_writes = page.evaluate("window.__stage57RecoveryFenceWrites")
+            self.assertEqual(len(first_fence_writes), 1, first_fence_writes)
+            first_fence = first_fence_writes[0]
+            self.assertNotEqual(first_fence["ownerId"], fixture["originalJournalOwner"], first_fence)
+            self.assertGreater(first_fence["fenceToken"], fixture["originalJournalFence"], first_fence)
+
+            paused = second.evaluate("""async key => {
+                const db = await openVideoDB();
+                try { return await new Promise((resolve, reject) => {
+                    const tx = db.transaction(['restoreJournal','restoreLocks','videoChunks'], 'readonly');
+                    const journalReq = tx.objectStore('restoreJournal').getAll();
+                    const lockReq = tx.objectStore('restoreLocks').get('global-mutation');
+                    const chunkReq = tx.objectStore('videoChunks').count(
+                        IDBKeyRange.bound(key + '|', key + '|\\\\uffff')
+                    );
+                    const result = {};
+                    journalReq.onsuccess = () => { result.journals = journalReq.result || []; };
+                    lockReq.onsuccess = () => { result.lock = lockReq.result || null; };
+                    chunkReq.onsuccess = () => { result.keyChunks = chunkReq.result; };
+                    tx.oncomplete = () => resolve(result);
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                }); } finally { db.close(); }
+            }""", fixture["key"])
+            self.assertEqual(len(paused["journals"]), 1, paused)
+            rebound = paused["journals"][0]
+            self.assertEqual(rebound["state"], "committed", rebound)
+            self.assertEqual(rebound["ownerId"], first_fence["ownerId"], rebound)
+            self.assertEqual(int(rebound["fenceToken"]), first_fence["fenceToken"], rebound)
+            self.assertNotEqual(rebound["journalChecksum"], fixture["originalJournalChecksum"], rebound)
+            self.assertEqual(paused["lock"]["ownerId"], first_fence["ownerId"], paused)
+            self.assertEqual(int(paused["lock"]["fenceToken"]), first_fence["fenceToken"], paused)
+            self.assertGreater(paused["keyChunks"], 0, paused)
+
+            second.reload(wait_until="load")
+            second.wait_for_function(
+                "window.__rikuMutationRecoveryReady && window.__rikuMutationRecoveryReady()",
+                timeout=30000,
+            )
+            second_fence_writes = second.evaluate("window.__stage57RecoveryFenceWrites")
+            self.assertEqual(second_fence_writes, [], second_fence_writes)
+
+            page.evaluate("""() => {
+                localStorage.removeItem('stage57-recovery-digest-pause');
+                window.__stage57ReleaseRecoveryDigest();
+            }""")
+            page.wait_for_function(
+                "window.__rikuMutationRecoveryReady && window.__rikuMutationRecoveryReady()",
+                timeout=30000,
+            )
+            second.wait_for_function(
+                "window.__rikuMutationRecoveryReady && window.__rikuMutationRecoveryReady()",
+                timeout=30000,
+            )
+
+            second_fence_writes = second.evaluate("window.__stage57RecoveryFenceWrites")
+            self.assertEqual(len(second_fence_writes), 1, second_fence_writes)
+            second_fence = second_fence_writes[0]
+            self.assertNotEqual(second_fence["ownerId"], first_fence["ownerId"], second_fence)
+            self.assertGreater(second_fence["fenceToken"], first_fence["fenceToken"], second_fence)
+
+            final_state = second.evaluate("""async ({key, oldPrefix, activePrefix}) => {
+                const db = await openVideoDB();
+                try { return await new Promise((resolve, reject) => {
+                    const tx = db.transaction(['videos','videoChunks','restoreJournal'], 'readonly');
+                    const recordReq = tx.objectStore('videos').get(key);
+                    const journalsReq = tx.objectStore('restoreJournal').getAll();
+                    const oldReq = tx.objectStore('videoChunks').count(
+                        IDBKeyRange.bound(oldPrefix, oldPrefix + '\\\\uffff')
+                    );
+                    const activeReq = tx.objectStore('videoChunks').count(
+                        IDBKeyRange.bound(activePrefix, activePrefix + '\\\\uffff')
+                    );
+                    const result = {};
+                    recordReq.onsuccess = () => { result.record = recordReq.result || null; };
+                    journalsReq.onsuccess = () => { result.journals = journalsReq.result || []; };
+                    oldReq.onsuccess = () => { result.oldChunks = oldReq.result; };
+                    activeReq.onsuccess = () => { result.activeChunks = activeReq.result; };
+                    tx.oncomplete = () => resolve(result);
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error);
+                }); } finally { db.close(); }
+            }""", {
+                "key":fixture["key"],
+                "oldPrefix":fixture["oldPrefix"],
+                "activePrefix":fixture["activePrefix"]
+            })
+            self.assertEqual(final_state["record"]["chunkPrefix"], fixture["activePrefix"], final_state)
+            self.assertEqual(final_state["record"]["chunkCount"], len(final_state["record"]["chunkSha256"]), final_state)
+            self.assertEqual(final_state["oldChunks"], 0, final_state)
+            self.assertGreater(final_state["activeChunks"], 0, final_state)
+            self.assertEqual(final_state["journals"], [], final_state)
+            self.assertFalse(page.evaluate("!!window.__rikuMutationSafeMode"))
+            self.assertFalse(second.evaluate("!!window.__rikuMutationSafeMode"))
+        finally:
+            try:
+                page.evaluate(
+                    "localStorage.removeItem('stage57-recovery-digest-pause'); "
+                    "window.__stage57ReleaseRecoveryDigest && window.__stage57ReleaseRecoveryDigest(); "
+                    "window.__stage57RestoreDigest && window.__stage57RestoreDigest()"
+                )
+            except Exception:
+                pass
+            second.close()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
