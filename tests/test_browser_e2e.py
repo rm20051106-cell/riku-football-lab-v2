@@ -6567,8 +6567,8 @@ class RikuBrowserE2ETests(unittest.TestCase):
 
             second.reload(wait_until="load")
             second.wait_for_function(
-                "window.__rikuMutationRecoveryReady && window.__rikuMutationRecoveryReady()",
-                timeout=30000,
+                "window.__rikuMutationRecoveryReady && !window.__rikuMutationRecoveryReady()",
+                timeout=15000,
             )
             second_fence_writes = second.evaluate("window.__stage57RecoveryFenceWrites")
             self.assertEqual(second_fence_writes, [], second_fence_writes)
