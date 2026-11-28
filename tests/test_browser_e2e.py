@@ -6148,5 +6148,233 @@ class RikuBrowserE2ETests(unittest.TestCase):
         self.assertEqual(retry["activeSize"], 5, result)
 
 
+    def test_stage57_legacy_multichunk_simultaneous_two_tab_migration_serializes_and_preserves_old_chunks(self):
+        page = self.page
+        page.set_default_timeout(120000)
+        second = page.context.new_page()
+        try:
+            second.goto(self.base_url, wait_until="load")
+            for tab in (page, second):
+                tab.wait_for_function("typeof storeClipVideo === 'function'")
+                tab.wait_for_function(
+                    "window.__rikuMutationRecoveryReady && window.__rikuMutationRecoveryReady()",
+                    timeout=15000,
+                )
+
+            seeded = page.evaluate("""async () => {
+                const key = 'stage57-legacy-simultaneous-two-tab';
+                const oldBytes = new Uint8Array(1024 * 1024 + 23).fill(63);
+                await withGlobalMutationLock('storeClipVideo', () =>
+                    storeClipVideo(key, new Blob([oldBytes], {type:'video/mp4'}))
+                );
+                const db = await openVideoDB();
+                let record;
+                try {
+                    record = await new Promise((resolve, reject) => {
+                        const tx = db.transaction('videos', 'readonly');
+                        const req = tx.objectStore('videos').get(key);
+                        req.onsuccess = () => { tx.__record = req.result || null; };
+                        req.onerror = () => reject(req.error);
+                        tx.oncomplete = () => resolve(tx.__record);
+                        tx.onerror = () => reject(tx.error);
+                        tx.onabort = () => reject(tx.error);
+                    });
+                } finally { db.close(); }
+                if (!record || record.chunkCount !== 2) {
+                    throw new Error('simultaneous migration fixture did not create two chunks');
+                }
+                const {chunkSha256, ...legacy} = record;
+                await withGlobalMutationLock('storeClipVideo', async ctx => {
+                    ctx.videoMetadataWriteAuthorized = true;
+                    const legacyDb = await openVideoDB();
+                    try {
+                        await new Promise((resolve, reject) => {
+                            const tx = legacyDb.transaction('videos', 'readwrite');
+                            tx.objectStore('videos').put(legacy, key);
+                            tx.oncomplete = resolve;
+                            tx.onerror = () => reject(tx.error);
+                            tx.onabort = () => reject(tx.error);
+                        });
+                    } finally {
+                        legacyDb.close();
+                        ctx.videoMetadataWriteAuthorized = false;
+                    }
+                });
+                return {key, prefix:record.chunkPrefix, count:record.chunkCount, oldBytes:Array.from(oldBytes)};
+            }""")
+
+            page.evaluate("""({key}) => {
+                window.__stage57WinnerPaused = false;
+                window.__stage57WinnerFinished = false;
+                window.__stage57WinnerError = null;
+                window.__stage57WinnerDigestCalls = 0;
+                window.__stage57WinnerHashes = null;
+                window.__stage57WinnerLock = null;
+                window.__stage57ReleaseWinner = null;
+                const originalDigest = crypto.subtle.digest.bind(crypto.subtle);
+                const digestDescriptor = Object.getOwnPropertyDescriptor(crypto.subtle, 'digest');
+                window.__stage57DigestRestore = () => {
+                    if (digestDescriptor) Object.defineProperty(crypto.subtle, 'digest', digestDescriptor);
+                    else delete crypto.subtle.digest;
+                };
+                Object.defineProperty(crypto.subtle, 'digest', {
+                    configurable: true,
+                    value: async (...args) => {
+                        const result = await originalDigest(...args);
+                        window.__stage57WinnerDigestCalls++;
+                        // #1 hashes replacement input; #2/#3 hash the two legacy chunks.
+                        if (window.__stage57WinnerDigestCalls === 3) {
+                            const ctx = window.__rikuMutationContext;
+                            window.__stage57WinnerLock = ctx ? {
+                                ownerId:ctx.ownerId, fenceToken:Number(ctx.fenceToken)
+                            } : null;
+                            window.__stage57WinnerPaused = true;
+                            await new Promise(resolve => { window.__stage57ReleaseWinner = resolve; });
+                        }
+                        return result;
+                    }
+                });
+                const originalRecordChange = window.__rikuRecordVideoChange;
+                window.__rikuRecordVideoChange = async change => {
+                    if (change.key === key) {
+                        window.__stage57WinnerHashes = change.oldRecord?.chunkSha256 || null;
+                    }
+                    return originalRecordChange(change);
+                };
+                window.__stage57WinnerPromise = withGlobalMutationLock('storeClipVideo', () =>
+                    storeClipVideo(key, new Blob([Uint8Array.from([101,102,103,104,105])], {type:'video/mp4'}))
+                ).then(() => { window.__stage57WinnerFinished = true; })
+                 .catch(error => { window.__stage57WinnerError = String(error?.message || error); })
+                 .finally(() => {
+                    window.__stage57DigestRestore();
+                    window.__rikuRecordVideoChange = originalRecordChange;
+                 });
+            }""", seeded)
+            page.wait_for_function("window.__stage57WinnerPaused === true")
+
+            lockDuringMigration = second.evaluate("""async () => {
+                const db = await openVideoDB();
+                try {
+                    return await new Promise((resolve, reject) => {
+                        const tx = db.transaction('restoreLocks', 'readonly');
+                        const req = tx.objectStore('restoreLocks').get('global-mutation');
+                        req.onsuccess = () => { tx.__row = req.result || null; };
+                        req.onerror = () => reject(req.error);
+                        tx.oncomplete = () => resolve(tx.__row);
+                        tx.onerror = () => reject(tx.error);
+                        tx.onabort = () => reject(tx.error);
+                    });
+                } finally { db.close(); }
+            }""")
+            winnerLock = page.evaluate("window.__stage57WinnerLock")
+            self.assertIsNotNone(winnerLock, winnerLock)
+            self.assertEqual(lockDuringMigration["ownerId"], winnerLock["ownerId"], lockDuringMigration)
+            self.assertEqual(
+                int(lockDuringMigration["fenceToken"]), winnerLock["fenceToken"], lockDuringMigration
+            )
+
+            second.evaluate("""key => {
+                window.__stage57LoserFinished = false;
+                window.__stage57LoserError = null;
+                window.__stage57LoserPromise = storeClipVideo(
+                    key, new Blob([Uint8Array.from([111,112,113,114])], {type:'video/mp4'})
+                ).then(() => { window.__stage57LoserFinished = true; })
+                 .catch(error => {
+                    window.__stage57LoserError = String(error?.message || error);
+                 });
+            }""", seeded["key"])
+            second.wait_for_function(
+                "window.__stage57LoserFinished === true || !!window.__stage57LoserError"
+            )
+            self.assertFalse(second.evaluate("window.__stage57LoserFinished"))
+            self.assertIn(
+                "別のタブで保存処理中",
+                second.evaluate("window.__stage57LoserError"),
+            )
+
+            pausedSnapshot = second.evaluate("""async ({key, prefix}) => {
+                const db = await openVideoDB();
+                try {
+                    return await new Promise((resolve, reject) => {
+                        const tx = db.transaction(['videos','videoChunks'], 'readonly');
+                        const recordReq = tx.objectStore('videos').get(key);
+                        const chunksReq = tx.objectStore('videoChunks').getAll(
+                            IDBKeyRange.bound(prefix, prefix + '\\\\uffff')
+                        );
+                        const result = {};
+                        recordReq.onsuccess = () => { result.record = recordReq.result || null; };
+                        chunksReq.onsuccess = () => {
+                            result.chunks = chunksReq.result.map(value => Array.from(value));
+                        };
+                        tx.oncomplete = () => resolve(result);
+                        tx.onerror = () => reject(tx.error);
+                        tx.onabort = () => reject(tx.error);
+                    });
+                } finally { db.close(); }
+            }""", seeded)
+            self.assertEqual(pausedSnapshot["record"]["chunkPrefix"], seeded["prefix"])
+            self.assertNotIn("chunkSha256", pausedSnapshot["record"])
+            self.assertEqual(len(pausedSnapshot["chunks"]), 2)
+            self.assertEqual(
+                pausedSnapshot["chunks"],
+                [seeded["oldBytes"][:1024 * 1024], seeded["oldBytes"][1024 * 1024:]],
+            )
+
+            page.evaluate("window.__stage57ReleaseWinner()")
+            page.wait_for_function(
+                "window.__stage57WinnerFinished === true || !!window.__stage57WinnerError",
+                timeout=60000,
+            )
+            self.assertTrue(
+                page.evaluate("window.__stage57WinnerFinished"),
+                page.evaluate("window.__stage57WinnerError"),
+            )
+            finalState = second.evaluate("""async ({key, prefix}) => {
+                const db = await openVideoDB();
+                try {
+                    return await new Promise((resolve, reject) => {
+                        const tx = db.transaction(['videos','videoChunks'], 'readonly');
+                        const recordReq = tx.objectStore('videos').get(key);
+                        const chunksReq = tx.objectStore('videoChunks').count(
+                            IDBKeyRange.bound(prefix, prefix + '\\\\uffff')
+                        );
+                        const result = {};
+                        recordReq.onsuccess = () => { result.record = recordReq.result || null; };
+                        chunksReq.onsuccess = () => { result.oldChunkCount = chunksReq.result; };
+                        tx.oncomplete = () => resolve(result);
+                        tx.onerror = () => reject(tx.error);
+                        tx.onabort = () => reject(tx.error);
+                    });
+                } finally { db.close(); }
+            }""", seeded)
+            expectedHashes = second.evaluate("""async oldBytes => {
+                const hashes = [];
+                for (let offset = 0; offset < oldBytes.length; offset += 1024 * 1024) {
+                    const digest = await crypto.subtle.digest(
+                        'SHA-256', Uint8Array.from(oldBytes.slice(offset, offset + 1024 * 1024))
+                    );
+                    hashes.push([...new Uint8Array(digest)]
+                        .map(value => value.toString(16).padStart(2, '0')).join(''));
+                }
+                return hashes;
+            }""", seeded["oldBytes"])
+            self.assertEqual(page.evaluate("window.__stage57WinnerDigestCalls"), 3)
+            self.assertEqual(page.evaluate("window.__stage57WinnerHashes"), expectedHashes)
+            self.assertNotEqual(finalState["record"]["chunkPrefix"], seeded["prefix"])
+            self.assertEqual(finalState["record"]["size"], 5)
+            self.assertEqual(len(finalState["record"]["chunkSha256"]), 1)
+            self.assertEqual(finalState["oldChunkCount"], 0)
+        finally:
+            try:
+                page.evaluate(
+                    "window.__stage57ReleaseWinner && window.__stage57ReleaseWinner(); "
+                    "window.__stage57DigestRestore && window.__stage57DigestRestore()"
+                )
+                page.evaluate("window.__stage57WinnerPromise")
+            except Exception:
+                pass
+            second.close()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
