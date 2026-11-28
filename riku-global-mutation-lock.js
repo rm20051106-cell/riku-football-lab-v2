@@ -312,7 +312,9 @@
         const get = store.get(ctx.restoreId);
         get.onsuccess = () => {
           const row = get.result;
-          if (!row || row.ownerId !== ctx.ownerId || Number(row.fenceToken) !== Number(ctx.fenceToken)) {
+          if (!row || row.ownerId !== ctx.ownerId || Number(row.fenceToken) !== Number(ctx.fenceToken) ||
+              row.journalChecksum !== journalDigest(row)) {
+            window.__rikuMutationSafeMode = true;
             try { tx.abort(); } catch (_) {}
             return;
           }
